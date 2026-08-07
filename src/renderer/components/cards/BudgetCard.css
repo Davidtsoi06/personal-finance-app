@@ -1,0 +1,64 @@
+.budget-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.budget-card__summary {
+  display: flex;
+  gap: var(--spacing-lg);
+}
+
+.budget-card__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.budget-card__label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.budget-card__value {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  font-family: var(--font-family-number);
+  color: var(--color-text-primary);
+}
+
+.budget-card__value--spent {
+  color: var(--color-warning);
+}
+
+.budget-card__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.budget-card__alert {
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+}
+
+.budget-card__alert--ok {
+  background: #F6FFED;
+  color: var(--color-success);
+}
+
+.budget-card__alert--warning {
+  background: #FFFBE6;
+  color: #8C6D00;
+}
+
+.budget-card__alert--danger {
+  background: #FFF2F0;
+  color: var(--color-danger);
+}
+
+.budget-card__daily {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}

@@ -1,0 +1,307 @@
+/**
+ * IPC handlers for assets, trade records, transactions, and trade statement import.
+ */
+import { ipcMain } from 'electron';
+import { getDatabase } from '../database';
+import * as assetService from '../database/services/asset-service';
+import * as transactionService from '../database/services/transaction-service';
+import { parseStatement, parseRows, getBrokerFormats } from '../services/statement-parser';
+import { normalizeDate, normalizeCurrency, normalizeCode, normalizeString } from '../services/data-normalizer';
+
+export function registerAssetIpcHandlers(): void {
+  // ── Assets ──
+  ipcMain.handle('asset:list', (_e, type?: string) => assetService.listAssets(type));
+  ipcMain.handle('asset:get', (_e, id: number) => assetService.getAsset(id));
+  ipcMain.handle('asset:create', (_e, data: any) => {
+    data.currency = normalizeCurrency(data.currency, 'CNY');
+    data.code = normalizeCode(data.code);
+    return assetService.createAsset(data);
+  });
+  ipcMain.handle('asset:update', (_e, id: number, data: any) => assetService.updateAsset(id, data));
+  ipcMain.handle('asset:delete', (_e, id: number) => assetService.deleteAsset(id));
+  ipcMain.handle('asset:updatePrice', (_e, id: number, price: number) => assetService.updateCurrentPrice(id, price));
+  ipcMain.handle('asset:totalMarketValue', (_e, currency?: string) => assetService.getTotalMarketValue(currency));
+
+  // ── Trade Records (buy/sell with auto asset management) ──
+  ipcMain.handle('trade:record', async (_e, data: {
+    investmentAccountId: number;
+    type: 'buy' | 'sell';
+    code: string; name: string;
+    quantity: number; price: number; fee?: number;
+    currency?: string; date?: string;
+    market?: string; assetType?: string; notes?: string;
+  }) => {
+    const db = getDatabase();
+    const fee = data.fee || 0;
+    const currency = normalizeCurrency(data.currency, 'CNY');
+    const date = normalizeDate(data.date);
+    const code = normalizeCode(data.code);
+    const name = normalizeString(data.name);
+
+    let asset = db.prepare(
+      'SELECT * FROM assets WHERE code = ? AND investment_account_id = ?'
+    ).get(code, data.investmentAccountId) as any;
+
+    if (data.type === 'buy') {
+      if (asset) {
+        const newQty = asset.quantity + data.quantity;
+        const newTotalCost = asset.total_cost + (data.quantity * data.price + fee);
+        const newAvgCost = newTotalCost / newQty;
+        const newMktValue = newQty * data.price;
+        const newPL = newMktValue - newTotalCost;
+        const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
+
+        db.prepare(`
+          UPDATE assets SET quantity=?, cost_price=?, current_price=?, market_value=?,
+            total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
+          WHERE id=?
+        `).run(newQty, newAvgCost, data.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
+
+        const txnResult = db.prepare(`
+          INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(asset.id, 'buy', data.quantity, data.price, fee,
+          data.quantity * data.price + fee, currency, date, data.notes || '买入');
+
+        db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
+          .run(asset.id, data.price);
+
+        return { success: true, assetId: asset.id, transactionId: txnResult.lastInsertRowid };
+      } else {
+        const totalCost = data.quantity * data.price + fee;
+        const marketValue = data.quantity * data.price;
+        const assetResult = db.prepare(`
+          INSERT INTO assets (name, code, type, market, currency, quantity, cost_price,
+            current_price, market_value, total_cost, profit_loss, profit_loss_pct,
+            investment_account_id, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          name, code, data.assetType || 'stock',
+          data.market || (currency === 'HKD' ? 'hk_stock' : currency === 'USD' ? 'us_stock' : 'a_stock'),
+          currency, data.quantity, data.price, data.price, marketValue, totalCost,
+          marketValue - totalCost, totalCost > 0 ? ((marketValue - totalCost) / totalCost) * 100 : 0,
+          data.investmentAccountId, data.notes || null
+        );
+        const assetId = assetResult.lastInsertRowid as number;
+
+        const txnResult = db.prepare(`
+          INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(assetId, 'buy', data.quantity, data.price, fee,
+          data.quantity * data.price + fee, currency, date, data.notes || '买入');
+
+        return { success: true, assetId, transactionId: txnResult.lastInsertRowid };
+      }
+    } else {
+      if (!asset) return { success: false, error: `未找到代码为 ${code} 的持仓` };
+      if (asset.quantity < data.quantity) {
+        return { success: false, error: `持仓不足：持有 ${asset.quantity} 股，尝试卖出 ${data.quantity} 股` };
+      }
+
+      const newQty = asset.quantity - data.quantity;
+      const newTotalCost = newQty > 0 ? asset.total_cost * (newQty / asset.quantity) : 0;
+      const newMktValue = newQty * data.price;
+      const newPL = newMktValue - newTotalCost;
+      const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
+
+      db.prepare(`
+        UPDATE assets SET quantity=?, current_price=?, market_value=?,
+          total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
+        WHERE id=?
+      `).run(newQty, data.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
+
+      const txnResult = db.prepare(`
+        INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(asset.id, 'sell', data.quantity, data.price, fee,
+        data.quantity * data.price - fee, currency, date, data.notes || '卖出');
+
+      db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
+        .run(asset.id, data.price);
+
+      return { success: true, assetId: asset.id, transactionId: txnResult.lastInsertRowid };
+    }
+  });
+
+  // ── Transactions ──
+  ipcMain.handle('transaction:list', (_e, assetId?: number, limit?: number) =>
+    transactionService.listTransactions(assetId, limit)
+  );
+  ipcMain.handle('transaction:listByAccount', async (_e, investmentAccountId: number) => {
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT t.*, a.name as asset_name, a.code as asset_code
+      FROM transactions t
+      JOIN assets a ON t.asset_id = a.id
+      WHERE a.investment_account_id = ?
+      ORDER BY t.date DESC, t.id DESC
+      LIMIT 200
+    `).all(investmentAccountId);
+  });
+  ipcMain.handle('transaction:get', (_e, id: number) => transactionService.getTransaction(id));
+  ipcMain.handle('transaction:create', (_e, data: any) => {
+    data.date = normalizeDate(data.date);
+    data.currency = normalizeCurrency(data.currency, 'CNY');
+    return transactionService.createTransaction(data);
+  });
+  ipcMain.handle('transaction:delete', (_e, id: number) => transactionService.deleteTransaction(id));
+
+  // ── Trade Statement Import (smart format matching) ──
+  ipcMain.handle('trade:listBrokerFormats', () => getBrokerFormats());
+
+  ipcMain.handle('trade:parseStatement', (_e, csvText: string, formatName?: string) => {
+    return parseStatement(csvText, formatName);
+  });
+
+  ipcMain.handle('trade:importParsed', async (_e, trades: any[], investmentAccountId: number) => {
+    const db = getDatabase();
+    let imported = 0;
+    const errors: string[] = [];
+
+    for (const trade of trades) {
+      try {
+        trade.date = normalizeDate(trade.date);
+        trade.currency = normalizeCurrency(trade.currency, 'HKD');
+        trade.code = normalizeCode(trade.code);
+        trade.name = normalizeString(trade.name);
+
+        let asset = db.prepare(
+          'SELECT * FROM assets WHERE code = ? AND investment_account_id = ?'
+        ).get(trade.code, investmentAccountId) as any;
+
+        if (trade.type === 'buy') {
+          if (asset) {
+            const newQty = asset.quantity + trade.quantity;
+            const newTotalCost = asset.total_cost + (trade.quantity * trade.price + trade.fee);
+            const newAvgCost = newTotalCost / newQty;
+            const newMktValue = newQty * trade.price;
+            const newPL = newMktValue - newTotalCost;
+            const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
+            db.prepare(`
+              UPDATE assets SET quantity=?, cost_price=?, current_price=?, market_value=?,
+                total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
+              WHERE id=?
+            `).run(newQty, newAvgCost, trade.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
+
+            db.prepare(`
+              INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(asset.id, 'buy', trade.quantity, trade.price, trade.fee,
+              trade.quantity * trade.price + trade.fee, trade.currency, trade.date, '日结单导入');
+          } else {
+            const totalCost = trade.quantity * trade.price + trade.fee;
+            const mktValue = trade.quantity * trade.price;
+            const r = db.prepare(`
+              INSERT INTO assets (name, code, type, market, currency, quantity, cost_price,
+                current_price, market_value, total_cost, profit_loss, profit_loss_pct,
+                investment_account_id)
+              VALUES (?, ?, 'stock', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              trade.name || trade.code, trade.code,
+              trade.currency === 'HKD' ? 'hk_stock' : trade.currency === 'USD' ? 'us_stock' : 'a_stock',
+              trade.currency, trade.quantity, trade.price, trade.price, mktValue, totalCost,
+              mktValue - totalCost, totalCost > 0 ? ((mktValue - totalCost) / totalCost) * 100 : 0,
+              investmentAccountId
+            );
+            asset = { id: r.lastInsertRowid };
+            db.prepare(`
+              INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(asset.id, 'buy', trade.quantity, trade.price, trade.fee,
+              trade.quantity * trade.price + trade.fee, trade.currency, trade.date, '日结单导入');
+          }
+        } else if (trade.type === 'sell') {
+          if (!asset) { errors.push(`${trade.code} ${trade.name}: 未找到持仓`); continue; }
+          if (asset.quantity < trade.quantity) {
+            errors.push(`${trade.code} ${trade.name}: 持仓不足`); continue;
+          }
+          const newQty = asset.quantity - trade.quantity;
+          const newTotalCost = newQty > 0 ? asset.total_cost * (newQty / asset.quantity) : 0;
+          const newMktValue = newQty * trade.price;
+          const newPL = newMktValue - newTotalCost;
+          const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
+          db.prepare(`
+            UPDATE assets SET quantity=?, current_price=?, market_value=?,
+              total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
+            WHERE id=?
+          `).run(newQty, trade.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
+
+          db.prepare(`
+            INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(asset.id, 'sell', trade.quantity, trade.price, trade.fee,
+            trade.quantity * trade.price - trade.fee, trade.currency, trade.date, '日结单导入');
+        } else if (trade.type === 'split') {
+          if (!asset) { errors.push(`${trade.code} ${trade.name}: 未找到持仓，无法拆分`); continue; }
+          const newQty = asset.quantity + trade.quantity;
+          const newAvgCost = newQty > 0 ? asset.total_cost / newQty : 0;
+          db.prepare(`
+            UPDATE assets SET quantity=?, cost_price=?, updated_at=datetime('now') WHERE id=?
+          `).run(newQty, newAvgCost, asset.id);
+          db.prepare(`
+            INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(asset.id, 'split', trade.quantity, 0, 0, 0, trade.currency, trade.date, '份额拆分/分拆');
+        } else {
+          if (asset) {
+            db.prepare(`
+              INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(asset.id, 'other', trade.quantity, trade.price, trade.fee,
+              trade.quantity * trade.price, trade.currency, trade.date, '其他公司行动');
+          } else {
+            errors.push(`${trade.code} ${trade.name}: 未找到持仓，跳过`); continue;
+          }
+        }
+        imported++;
+      } catch (err: any) {
+        errors.push(`${trade.code}: ${err.message}`);
+      }
+    }
+    return { imported, errors };
+  });
+
+  // ── Excel File Import ──
+  ipcMain.handle('trade:importExcel', async (_e, formatName?: string) => {
+    const { dialog } = require('electron') as typeof import('electron');
+    const xlsx = require('xlsx') as typeof import('xlsx');
+
+    const result = await dialog.showOpenDialog({
+      title: '选择日结单 Excel 文件',
+      filters: [
+        { name: 'Excel 文件', extensions: ['xlsx', 'xls'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const filePath = result.filePaths[0];
+
+    try {
+      const fs = require('fs');
+      const fileBuffer = fs.readFileSync(filePath);
+      const ext = filePath.split('.').pop()?.toLowerCase();
+      const workbook = ext === 'xls'
+        ? xlsx.read(fileBuffer, { type: 'buffer', codepage: 936 })
+        : xlsx.read(fileBuffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows: string[][] = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const parseResult = parseRows(rows, formatName);
+      return {
+        canceled: false,
+        fileName: filePath.split(/[\\/]/).pop() || filePath,
+        ...parseResult,
+      };
+    } catch (err: any) {
+      return {
+        canceled: false, success: false, format: '未知',
+        trades: [], errors: [`读取 Excel 失败：${err.message}`],
+      };
+    }
+  });
+}

@@ -1,0 +1,38 @@
+# ── Dependencies ──
+node_modules/
+
+# ── Build output ──
+dist/
+out/
+
+# ── Release / packaging output ──
+release/
+
+# ── Environment & secrets ──
+.env
+.env.*
+*.db
+*.db-journal
+
+# ── OS files ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE / Editor ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Logs ──
+*.log
+npm-debug.log*
+
+# ── Claude Code internal ──
+.claude/
+
+# ── Misc ──
+*.tmp
+*.temp

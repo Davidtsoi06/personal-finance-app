@@ -1,0 +1,13 @@
+/* ── Amount component ── */
+.amount {
+  font-family: var(--font-family-number);
+  font-variant-numeric: tabular-nums;
+}
+
+.amount--sm { font-size: var(--font-size-sm); }
+.amount--md { font-size: var(--font-size-md); }
+.amount--lg { font-size: var(--font-size-lg); font-weight: 600; }
+.amount--xl { font-size: var(--font-size-xl); font-weight: 700; }
+
+.amount--positive { color: var(--color-success); }
+.amount--negative { color: var(--color-danger); }

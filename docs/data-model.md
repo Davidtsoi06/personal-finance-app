@@ -1,0 +1,303 @@
+# 数据模型 — 个人理财投资软件
+
+## 概览
+
+共 14 张业务表 + 1 张迁移元数据表（`meta`），通过版本号递增的 migration 脚本管理。
+
+---
+
+## 1. accounts — 账户表
+
+管理用户的全部资金账户（银行卡、现金、支付平台等）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| name | TEXT | 账户名称（如"招商银行储蓄卡"） |
+| type | TEXT | 类型：cash / bank_card / credit_card / online_pay |
+| currency | TEXT | 币种：CNY / HKD / USD / EUR / JPY / GBP |
+| balance | REAL | 当前余额 |
+| bank_name | TEXT | 银行名称（银行卡时） |
+| card_number | TEXT | 卡号后 4 位（加密存） |
+| is_active | INTEGER | 是否启用 0/1 |
+| sort_order | INTEGER | 排序顺序 |
+| created_at | TEXT | 创建时间 ISO8601 |
+| updated_at | TEXT | 更新时间 ISO8601 |
+
+---
+
+## 2. investment_accounts — 投资账户表
+
+管理券商/交易平台账户。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| name | TEXT | 账户名称（如"富途牛牛"） |
+| broker | TEXT | 券商名称 |
+| currency | TEXT | 默认币种 |
+| account_number | TEXT | 账号（加密存） |
+| notes | TEXT | 备注 |
+| created_at | TEXT | 创建时间 |
+| updated_at | TEXT | 更新时间 |
+
+---
+
+## 3. assets — 资产持仓表
+
+管理投资类资产的持仓信息。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| name | TEXT | 资产名称（如"腾讯控股"） |
+| code | TEXT | 代码（如"00700.HK"） |
+| type | TEXT | 类型：stock / fund / etf / gold / crypto / fixed_deposit |
+| market | TEXT | 市场：a_stock / hk_stock / us_stock / other |
+| currency | TEXT | 计价币种 |
+| quantity | REAL | 持有数量 |
+| cost_price | REAL | 成本均价（加权平均） |
+| current_price | REAL | 当前市价（自动更新） |
+| market_value | REAL | 当前市值（= quantity × current_price） |
+| total_cost | REAL | 总成本（= quantity × cost_price） |
+| profit_loss | REAL | 盈亏金额 |
+| profit_loss_pct | REAL | 盈亏百分比 |
+| investment_account_id | INTEGER FK | 关联投资账户 |
+| notes | TEXT | 备注 |
+| created_at | TEXT | 创建时间 |
+| updated_at | TEXT | 更新时间 |
+
+---
+
+## 4. transactions — 投资交易记录表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| asset_id | INTEGER FK | 关联资产 |
+| type | TEXT | 类型：buy / sell / dividend / split |
+| quantity | REAL | 数量 |
+| price | REAL | 成交价 |
+| fee | REAL | 手续费 |
+| total_amount | REAL | 总金额 |
+| currency | TEXT | 币种 |
+| date | TEXT | 交易日期 |
+| notes | TEXT | 备注 |
+| created_at | TEXT | 创建时间 |
+
+---
+
+## 5. asset_prices — 资产价格历史表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| asset_id | INTEGER FK | 关联资产 |
+| price | REAL | 价格 |
+| date | TEXT | 日期 |
+
+---
+
+## 6. ledgers — 日常收支记账表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| type | TEXT | 类型：income / expense |
+| amount | REAL | 金额 |
+| currency | TEXT | 币种 |
+| category_id | INTEGER FK | 分类 ID |
+| subcategory_id | INTEGER FK | 子分类 ID（可空） |
+| account_id | INTEGER FK | 来源/去向账户 |
+| date | TEXT | 日期 |
+| description | TEXT | 描述 |
+| tags | TEXT | 标签（JSON 数组） |
+| created_at | TEXT | 创建时间 |
+| updated_at | TEXT | 更新时间 |
+
+---
+
+## 7. categories — 收支分类表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| name | TEXT | 分类名称 |
+| type | TEXT | income / expense |
+| parent_id | INTEGER FK | 父分类 ID（二级分类） |
+| icon | TEXT | 图标 |
+| sort_order | INTEGER | 排序 |
+| is_default | INTEGER | 是否为默认分类 |
+
+---
+
+## 8. account_transactions — 存取记录表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| account_id | INTEGER FK | 关联账户 |
+| type | TEXT | 类型：deposit / withdraw |
+| amount | REAL | 金额 |
+| currency | TEXT | 币种 |
+| date | TEXT | 日期 |
+| notes | TEXT | 备注 |
+| created_at | TEXT | 创建时间 |
+
+---
+
+## 9. currencies — 货币表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| code | TEXT | 货币代码（CNY, HKD, USD...） |
+| name | TEXT | 中文名称 |
+| symbol | TEXT | 符号（¥, HK$, $...） |
+| rate_to_base | REAL | 对本位币汇率 |
+| is_base | INTEGER | 是否为本位币 0/1 |
+| updated_at | TEXT | 汇率更新时间 |
+
+---
+
+## 10. exchange_rates — 汇率历史表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| from_currency | TEXT | 来源币种 |
+| to_currency | TEXT | 目标币种 |
+| rate | REAL | 汇率 |
+| date | TEXT | 日期 |
+
+---
+
+## 11. net_worth_history — 净资产历史表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| date | TEXT | 日期（UNIQUE） |
+| total_cash | REAL | 现金总额 |
+| total_investments | REAL | 投资总额 |
+| net_worth | REAL | 净资产（= cash + investments） |
+| created_at | TEXT | 创建时间 |
+
+---
+
+## 12. custom_statement_formats — 自定义日结单格式表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| name | TEXT | 格式名称（如"国信证券"） |
+| keywords | TEXT | 检测关键词（逗号分隔） |
+| column_mapping | TEXT | 列映射 JSON：`[{position, field}]` |
+| has_header | INTEGER | 是否有表头行 0/1 |
+| created_at | TEXT | 创建时间 |
+
+---
+
+## 13. budgets — 月度预算表（v5 新增）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| name | TEXT | 预算名称（如"月度总预算"） |
+| amount | REAL | 预算金额 |
+| currency | TEXT | 币种，默认 CNY |
+| month | TEXT | 月份（如"2026-08"） |
+| notify_at | REAL | 预警比例，默认 0.8（80%） |
+| created_at | TEXT | 创建时间 |
+| updated_at | TEXT | 更新时间 |
+
+---
+
+## 14. alert_config — 提醒配置表（v5 新增）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| type | TEXT | 类型：price_drop / price_surge / budget_warning |
+| enabled | INTEGER | 是否启用 0/1 |
+| threshold | REAL | 阈值百分比（如 5 表示 5%） |
+| created_at | TEXT | 创建时间 |
+| updated_at | TEXT | 更新时间 |
+
+**默认种子数据：**
+| id | type | enabled | threshold |
+|----|------|---------|-----------|
+| 1 | price_drop | 1 | 5.0 |
+| 2 | price_surge | 0 | 10.0 |
+
+---
+
+## 15. app_settings — 应用设置表（v5 新增）
+
+键值存储，用于 AI 配置、归档设置等。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| key | TEXT PK | 设置键名 |
+| value | TEXT | 设置值 |
+| updated_at | TEXT | 更新时间 |
+
+**当前使用的键：**
+
+| key | 说明 | 默认值 |
+|-----|------|--------|
+| `ai.provider` | AI 提供商 | `deepseek` |
+| `ai.apiUrl` | AI API 端点 | `https://api.deepseek.com/v1/chat/completions` |
+| `ai.apiKey` | AI API Key（仅主进程可读） | `""` |
+| `ai.model` | AI 模型名称 | `deepseek-chat` |
+| `archive.folderPath` | 归档文件夹路径 | `""` |
+| `archive.retentionMonths` | 数据保留月数 | `12` |
+| `archive.lastRun` | 上次归档日期 | — |
+
+---
+
+## 迁移历史
+
+| 版本 | 变更内容 |
+|------|---------|
+| v1 | 核心表：accounts, categories, assets, asset_prices, transactions, ledgers, currencies, exchange_rates, borrow_lending, gift_records |
+| v2 | + investment_accounts, + assets.investment_account_id, + net_worth_history |
+| v3 | + account_transactions |
+| v4 | + custom_statement_formats |
+| v5 | + budgets, + alert_config, + app_settings, - borrow_lending, - gift_records |
+
+---
+
+## 数据归档策略
+
+| 表 | 归档方式 | 说明 |
+|----|---------|------|
+| transactions | 按月导出 Excel → 删除 | 投资交易核心数据 |
+| ledgers | 按月导出 Excel → 删除 | 日常收支数据 |
+| account_transactions | 按月删除（无单独报表） | 存取记录 |
+| asset_prices | 按月删除 | 可从 API 重新获取 |
+| exchange_rates | 按月删除 | 可从 API 重新获取 |
+| 其他表 | 不归档 | 数据量小，不过期 |
+
+默认保留期限：12 个月（可配置 6/12/18/24/36）。
+
+---
+
+## ER 关系
+
+```
+investment_accounts ──┐
+                      │ 1:N
+                      ▼
+accounts ──┐        assets ──→ asset_prices
+           │          │
+           │ 1:N      │ 1:N
+           ▼          ▼
+account_transactions  transactions
+
+categories ──→ ledgers ←── accounts
+
+currencies ──→ exchange_rates
+
+(独立表) net_worth_history, budgets, alert_config, app_settings, custom_statement_formats
+```

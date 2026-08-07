@@ -1,0 +1,39 @@
+appId: com.personal-finance.app
+productName: 个人理财投资软件
+copyright: Copyright © 2025
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - node_modules/**/*
+  - package.json
+
+# Native modules (better-sqlite3) — auto-unpack from asar
+asar:
+  smartUnpack: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  language: 2052
+  unicode: true
+  shortcutName: 个人理财投资软件
+
+publish:
+  provider: github
+  owner: Davidtsoi06
+  repo: personal-finance-app
+  private: false
