@@ -249,4 +249,83 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       INSERT OR IGNORE INTO alert_config (id, type, enabled, threshold) VALUES (2, 'price_surge', 0, 10.0);
     `,
   },
+  {
+    version: 6,
+    sql: `
+      -- ============================================
+      -- Migration v6: Social obligations (人情债)
+      -- ============================================
+
+      CREATE TABLE IF NOT EXISTS social_obligations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL CHECK(type IN ('owe', 'owed')),
+        person TEXT NOT NULL,
+        item TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'done')),
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `,
+  },
+  {
+    version: 7,
+    sql: `
+      -- ============================================
+      -- Migration v7: Account hierarchy + multi-currency
+      -- ============================================
+
+      -- Add parent account support for bank → sub-account tree
+      ALTER TABLE accounts ADD COLUMN parent_account_id INTEGER REFERENCES accounts(id);
+
+      -- Multi-currency balance table
+      CREATE TABLE IF NOT EXISTS account_balances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        currency TEXT NOT NULL,
+        balance REAL NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(account_id, currency)
+      );
+
+      -- Migrate existing balances to account_balances
+      INSERT OR IGNORE INTO account_balances (account_id, currency, balance)
+      SELECT id, currency, balance FROM accounts WHERE balance != 0;
+    `,
+  },
+  {
+    version: 8,
+    sql: `
+      -- ============================================
+      -- Migration v8: Asset type classification
+      -- ============================================
+
+      -- Add asset_type column for high-level asset classification
+      -- Values: bank, cash, insurance, investment, custom
+      -- Kept separate from "type" (payment method: bank_card, credit_card, online_pay)
+      ALTER TABLE accounts ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'bank';
+
+      -- Infer asset_type from existing type column
+      UPDATE accounts SET asset_type = 'bank' WHERE type IN ('bank_card', 'credit_card');
+      UPDATE accounts SET asset_type = 'cash' WHERE type = 'cash';
+      UPDATE accounts SET asset_type = 'custom' WHERE type = 'online_pay';
+    `,
+  },
+  {
+    version: 9,
+    sql: `
+      -- ============================================
+      -- Migration v9: Custom bank statement formats
+      -- ============================================
+
+      CREATE TABLE IF NOT EXISTS custom_bank_formats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        keywords TEXT NOT NULL,
+        column_mapping TEXT NOT NULL,
+        has_header INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `,
+  },
 ];

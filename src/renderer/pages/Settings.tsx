@@ -45,6 +45,25 @@ const FIELD_OPTIONS: { value: string; label: string }[] = [
   { value: 'ignore', label: '忽略' },
 ];
 
+interface BankFormat {
+  id: number;
+  name: string;
+  keywords: string;
+  column_mapping: string;
+  has_header: number;
+  created_at: string;
+}
+
+const BANK_FIELD_OPTIONS: { value: string; label: string }[] = [
+  { value: 'date', label: '日期' },
+  { value: 'amount', label: '金额' },
+  { value: 'type', label: '收支方向' },
+  { value: 'description', label: '摘要/描述' },
+  { value: 'currency', label: '币种' },
+  { value: 'balance', label: '余额' },
+  { value: 'ignore', label: '忽略' },
+];
+
 const MAX_COLUMNS = 15;
 
 type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
@@ -74,11 +93,29 @@ export function Settings() {
   const [formatSaving, setFormatSaving] = useState(false);
   const [formatMsg, setFormatMsg] = useState<string | null>(null);
 
+  // ── Bank format state ──
+  const [bankFormats, setBankFormats] = useState<BankFormat[]>([]);
+  const [showBankFormatModal, setShowBankFormatModal] = useState(false);
+  const [bankFormatName, setBankFormatName] = useState('');
+  const [bankFormatKeywords, setBankFormatKeywords] = useState('');
+  const [bankFormatHasHeader, setBankFormatHasHeader] = useState(true);
+  const [bankFormatColumns, setBankFormatColumns] = useState<{ field: string }[]>(
+    Array.from({ length: 6 }, () => ({ field: '' }))
+  );
+  const [bankFormatSaving, setBankFormatSaving] = useState(false);
+  const [bankFormatMsg, setBankFormatMsg] = useState<string | null>(null);
+
   // ── Budget state ──
   const [budgetAmount, setBudgetAmount] = useState('');
   const [budgetNotifyAt, setBudgetNotifyAt] = useState('0.8');
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [budgetStatus, setBudgetStatus] = useState<string | null>(null);
+
+  // ── Data clear state ──
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState('');
+  const [clearLoading, setClearLoading] = useState(false);
+  const [clearResult, setClearResult] = useState<string | null>(null);
 
   const loadCurrencies = useCallback(() => {
     invoke<Currency[]>('currency:list')
@@ -89,7 +126,11 @@ export function Settings() {
     invoke<CustomFormat[]>('customFormat:list').then((d) => setCustomFormats(d || []));
   }, []);
 
-  useEffect(() => { loadCurrencies(); loadCustomFormats(); }, [loadCurrencies, loadCustomFormats]);
+  const loadBankFormats = useCallback(() => {
+    invoke<BankFormat[]>('bankFormat:list').then((d) => setBankFormats(d || []));
+  }, []);
+
+  useEffect(() => { loadCurrencies(); loadCustomFormats(); loadBankFormats(); }, [loadCurrencies, loadCustomFormats, loadBankFormats]);
 
   // ── Load version info ──
   useEffect(() => {
@@ -297,6 +338,73 @@ export function Settings() {
     } catch { return mapping; }
   };
 
+  // ── Bank format handlers ──
+  const handleOpenBankFormatModal = () => {
+    setBankFormatName('');
+    setBankFormatKeywords('');
+    setBankFormatHasHeader(true);
+    setBankFormatColumns(Array.from({ length: 6 }, () => ({ field: '' })));
+    setBankFormatMsg(null);
+    setShowBankFormatModal(true);
+  };
+
+  const handleSaveBankFormat = async () => {
+    if (!bankFormatName.trim()) { setBankFormatMsg('❌ 请输入格式名称'); return; }
+    if (!bankFormatKeywords.trim()) { setBankFormatMsg('❌ 请输入检测关键词'); return; }
+
+    const cleanMapping = bankFormatColumns
+      .map((col, i) => ({ position: i, field: col.field || 'ignore' }));
+
+    const fields = cleanMapping.map((c) => c.field);
+    if (!fields.includes('date') || !fields.includes('amount')) {
+      setBankFormatMsg('❌ 列映射必须包含：日期、金额');
+      return;
+    }
+
+    setBankFormatSaving(true); setBankFormatMsg(null);
+    try {
+      await invoke('bankFormat:create', {
+        name: bankFormatName.trim(),
+        keywords: bankFormatKeywords.trim(),
+        column_mapping: JSON.stringify(cleanMapping),
+        has_header: bankFormatHasHeader ? 1 : 0,
+      });
+      setShowBankFormatModal(false);
+      loadBankFormats();
+      setBankFormatMsg('✅ 格式保存成功');
+    } catch (err: any) {
+      setBankFormatMsg(`❌ 保存失败：${err.message}`);
+    }
+    setBankFormatSaving(false);
+  };
+
+  const handleDeleteBankFormat = async (id: number) => {
+    await invoke('bankFormat:delete', id);
+    loadBankFormats();
+  };
+
+  const handleAddBankColumn = () => {
+    if (bankFormatColumns.length < MAX_COLUMNS) {
+      setBankFormatColumns([...bankFormatColumns, { field: '' }]);
+    }
+  };
+
+  const handleRemoveBankColumn = (index: number) => {
+    if (bankFormatColumns.length > 1) {
+      setBankFormatColumns(bankFormatColumns.filter((_, i) => i !== index));
+    }
+  };
+
+  const bankFormatColumnMapPreview = (mapping: string) => {
+    try {
+      const cols: { position: number; field: string }[] = JSON.parse(mapping);
+      return cols.filter((c) => c.field !== 'ignore').map((c) => {
+        const opt = BANK_FIELD_OPTIONS.find((o) => o.value === c.field);
+        return `第${c.position + 1}列→${opt?.label || c.field}`;
+      }).join('，');
+    } catch { return mapping; }
+  };
+
   const currencyColumns: Column<Currency>[] = [
     { key: 'code', title: '代码' },
     { key: 'name', title: '名称' },
@@ -315,6 +423,17 @@ export function Settings() {
     )},
     { key: 'actions', title: '操作', render: (r) => (
       <Button variant="secondary" onClick={() => handleDeleteFormat(r.id)}>🗑 删除</Button>
+    )},
+  ];
+
+  const bankFormatColumns_: Column<BankFormat>[] = [
+    { key: 'name', title: '格式名称' },
+    { key: 'keywords', title: '检测关键词' },
+    { key: 'column_mapping', title: '列映射', render: (r) => (
+      <span style={{ fontSize: 'var(--font-size-xs)' }}>{bankFormatColumnMapPreview(r.column_mapping)}</span>
+    )},
+    { key: 'actions', title: '操作', render: (r) => (
+      <Button variant="secondary" onClick={() => handleDeleteBankFormat(r.id)}>🗑 删除</Button>
     )},
   ];
 
@@ -367,6 +486,28 @@ export function Settings() {
             <Button variant="primary" onClick={handleOpenFormatModal}>＋ 添加自定义格式</Button>
             {formatMsg && (
               <span style={{ fontSize: 'var(--font-size-sm)', color: formatMsg.startsWith('✅') ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatMsg}</span>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* Bank statement format card */}
+      <div style={{ marginTop: 'var(--spacing-lg)' }}>
+        <Card title="🏦 自定义银行日结单格式">
+          <div style={{ marginBottom: 'var(--spacing-md)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+            在此添加你的银行日结单格式配置。每个格式定义名称、识别关键词和各列的字段映射。添加后导入银行日结单时可选择使用。
+          </div>
+          {bankFormats.length > 0 ? (
+            <div style={{ marginBottom: 'var(--spacing-md)' }}>
+              <Table columns={bankFormatColumns_} data={bankFormats} rowKey={(r) => r.id} />
+            </div>
+          ) : (
+            <div className="card-placeholder" style={{ marginBottom: 'var(--spacing-md)' }}>暂无自定义格式</div>
+          )}
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
+            <Button variant="primary" onClick={handleOpenBankFormatModal}>＋ 添加自定义格式</Button>
+            {bankFormatMsg && (
+              <span style={{ fontSize: 'var(--font-size-sm)', color: bankFormatMsg.startsWith('✅') ? 'var(--color-success)' : 'var(--color-danger)' }}>{bankFormatMsg}</span>
             )}
           </div>
         </Card>
@@ -482,6 +623,89 @@ export function Settings() {
         <AlertConfigCard />
       </div>
 
+      {/* ── Danger Zone ── */}
+      <div style={{ marginTop: 'var(--spacing-xl)' }}>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}>
+            <span style={{ fontSize: '1.25rem' }}>⚠️</span>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 'var(--font-size-lg)', color: 'var(--color-danger)' }}>危险操作</h3>
+              <p style={{ margin: '4px 0 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                清空所有数据将删除你的全部账户、持仓、交易记录、记账流水、预算、人情债等数据。
+                AI 配置和系统分类不会被清除。此操作不可撤销！
+              </p>
+            </div>
+          </div>
+          <Button variant="danger" onClick={() => { setShowClearModal(true); setClearConfirmText(''); setClearResult(null); }}>
+            🗑 清空所有数据
+          </Button>
+        </Card>
+      </div>
+
+      {/* ── Clear Data Confirmation Modal ── */}
+      <Modal open={showClearModal} title="⚠️ 确认清空所有数据" onClose={() => setShowClearModal(false)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+          <div style={{
+            padding: 'var(--spacing-md)',
+            background: '#FFF2F0',
+            border: '1px solid #FFCCC7',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--font-size-sm)',
+            color: 'var(--color-danger)',
+          }}>
+            <strong>此操作不可撤销！</strong><br/>
+            所有账户、持仓、交易记录、记账流水、预算、人情债将被永久删除。<br/>
+            AI 配置和系统分类不会被清除。
+          </div>
+          <div>
+            <label className="form-label">请输入「确认清空」以继续：</label>
+            <input
+              className="form-input"
+              value={clearConfirmText}
+              onChange={(e) => setClearConfirmText(e.target.value)}
+              placeholder="确认清空"
+              autoFocus
+            />
+          </div>
+          {clearResult && (
+            <div style={{
+              padding: 'var(--spacing-sm)',
+              background: clearResult.startsWith('✅') ? '#F6FFED' : '#FFF2F0',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 'var(--font-size-sm)',
+            }}>
+              {clearResult}
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)' }}>
+            <Button variant="secondary" onClick={() => setShowClearModal(false)}>取消</Button>
+            <Button
+              variant="danger"
+              disabled={clearConfirmText !== '确认清空' || clearLoading}
+              onClick={async () => {
+                setClearLoading(true);
+                setClearResult(null);
+                try {
+                  const r = await invoke<{ success: boolean; deletedCount: number }>('data:clearAll');
+                  setClearResult(`✅ 已清空 ${r.deletedCount} 条数据，应用已恢复为全新状态`);
+                  setClearConfirmText('');
+                  // Reload data on page
+                  loadCurrencies();
+                  loadCustomFormats();
+                  loadBudget();
+                  setTimeout(() => setShowClearModal(false), 2000);
+                } catch (err: any) {
+                  setClearResult(`❌ 清空失败：${err.message}`);
+                }
+                setClearLoading(false);
+              }}
+            >
+              {clearLoading ? '⏳ 清空中...' : '确认清空'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* ── Custom format config Modal ── */}
       <Modal open={showFormatModal} title="📐 添加自定义日结单格式" onClose={() => setShowFormatModal(false)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', minWidth: 500 }}>
@@ -552,6 +776,81 @@ export function Settings() {
               <Button variant="secondary" onClick={() => setShowFormatModal(false)}>取消</Button>
               <Button variant="primary" onClick={handleSaveFormat} disabled={formatSaving}>
                 {formatSaving ? '⏳ 保存中...' : '💾 保存格式'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+      {/* ── Bank format config Modal ── */}
+      <Modal open={showBankFormatModal} title="🏦 添加自定义银行日结单格式" onClose={() => setShowBankFormatModal(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', minWidth: 500 }}>
+            {/* Name + keywords */}
+            <div>
+              <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, display: 'block', marginBottom: 4 }}>银行 / 格式名称</label>
+              <input value={bankFormatName} onChange={(e) => setBankFormatName(e.target.value)}
+                placeholder="例如：中国银行" style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, display: 'block', marginBottom: 4 }}>检测关键词（逗号分隔）</label>
+              <input value={bankFormatKeywords} onChange={(e) => setBankFormatKeywords(e.target.value)}
+                placeholder="例如：中国银行, 交易日期" style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)' }} />
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 4 }}>
+                软件通过关键词自动识别银行日结单格式
+              </div>
+            </div>
+
+            {/* Has header toggle */}
+            <label style={{ fontSize: 'var(--font-size-sm)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={bankFormatHasHeader} onChange={(e) => setBankFormatHasHeader(e.target.checked)} />
+              日结单第一行是表头（列名）
+            </label>
+
+            {/* Column mapping */}
+            <div>
+              <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, display: 'block', marginBottom: 8 }}>
+                列映射（按 Excel/CSV 中从左到右的顺序填写）
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {bankFormatColumns.map((col, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', minWidth: 50 }}>第{i + 1}列</span>
+                    <select
+                      value={col.field}
+                      onChange={(e) => {
+                        const next = [...bankFormatColumns];
+                        next[i] = { field: e.target.value };
+                        setBankFormatColumns(next);
+                      }}
+                      style={{ flex: 1, padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)', background: 'var(--color-bg-primary)' }}
+                    >
+                      <option value="">— 请选择 —</option>
+                      {BANK_FIELD_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                    {bankFormatColumns.length > 1 && (
+                      <button onClick={() => handleRemoveBankColumn(i)}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-danger)', fontSize: 'var(--font-size-xs)' }}>✕</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button onClick={handleAddBankColumn}
+                style={{ marginTop: 8, border: '1px dashed var(--color-border)', background: 'none', padding: '6px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                ＋ 添加一列
+              </button>
+            </div>
+
+            {bankFormatMsg && (
+              <div style={{ padding: 'var(--spacing-sm)', background: bankFormatMsg.startsWith('✅') ? '#F6FFED' : '#FFF2F0', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)' }}>
+                {bankFormatMsg}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 'var(--spacing-sm)', justifyContent: 'flex-end' }}>
+              <Button variant="secondary" onClick={() => setShowBankFormatModal(false)}>取消</Button>
+              <Button variant="primary" onClick={handleSaveBankFormat} disabled={bankFormatSaving}>
+                {bankFormatSaving ? '⏳ 保存中...' : '💾 保存格式'}
               </Button>
             </div>
           </div>

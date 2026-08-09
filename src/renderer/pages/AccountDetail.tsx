@@ -9,14 +9,24 @@ import { Badge } from '../components/ui/Badge';
 import { invoke } from '../hooks/useIpc';
 import { ACCOUNT_TYPE_LABELS } from '@shared/constants/labels';
 
+interface AccountBalance {
+  id: number; account_id: number; currency: string; balance: number;
+}
+
 interface Account {
   id: number; name: string; type: string; currency: string;
   balance: number; bank_name: string | null; card_number: string | null;
+  balances: AccountBalance[];
 }
 
 interface AccountTransaction {
   id: number; account_id: number; type: 'deposit' | 'withdraw';
   amount: number; currency: string; date: string; notes: string | null;
+}
+
+interface ParsedBankRecord {
+  date: string; amount: number; type: 'deposit' | 'withdraw';
+  description: string; currency: string; balance?: number;
 }
 
 export function AccountDetail() {
@@ -29,6 +39,16 @@ export function AccountDetail() {
   const [txType, setTxType] = useState<'deposit' | 'withdraw'>('deposit');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // ── Bank statement import state ──
+  const [showBankImport, setShowBankImport] = useState(false);
+  const [bankCsvText, setBankCsvText] = useState('');
+  const [parsedBankRecords, setParsedBankRecords] = useState<ParsedBankRecord[] | null>(null);
+  const [bankParseFormat, setBankParseFormat] = useState('');
+  const [bankImportStatus, setBankImportStatus] = useState('');
+  const [bankImporting, setBankImporting] = useState(false);
+  const [bankFormats, setBankFormats] = useState<string[]>([]);
+  const [selectedBankFormat, setSelectedBankFormat] = useState('');
 
   const accountId = parseInt(id || '0');
 
@@ -45,6 +65,13 @@ export function AccountDetail() {
   }, [accountId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load bank formats when import modal opens
+  useEffect(() => {
+    if (showBankImport) {
+      invoke<string[]>('bank:listFormats').then((f) => setBankFormats(f || []));
+    }
+  }, [showBankImport]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +97,89 @@ export function AccountDetail() {
       setError(err.message || '操作失败');
     }
     setSaving(false);
+  };
+
+  // ── Bank statement import handlers ──
+  const doBankParse = async (text: string, format: string) => {
+    if (!text.trim()) return;
+    setBankImportStatus(format ? `正在使用「${format}」格式解析...` : '正在识别银行日结单格式...');
+    setParsedBankRecords(null);
+    try {
+      const formatParam = format || undefined;
+      const result = await invoke<{
+        success: boolean; format: string; records: ParsedBankRecord[]; errors: string[];
+      }>('bank:parseStatement', text, formatParam);
+      if (result.success && result.records.length > 0) {
+        setBankParseFormat(result.format);
+        setParsedBankRecords(result.records);
+        setBankImportStatus(`✅ 识别为「${result.format}」，共 ${result.records.length} 条记录，请预览确认后导入`);
+      } else {
+        setBankImportStatus(`❌ 无法识别格式：${(result.errors || ['未知格式']).join('，')}`);
+      }
+    } catch (err: any) {
+      setBankImportStatus(`❌ 解析失败：${err.message}`);
+    }
+  };
+
+  const handleBankParse = async () => {
+    await doBankParse(bankCsvText, selectedBankFormat);
+  };
+
+  const handleBankFormatChange = async (format: string) => {
+    setSelectedBankFormat(format);
+    if (bankCsvText.trim()) {
+      await doBankParse(bankCsvText, format);
+    }
+  };
+
+  const handleBankExcelUpload = async () => {
+    setBankImportStatus('正在打开文件选择器...');
+    setParsedBankRecords(null);
+    try {
+      const formatParam = selectedBankFormat || undefined;
+      const result = await invoke<{
+        canceled: boolean;
+        fileName?: string;
+        success?: boolean;
+        format?: string;
+        records?: ParsedBankRecord[];
+        errors?: string[];
+      }>('bank:importExcel', formatParam);
+
+      if (result.canceled) { setBankImportStatus(''); return; }
+
+      if (result.success && result.records && result.records.length > 0) {
+        setBankParseFormat(`${result.format} · ${result.fileName}`);
+        setParsedBankRecords(result.records);
+        setBankImportStatus(`✅ 识别为「${result.format}」，共 ${result.records.length} 条记录，请预览确认后导入`);
+      } else {
+        setBankImportStatus(`❌ 无法识别格式：${(result.errors || ['未知格式']).join('，')}`);
+      }
+    } catch (err: any) {
+      setBankImportStatus(`❌ 读取文件失败：${err.message}`);
+    }
+  };
+
+  const handleBankImport = async () => {
+    if (!parsedBankRecords || parsedBankRecords.length === 0) return;
+    setBankImporting(true);
+    setBankImportStatus('正在导入...');
+    try {
+      const result = await invoke<{ imported: number; errors: string[] }>(
+        'bank:importParsed', parsedBankRecords, accountId
+      );
+      let msg = `✅ 成功导入 ${result.imported} 条存取记录`;
+      if (result.errors.length > 0) {
+        msg += `（${result.errors.length} 条失败：${result.errors.slice(0, 3).join('；')}）`;
+      }
+      setBankImportStatus(msg);
+      setBankCsvText('');
+      setParsedBankRecords(null);
+      load();
+    } catch (err: any) {
+      setBankImportStatus(`❌ 导入失败：${err.message}`);
+    }
+    setBankImporting(false);
   };
 
   const columns: Column<AccountTransaction>[] = [
@@ -134,6 +244,11 @@ export function AccountDetail() {
           <Button variant="secondary" onClick={() => { setTxType('withdraw'); setShowForm(true); }}>
             📤 取出
           </Button>
+          <Button variant="secondary" onClick={() => {
+            setParsedBankRecords(null); setBankCsvText(''); setBankImportStatus(''); setShowBankImport(true);
+          }}>
+            📥 导入银行日结单
+          </Button>
         </div>
       </div>
 
@@ -156,6 +271,32 @@ export function AccountDetail() {
           </div>
         </div>
       </div>
+
+      {/* Multi-currency balances */}
+      {account.balances && account.balances.length > 0 && (
+        <Card title="💱 多币种余额">
+          <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap' }}>
+            {account.balances.map(b => (
+              <div key={b.currency} style={{
+                flex: '1 1 180px',
+                background: 'var(--color-bg, #fafbfc)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--spacing-md)',
+                border: '1px solid var(--color-border-light, #f0f0f0)',
+                textAlign: 'center',
+              }}>
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 4 }}>
+                  {b.currency}
+                </div>
+                <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700 }}>
+                  {b.currency === 'CNY' ? '¥' : b.currency === 'HKD' ? 'HK$' : '$'}
+                  {b.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Transaction History */}
       <Card title="📋 存取记录">
@@ -255,6 +396,147 @@ export function AccountDetail() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Bank Statement Import Modal */}
+      <Modal open={showBankImport} title="📥 导入银行日结单" onClose={() => setShowBankImport(false)} width="700px">
+        <div>
+          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-md)' }}>
+            粘贴 CSV 日结单，或直接上传银行 Excel 文件。自动检测格式或手动选择银行格式。
+          </p>
+
+          {/* Bank format selector */}
+          <div style={{ marginBottom: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
+            <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, whiteSpace: 'nowrap' }}>银行格式：</label>
+            <select
+              value={selectedBankFormat}
+              onChange={(e) => handleBankFormatChange(e.target.value)}
+              style={{
+                flex: 1, padding: '6px 12px', borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)',
+                background: 'var(--color-bg-primary)', cursor: 'pointer',
+              }}
+            >
+              <option value="">🔍 自动检测</option>
+              {bankFormats.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Step 1: Paste raw text */}
+          {!parsedBankRecords && (
+            <>
+              <textarea
+                className="form-input"
+                value={bankCsvText}
+                onChange={(e) => setBankCsvText(e.target.value)}
+                placeholder={`粘贴银行日结单，支持多种格式：
+
+标准 CSV 格式：
+2026-08-05, 5000.00, 存入, 工资, CNY
+2026-08-06, 200.00, 取出, 餐饮, CNY
+
+常见银行格式（自动检测）：
+交易日期, 摘要, 收支方向, 金额, 币种
+2026-08-05, 工资入账, 收入, 5000.00, CNY
+
+或收支分开格式：
+日期, 摘要, 收入金额, 支出金额, 余额, 币种
+2026-08-05, 工资, 5000.00, 0.00, 5000.00, CNY`}
+                rows={10}
+                style={{ height: 'auto', fontFamily: 'var(--font-family-number)', fontSize: 'var(--font-size-xs)' }}
+              />
+              {bankImportStatus && (
+                <div style={{
+                  marginTop: 'var(--spacing-sm)', padding: 'var(--spacing-sm) var(--spacing-md)',
+                  background: bankImportStatus.startsWith('✅') ? '#F6FFED' : bankImportStatus.startsWith('❌') ? '#FFF2F0' : bankImportStatus.startsWith('正在') ? '#E6F7FF' : '#FFFBE6',
+                  borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)',
+                }}>
+                  {bankImportStatus}
+                </div>
+              )}
+              <div className="form-actions" style={{ justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+                  <Button variant="secondary" onClick={() => setShowBankImport(false)}>取消</Button>
+                  <Button variant="secondary" onClick={handleBankExcelUpload}>
+                    📂 上传 Excel
+                  </Button>
+                </div>
+                <Button variant="primary" onClick={handleBankParse} disabled={!bankCsvText.trim()}>
+                  🔍 识别并解析
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* Step 2: Preview parsed records */}
+          {parsedBankRecords && (
+            <>
+              <div style={{
+                padding: 'var(--spacing-sm) var(--spacing-md)',
+                background: '#F6FFED', borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)',
+              }}>
+                已识别格式：<b>{bankParseFormat}</b>，共 <b>{parsedBankRecords.length}</b> 条记录
+              </div>
+
+              <div style={{ maxHeight: '300px', overflow: 'auto', marginBottom: 'var(--spacing-md)' }}>
+                <table style={{ width: '100%', fontSize: 'var(--font-size-xs)', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--color-bg-secondary)', position: 'sticky', top: 0 }}>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>日期</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>摘要</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '1px solid var(--color-border)' }}>方向</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--color-border)' }}>金额</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '1px solid var(--color-border)' }}>币种</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedBankRecords.map((r, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <td style={{ padding: '6px 8px' }}>{r.date}</td>
+                        <td style={{ padding: '6px 8px' }}>{r.description || '—'}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                          <span style={{
+                            color: r.type === 'deposit' ? 'var(--color-success)' : 'var(--color-danger)',
+                            fontWeight: 500,
+                          }}>
+                            {r.type === 'deposit' ? '📥 存入' : '📤 取出'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-family-number)' }}>
+                          {r.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.currency}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {bankImportStatus && (
+                <div style={{
+                  marginTop: 'var(--spacing-sm)', marginBottom: 'var(--spacing-sm)',
+                  padding: 'var(--spacing-sm) var(--spacing-md)',
+                  background: bankImportStatus.startsWith('✅') ? '#F6FFED' : bankImportStatus.startsWith('❌') ? '#FFF2F0' : '#E6F7FF',
+                  borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)',
+                }}>
+                  {bankImportStatus}
+                </div>
+              )}
+
+              <div className="form-actions">
+                <Button variant="secondary" onClick={() => { setParsedBankRecords(null); setBankImportStatus(''); }}>
+                  ← 返回修改
+                </Button>
+                <Button variant="primary" onClick={handleBankImport} disabled={bankImporting}>
+                  {bankImporting ? '导入中...' : `✅ 确认导入 ${parsedBankRecords.length} 条记录`}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );
