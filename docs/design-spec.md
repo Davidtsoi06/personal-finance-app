@@ -204,6 +204,15 @@
 - 四列网格布局（`grid-template-columns: repeat(4, 1fr)`）
 - 响应式：窄屏自动变两列
 
+### 滚动条
+
+- **宽度**：14px（宽轨道，便于拖拽）
+- **轨道**：`--color-bg-secondary` 背景 + `--color-border` 细边框
+- **滑块**：`#B0B8C1` 深灰，hover 时 `#889098`，active 时 `#667080`，圆角 7px，最小高度 40px
+- **箭头按钮**：上下各一个（`single-button`），18px 高，内联 SVG ▲▼ 三角图标
+- **双按钮**：显式隐藏（`double-button { display: none }`），确保简洁
+- **设计参考**：VS Code 滚动条风格
+
 ---
 
 ## 页面布局
