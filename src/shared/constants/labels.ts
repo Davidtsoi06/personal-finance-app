@@ -11,6 +11,15 @@ export const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   online_pay: '📱 在线支付',
 };
 
+/** Account asset_type (asset class) → display label */
+export const ACCOUNT_ASSET_TYPE_LABELS: Record<string, string> = {
+  bank: '🏦 银行',
+  cash: '💵 现金',
+  insurance: '🛡️ 保险',
+  investment: '📈 投资',
+  custom: '✏️ 自定义',
+};
+
 /** Asset type → display label */
 export const ASSET_TYPE_LABELS: Record<string, string> = {
   stock: '股票',

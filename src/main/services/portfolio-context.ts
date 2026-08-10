@@ -4,6 +4,118 @@
  */
 import { getDatabase } from '../database/index';
 
+/** Generate a focused context for daily AI investment summary. */
+export function generateDailySummaryContext(date: string): string {
+  const db = getDatabase();
+  const parts: string[] = [];
+
+  parts.push(`## 📅 ${date} 投资日报数据\n`);
+
+  // ── 1. Today's transactions ──
+  try {
+    const txns = db.prepare(`
+      SELECT t.date, a.name, a.code, a.type as asset_type, t.type, t.quantity, t.price, t.fee, t.total_amount, t.currency
+      FROM transactions t
+      JOIN assets a ON t.asset_id = a.id
+      WHERE t.date = ?
+      ORDER BY t.id
+    `).all(date) as any[];
+
+    if (txns.length > 0) {
+      parts.push('### 今日交易');
+      parts.push('| 名称 | 代码 | 方向 | 数量 | 价格 | 手续费 | 总金额 |');
+      parts.push('|------|------|------|------|------|------|------|');
+      const tradeLabels: Record<string, string> = { buy: '买入', sell: '卖出', split: '分拆', dividend: '分红' };
+      for (const t of txns) {
+        const dir = tradeLabels[t.type] || t.type;
+        parts.push(
+          `| ${t.name} | ${t.code} | ${dir} | ${t.quantity} | ¥${(t.price || 0).toFixed(2)} | ¥${(t.fee || 0).toFixed(2)} | ¥${(t.total_amount || 0).toLocaleString()} |`
+        );
+      }
+      parts.push('');
+    } else {
+      parts.push('### 今日交易');
+      parts.push('今日无交易记录。');
+      parts.push('');
+    }
+  } catch { /* ignore */ }
+
+  // ── 2. Current holdings snapshot ──
+  try {
+    const assets = db.prepare(`
+      SELECT a.name, a.code, a.type, a.market, a.currency, a.quantity,
+             a.cost_price, a.current_price, a.market_value, a.total_cost,
+             a.profit_loss, a.profit_loss_pct
+      FROM assets a
+      WHERE a.quantity > 0
+      ORDER BY a.market_value DESC
+      LIMIT 30
+    `).all() as any[];
+
+    if (assets.length > 0) {
+      parts.push('### 当前持仓');
+      parts.push('| 名称 | 代码 | 数量 | 成本价 | 当前价 | 市值 | 盈亏 | 收益率 |');
+      parts.push('|------|------|------|--------|--------|------|------|--------|');
+      for (const a of assets) {
+        const sign = (a.profit_loss || 0) >= 0 ? '+' : '';
+        parts.push(
+          `| ${a.name} | ${a.code} | ${a.quantity} | ¥${(a.cost_price || 0).toFixed(2)} | ¥${(a.current_price || 0).toFixed(2)} | ¥${(a.market_value || 0).toLocaleString()} | ${sign}¥${(a.profit_loss || 0).toLocaleString()} | ${sign}${(a.profit_loss_pct || 0).toFixed(2)}% |`
+        );
+      }
+      parts.push('');
+    }
+  } catch { /* ignore */ }
+
+  // ── 3. Net worth comparison (today vs yesterday) ──
+  try {
+    const rows = db.prepare(`
+      SELECT date, total_cash, total_investments, net_worth
+      FROM net_worth_history
+      WHERE date <= ?
+      ORDER BY date DESC
+      LIMIT 2
+    `).all(date) as any[];
+
+    if (rows.length >= 2) {
+      const today = rows[0];
+      const yesterday = rows[1];
+      const change = today.net_worth - yesterday.net_worth;
+      const changePct = yesterday.net_worth > 0 ? (change / yesterday.net_worth * 100) : 0;
+      parts.push('### 净资产变化');
+      parts.push(`- 今日净资产：¥ ${(today.net_worth || 0).toLocaleString()}`);
+      parts.push(`- 昨日净资产：¥ ${(yesterday.net_worth || 0).toLocaleString()}`);
+      parts.push(`- 变动：${change >= 0 ? '+' : ''}¥ ${change.toLocaleString()} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`);
+      parts.push(`- 现金：¥ ${(today.total_cash || 0).toLocaleString()}`);
+      parts.push(`- 投资市值：¥ ${(today.total_investments || 0).toLocaleString()}`);
+      parts.push('');
+    }
+  } catch { /* ignore */ }
+
+  // ── 4. Monthly income/expense ──
+  try {
+    const month = date.slice(0, 7);
+    const summary = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expense
+      FROM ledgers
+      WHERE strftime('%Y-%m', date) = ?
+    `).get(month) as any;
+    if (summary) {
+      parts.push('### 本月收支概况');
+      parts.push(`- 本月收入：¥ ${(summary.income || 0).toLocaleString()}`);
+      parts.push(`- 本月支出：¥ ${(summary.expense || 0).toLocaleString()}`);
+      parts.push(`- 本月结余：¥ ${((summary.income || 0) - (summary.expense || 0)).toLocaleString()}`);
+      parts.push('');
+    }
+  } catch { /* ignore */ }
+
+  parts.push('---');
+  parts.push('*请基于以上真实数据，生成一份专业、简洁的当日投资日报（300-500字）。*');
+
+  return parts.join('\n');
+}
+
 export function gatherPortfolioContext(): string {
   const db = getDatabase();
   const parts: string[] = [];

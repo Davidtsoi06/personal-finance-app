@@ -6,6 +6,50 @@ import { fetchAllPrices } from './price-fetcher';
 import { getDatabase } from '../database';
 
 let intervals: ReturnType<typeof setInterval>[] = [];
+let dailySummaryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/** Schedule the daily AI summary at 15:30, then recur every 24h. */
+function scheduleDailyAISummary(): void {
+  if (dailySummaryTimeout) clearTimeout(dailySummaryTimeout);
+
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(15, 33, 0, 0); // 15:33 to spread load off the :30 mark
+
+  if (now >= target) {
+    target.setDate(target.getDate() + 1);
+  }
+
+  const delayMs = target.getTime() - now.getTime();
+  console.log(`[Scheduler] AI daily summary scheduled in ${Math.round(delayMs / 60000)} minutes (at ${target.toLocaleString()})`);
+
+  dailySummaryTimeout = setTimeout(async () => {
+    try {
+      const { generateInvestmentSummary } = require('./ai-service');
+      const { saveDailySummary } = require('../database/services/settings-service');
+      const date = new Date().toISOString().slice(0, 10);
+      console.log(`[Scheduler] 开始生成 ${date} 投资日报...`);
+
+      const result = await generateInvestmentSummary(date);
+      saveDailySummary(date, result.content);
+      console.log(`[Scheduler] 投资日报已保存 (${result.content.length} 字符)`);
+
+      // Show native notification
+      try {
+        const { Notification } = require('electron');
+        const n = new Notification({
+          title: '📊 今日投资日报已生成',
+          body: `收盘总结已就绪，打开 AI 助手查看详细分析。`,
+        });
+        n.show();
+      } catch { /* notification may fail in some environments */ }
+    } catch (err: any) {
+      console.error(`[Scheduler] 投资日报生成失败: ${err.message}`);
+    }
+    // Schedule next day
+    scheduleDailyAISummary();
+  }, delayMs);
+}
 
 /** Start periodic data updates */
 export function startScheduler(): void {
@@ -32,12 +76,19 @@ export function startScheduler(): void {
       });
     }, 30 * 60 * 1000)
   );
+
+  // Schedule daily AI investment summary at 15:30 (market close)
+  scheduleDailyAISummary();
 }
 
 /** Stop all scheduled updates */
 export function stopScheduler(): void {
   intervals.forEach(clearInterval);
   intervals = [];
+  if (dailySummaryTimeout) {
+    clearTimeout(dailySummaryTimeout);
+    dailySummaryTimeout = null;
+  }
 }
 
 /** Run a manual full update (exchange rates + all prices) */

@@ -1,8 +1,9 @@
 /**
  * Account transaction service — deposit/withdraw records for bank/cash accounts.
- * Each transaction adjusts the linked account balance automatically.
+ * Each transaction adjusts both the accounts.balance cache AND account_balances.
  */
 import { getDatabase } from '../index';
+import { updateAccountBalance } from './account-service';
 
 export interface AccountTransactionRow {
   id: number;
@@ -28,7 +29,7 @@ export function getAccountTransaction(id: number): AccountTransactionRow | undef
   return db.prepare('SELECT * FROM account_transactions WHERE id = ?').get(id) as AccountTransactionRow | undefined;
 }
 
-/** Create a deposit or withdraw record, adjusting account balance */
+/** Create a deposit or withdraw record, adjusting account balance across both tables */
 export function createAccountTransaction(data: {
   account_id: number;
   type: 'deposit' | 'withdraw';
@@ -38,6 +39,7 @@ export function createAccountTransaction(data: {
   notes?: string;
 }): AccountTransactionRow {
   const db = getDatabase();
+  const currency = data.currency || 'CNY';
 
   const stmt = db.prepare(`
     INSERT INTO account_transactions (account_id, type, amount, currency, date, notes)
@@ -47,15 +49,20 @@ export function createAccountTransaction(data: {
     account_id: data.account_id,
     type: data.type,
     amount: data.amount,
-    currency: data.currency || 'CNY',
+    currency,
     date: data.date || new Date().toISOString().slice(0, 10),
     notes: data.notes || null,
   });
 
   // Adjust account balance: deposit adds, withdraw subtracts
   const sign = data.type === 'deposit' ? 1 : -1;
+  const delta = sign * data.amount;
+
   db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
-    .run(sign * data.amount, data.account_id);
+    .run(delta, data.account_id);
+
+  // Also sync multi-currency balances
+  updateAccountBalance(data.account_id, currency, delta);
 
   return getAccountTransaction(result.lastInsertRowid as number) as AccountTransactionRow;
 }
@@ -67,8 +74,13 @@ export function deleteAccountTransaction(id: number): boolean {
 
   // Reverse the balance adjustment
   const sign = existing.type === 'deposit' ? -1 : 1;
+  const reversed = sign * existing.amount;
+
   db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
-    .run(sign * existing.amount, existing.account_id);
+    .run(reversed, existing.account_id);
+
+  // Also reverse multi-currency balances
+  updateAccountBalance(existing.account_id, existing.currency, reversed);
 
   const result = db.prepare('DELETE FROM account_transactions WHERE id = ?').run(id);
   return result.changes > 0;

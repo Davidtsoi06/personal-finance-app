@@ -76,3 +76,16 @@ export function deleteTransaction(id: number): boolean {
   const result = db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
   return result.changes > 0;
 }
+
+/** Get all today's transactions with asset names. */
+export function getTodayTransactions(): (TransactionRow & { assetName: string })[] {
+  const db = getDatabase();
+  const today = new Date().toISOString().slice(0, 10);
+  return db.prepare(`
+    SELECT t.*, a.name as assetName
+    FROM transactions t
+    JOIN assets a ON t.asset_id = a.id
+    WHERE t.date = ?
+    ORDER BY t.created_at DESC
+  `).all(today) as (TransactionRow & { assetName: string })[];
+}

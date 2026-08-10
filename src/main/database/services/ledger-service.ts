@@ -2,6 +2,7 @@
  * Ledger service — CRUD for daily income/expense records.
  */
 import { getDatabase } from '../index';
+import { updateAccountBalance } from './account-service';
 
 export interface LedgerRow {
   id: number;
@@ -69,6 +70,7 @@ export function createLedger(data: {
   tags?: string;
 }): LedgerRow {
   const db = getDatabase();
+  const currency = data.currency || 'CNY';
   const stmt = db.prepare(`
     INSERT INTO ledgers (type, amount, currency, category_id, subcategory_id, account_id, date, description, tags)
     VALUES (@type, @amount, @currency, @category_id, @subcategory_id, @account_id, @date, @description, @tags)
@@ -76,7 +78,7 @@ export function createLedger(data: {
   const result = stmt.run({
     type: data.type,
     amount: data.amount,
-    currency: data.currency || 'CNY',
+    currency,
     category_id: data.category_id,
     subcategory_id: data.subcategory_id || null,
     account_id: data.account_id || null,
@@ -85,11 +87,13 @@ export function createLedger(data: {
     tags: data.tags || null,
   });
 
-  // Update account balance
+  // Update account balance — both accounts.balance cache AND account_balances
   if (data.account_id) {
     const sign = data.type === 'income' ? 1 : -1;
-    db.prepare('UPDATE accounts SET balance = balance + ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run(sign * data.amount, data.account_id);
+    const delta = sign * data.amount;
+    db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
+      .run(delta, data.account_id);
+    updateAccountBalance(data.account_id, currency, delta);
   }
 
   return getLedger(result.lastInsertRowid as number) as LedgerRow;
@@ -103,8 +107,10 @@ export function updateLedger(id: number, data: Partial<LedgerRow>): LedgerRow | 
   // Revert old account balance
   if (existing.account_id) {
     const oldSign = existing.type === 'income' ? 1 : -1;
-    db.prepare('UPDATE accounts SET balance = balance - ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run(oldSign * existing.amount, existing.account_id);
+    const oldDelta = oldSign * existing.amount;
+    db.prepare("UPDATE accounts SET balance = balance - ?, updated_at = datetime('now') WHERE id = ?")
+      .run(oldDelta, existing.account_id);
+    updateAccountBalance(existing.account_id, existing.currency || 'CNY', -oldDelta);
   }
 
   const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
@@ -120,8 +126,10 @@ export function updateLedger(id: number, data: Partial<LedgerRow>): LedgerRow | 
   // Apply new account balance
   if (merged.account_id) {
     const newSign = merged.type === 'income' ? 1 : -1;
-    db.prepare('UPDATE accounts SET balance = balance + ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run(newSign * merged.amount, merged.account_id);
+    const newDelta = newSign * merged.amount;
+    db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
+      .run(newDelta, merged.account_id);
+    updateAccountBalance(merged.account_id, (merged.currency as string) || 'CNY', newDelta);
   }
 
   return getLedger(id);
@@ -135,8 +143,10 @@ export function deleteLedger(id: number): boolean {
   // Revert account balance
   if (existing.account_id) {
     const sign = existing.type === 'income' ? 1 : -1;
-    db.prepare('UPDATE accounts SET balance = balance - ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run(sign * existing.amount, existing.account_id);
+    const delta = sign * existing.amount;
+    db.prepare("UPDATE accounts SET balance = balance - ?, updated_at = datetime('now') WHERE id = ?")
+      .run(delta, existing.account_id);
+    updateAccountBalance(existing.account_id, existing.currency || 'CNY', -delta);
   }
 
   const result = db.prepare('DELETE FROM ledgers WHERE id = ?').run(id);

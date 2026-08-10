@@ -205,6 +205,15 @@ export function registerSettingsIpcHandlers(): void {
   ipcMain.handle('settings:testAiConnection', async (_e, config?: any) => {
     return settingsService.testAiConnection(config);
   });
+  ipcMain.handle('settings:getAppName', () => settingsService.getAppName());
+  ipcMain.handle('settings:setAppName', (_e, name: string) => {
+    settingsService.setAppName(name);
+    // Dynamically update window title
+    const { BrowserWindow } = require('electron');
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) win.setTitle(name.trim() || '个人理财投资软件');
+    return { success: true };
+  });
 
   // ── AI Chat ──
   const aiService = require('../services/ai-service');

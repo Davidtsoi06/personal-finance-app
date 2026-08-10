@@ -9,7 +9,7 @@ import { invoke } from '../hooks/useIpc';
 
 interface InvAccount {
   id: number; name: string; broker: string | null; currency: string;
-  account_number: string | null; notes: string | null;
+  account_number: string | null; funding_account_id?: number | null; notes: string | null;
   assetCount?: number; totalMarketValue?: number; totalProfitLoss?: number;
 }
 
@@ -29,6 +29,7 @@ export function Investments() {
   const [todayTrades, setTodayTrades] = useState<TodayTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
 
   // Edit / Delete state
   const [editingAcc, setEditingAcc] = useState<InvAccount | null>(null);
@@ -55,6 +56,8 @@ export function Investments() {
         })
       );
       setAccounts(enriched);
+      // Load bank accounts for funding dropdown
+      invoke<any[]>('account:list').then((ba) => setBankAccounts((ba || []).filter((a: any) => a.asset_type === 'bank')));
       setLoading(false);
     } catch (err) { console.error(err); setLoading(false); }
   }, []);
@@ -198,37 +201,43 @@ export function Investments() {
               background: 'var(--color-surface)', borderRadius: 'var(--radius-md)',
               padding: 'var(--spacing-lg)', boxShadow: 'var(--shadow-sm)',
               cursor: 'pointer', transition: 'box-shadow 0.2s',
-              position: 'relative',
             }}
             onClick={() => navigate(`/investments/${acc.id}`)}
             onMouseEnter={(e) => (e.currentTarget.style.boxShadow = 'var(--shadow-md)')}
             onMouseLeave={(e) => (e.currentTarget.style.boxShadow = 'var(--shadow-sm)')}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 600, marginBottom: '4px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Header: name + edit/delete buttons */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 600 }}>
                   🏦 {acc.name}
                 </div>
+                <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '4px' }}>
+                  <Button variant="secondary" size="sm" onClick={() => setEditingAcc(acc)}>✏️</Button>
+                  <Button variant="secondary" size="sm" onClick={() => { setDeleteTarget(acc); setDeleteError(''); }}>🗑</Button>
+                </div>
+              </div>
+              {/* Body: broker info + market value */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
                   {acc.broker && `${acc.broker} · `}{acc.currency} {acc.account_number && `· ${acc.account_number}`}
+                  {acc.funding_account_id && (() => {
+                    const bank = bankAccounts.find((b: any) => b.id === acc.funding_account_id);
+                    return bank ? <span style={{ marginLeft: '8px' }}>🏦 {bank.name}</span> : null;
+                  })()}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ marginBottom: '4px' }}>
+                    <Amount value={acc.totalMarketValue || 0} currency={acc.currency} showSign={false} size="lg" />
+                  </div>
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                    {acc.assetCount || 0} 个持仓
+                    <span style={{ marginLeft: '8px', color: (acc.totalProfitLoss || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                      {(acc.totalProfitLoss || 0) >= 0 ? '+' : ''}{((acc.totalProfitLoss || 0)).toLocaleString()} {acc.currency}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ marginBottom: '4px' }}>
-                  <Amount value={acc.totalMarketValue || 0} currency={acc.currency} showSign={false} size="lg" />
-                </div>
-                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-                  {acc.assetCount || 0} 个持仓
-                  <span style={{ marginLeft: '8px', color: (acc.totalProfitLoss || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                    {(acc.totalProfitLoss || 0) >= 0 ? '+' : ''}{((acc.totalProfitLoss || 0)).toLocaleString()} {acc.currency}
-                  </span>
-                </div>
-              </div>
-            </div>
-            {/* Edit / Delete buttons */}
-            <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: '8px', left: '8px', display: 'flex', gap: '4px' }}>
-              <Button variant="secondary" size="sm" onClick={() => setEditingAcc(acc)}>✏️</Button>
-              <Button variant="secondary" size="sm" onClick={() => { setDeleteTarget(acc); setDeleteError(''); }}>🗑</Button>
             </div>
           </div>
         ))}
@@ -258,6 +267,15 @@ export function Investments() {
           <div className="form-group">
             <label className="form-label">账号</label>
             <input className="form-input" name="account_number" placeholder="选填" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">关联银行账户</label>
+            <select className="form-select" name="funding_account_id" defaultValue="">
+              <option value="">无关联</option>
+              {bankAccounts.map((ba: any) => (
+                <option key={ba.id} value={ba.id}>🏦 {ba.name} ({ba.currency})</option>
+              ))}
+            </select>
           </div>
           <div className="form-actions">
             <Button variant="secondary" onClick={() => setShowAdd(false)} type="button">取消</Button>
@@ -291,6 +309,15 @@ export function Investments() {
             <div className="form-group">
               <label className="form-label">账号</label>
               <input className="form-input" name="account_number" defaultValue={editingAcc.account_number || ''} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">关联银行账户</label>
+              <select className="form-select" name="funding_account_id" defaultValue={editingAcc.funding_account_id || ''}>
+                <option value="">无关联</option>
+                {bankAccounts.map((ba: any) => (
+                  <option key={ba.id} value={ba.id}>🏦 {ba.name} ({ba.currency})</option>
+                ))}
+              </select>
             </div>
             <div className="form-group">
               <label className="form-label">备注</label>

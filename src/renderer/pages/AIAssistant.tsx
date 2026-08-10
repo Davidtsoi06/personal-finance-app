@@ -28,6 +28,7 @@ const QUICK_PROMPTS = [
   { icon: '💡', label: '给出优化建议', prompt: '基于我目前的持仓和资产配置，请给出具体的投资组合优化建议。' },
   { icon: '📝', label: '生成本月投资报告', prompt: '请生成本月的投资报告，包括收益表现、盈亏分析、主要变动和市场回顾。' },
   { icon: '🔍', label: '分析消费习惯', prompt: '请分析我本月的收支情况，找出消费模式，并给出预算优化建议。' },
+  { icon: '📋', label: '今日投资日报', prompt: '__DAILY_SUMMARY__' },
 ];
 
 let msgCounter = 0;
@@ -96,6 +97,57 @@ export function AIAssistant() {
 
     setInput('');
     setError('');
+
+    // Handle daily summary special prompt
+    if (msg === '__DAILY_SUMMARY__') {
+      setLoading(true);
+      const today = new Date().toISOString().slice(0, 10);
+      const userMsg: Message = { id: nextId(), role: 'user', content: '📋 生成今日投资日报' };
+      const aiMsg: Message = { id: nextId(), role: 'assistant', content: '', streaming: true };
+      setMessages(prev => [...prev, userMsg, aiMsg]);
+
+      try {
+        const result = await invoke<{ success: boolean; content?: string; error?: string; cached?: boolean }>(
+          'ai:dailySummary'
+        );
+        if (result.success && result.content) {
+          const prefix = result.cached ? '📋 *以下为已缓存的今日投资日报*\n\n' : '📋 *以下为最新生成的今日投资日报*\n\n';
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === 'assistant') {
+              last.content = renderMarkdown(prefix + result.content!);
+              last.streaming = false;
+            }
+            return updated;
+          });
+        } else {
+          setError(result.error || '生成日报失败');
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === 'assistant') {
+              last.content = `❌ ${result.error || '生成失败，请稍后重试'}`;
+              last.streaming = false;
+            }
+            return updated;
+          });
+        }
+      } catch (err: any) {
+        setError(err.message || '未知错误');
+        setMessages(prev => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last && last.role === 'assistant') {
+            last.content = `❌ ${err.message || '请求失败'}`;
+            last.streaming = false;
+          }
+          return updated;
+        });
+      }
+      setLoading(false);
+      return;
+    }
 
     const userMsg: Message = { id: nextId(), role: 'user', content: msg };
     const aiMsg: Message = { id: nextId(), role: 'assistant', content: '', streaming: true };

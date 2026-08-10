@@ -2,6 +2,7 @@
  * Investment account service — brokerage accounts that hold assets.
  */
 import { getDatabase } from '../index';
+import type { TransactionRow } from './transaction-service';
 
 export interface InvestmentAccountRow {
   id: number;
@@ -9,6 +10,7 @@ export interface InvestmentAccountRow {
   broker: string | null;
   currency: string;
   account_number: string | null;
+  funding_account_id: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -29,18 +31,20 @@ export function createInvestmentAccount(data: {
   broker?: string;
   currency?: string;
   account_number?: string;
+  funding_account_id?: number;
   notes?: string;
 }): InvestmentAccountRow {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT INTO investment_accounts (name, broker, currency, account_number, notes)
-    VALUES (@name, @broker, @currency, @account_number, @notes)
+    INSERT INTO investment_accounts (name, broker, currency, account_number, funding_account_id, notes)
+    VALUES (@name, @broker, @currency, @account_number, @funding_account_id, @notes)
   `);
   const result = stmt.run({
     name: data.name,
     broker: data.broker || null,
     currency: data.currency || 'CNY',
     account_number: data.account_number || null,
+    funding_account_id: data.funding_account_id || null,
     notes: data.notes || null,
   });
   return getInvestmentAccount(result.lastInsertRowid as number) as InvestmentAccountRow;
@@ -52,18 +56,34 @@ export function updateInvestmentAccount(id: number, data: Partial<InvestmentAcco
   if (!existing) return undefined;
   const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
   db.prepare(`
-    UPDATE investment_accounts SET name=?, broker=?, currency=?, account_number=?, notes=?, updated_at=?
+    UPDATE investment_accounts SET name=?, broker=?, currency=?, account_number=?, funding_account_id=?, notes=?, updated_at=?
     WHERE id=?
-  `).run(merged.name, merged.broker, merged.currency, merged.account_number, merged.notes, merged.updated_at, id);
+  `).run(merged.name, merged.broker, merged.currency, merged.account_number, merged.funding_account_id, merged.notes, merged.updated_at, id);
   return getInvestmentAccount(id);
 }
 
-export function deleteInvestmentAccount(id: number): boolean {
+export interface DeleteResult {
+  success: boolean;
+  error?: string;
+}
+
+export function deleteInvestmentAccount(id: number): DeleteResult {
   const db = getDatabase();
+  const existing = getInvestmentAccount(id);
+  if (!existing) return { success: false, error: '投资账户不存在' };
+
+  // Check for linked holdings
+  const holdingCount = db.prepare(
+    'SELECT COUNT(*) as count FROM assets WHERE investment_account_id = ?'
+  ).get(id) as { count: number };
+
   // Unlink assets
   db.prepare('UPDATE assets SET investment_account_id = NULL WHERE investment_account_id = ?').run(id);
   const result = db.prepare('DELETE FROM investment_accounts WHERE id = ?').run(id);
-  return result.changes > 0;
+  return {
+    success: result.changes > 0,
+    error: result.changes > 0 ? undefined : '删除失败',
+  };
 }
 
 /** Get assets belonging to an investment account */
@@ -72,6 +92,41 @@ export function getAccountHoldings(investmentAccountId: number) {
   return db.prepare(
     'SELECT * FROM assets WHERE investment_account_id = ? ORDER BY market_value DESC'
   ).all(investmentAccountId);
+}
+
+/** Daily trade stats — buy/sell counts and realized P&L for today. */
+export function getDailyTradeStats(): {
+  buyCount: number;
+  sellCount: number;
+  realizedPnl: number;
+  currency: string;
+} {
+  const db = getDatabase();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const buyRow = db.prepare(
+    "SELECT COUNT(*) as count FROM transactions WHERE type = 'buy' AND date = ?"
+  ).get(today) as { count: number };
+
+  const sells = db.prepare(`
+    SELECT t.*, a.cost_price
+    FROM transactions t
+    JOIN assets a ON t.asset_id = a.id
+    WHERE t.type = 'sell' AND t.date = ?
+  `).all(today) as (TransactionRow & { cost_price: number })[];
+
+  // Realized P&L: total_amount (sell value minus fee) - (cost_price × quantity)
+  let realizedPnl = 0;
+  for (const s of sells) {
+    realizedPnl += s.total_amount - s.cost_price * s.quantity;
+  }
+
+  return {
+    buyCount: buyRow.count,
+    sellCount: sells.length,
+    realizedPnl,
+    currency: 'CNY',
+  };
 }
 
 /** Get summary stats for an investment account */

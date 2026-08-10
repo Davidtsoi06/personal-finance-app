@@ -42,6 +42,8 @@ export function HoldingsDetail() {
   const [importStatus, setImportStatus] = useState('');
   const [importing, setImporting] = useState(false);
   const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
+  const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
+  const [deleteHolding, setDeleteHolding] = useState<Holding | null>(null);
 
   // ── Import broker selection ──
   const [brokerFormats, setBrokerFormats] = useState<string[]>([]);
@@ -162,6 +164,42 @@ export function HoldingsDetail() {
     setImporting(false);
   };
 
+  /** Edit holding — submit updated quantity / cost_price / name / notes */
+  const handleEditHolding = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingHolding) return;
+    const fd = new FormData(e.currentTarget);
+    const quantity = parseFloat(fd.get('quantity') as string);
+    const costPrice = parseFloat(fd.get('cost_price') as string);
+    const data: Record<string, any> = {
+      name: fd.get('name'),
+      notes: fd.get('notes'),
+      quantity,
+      cost_price: costPrice,
+    };
+    // Recalculate derived fields so updateAsset triggers the auto-recalc
+    data.total_cost = quantity * costPrice;
+    try {
+      await invoke('asset:update', editingHolding.id, data);
+      setEditingHolding(null);
+      load();
+    } catch (err: any) {
+      console.error('编辑持仓失败:', err);
+    }
+  };
+
+  /** Delete holding — removes asset + related transactions */
+  const handleDeleteHolding = async () => {
+    if (!deleteHolding) return;
+    try {
+      await invoke('asset:delete', deleteHolding.id);
+      setDeleteHolding(null);
+      load();
+    } catch (err: any) {
+      console.error('删除持仓失败:', err);
+    }
+  };
+
   const totalMV = holdings.reduce((s, h) => s + h.market_value, 0);
   const totalPL = holdings.reduce((s, h) => s + h.profit_loss, 0);
 
@@ -207,6 +245,15 @@ export function HoldingsDetail() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
           <Amount value={r.profit_loss} currency={r.currency} colored />
           <PctAmount value={r.profit_loss_pct} />
+        </div>
+      ),
+    },
+    {
+      key: 'actions', title: '操作', align: 'center',
+      render: (r) => (
+        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
+          <Button variant="secondary" size="sm" onClick={() => setEditingHolding(r)}>✏️</Button>
+          <Button variant="secondary" size="sm" onClick={() => setDeleteHolding(r)}>🗑</Button>
         </div>
       ),
     },
@@ -511,6 +558,87 @@ Date, Symbol, Description, Buy/Sell, Quantity, Price, Commission, Currency
             </>
           )}
         </div>
+      </Modal>
+
+      {/* ── Edit Holding Modal ── */}
+      <Modal
+        open={editingHolding !== null}
+        title={`✏️ 编辑持仓 · ${editingHolding?.name || ''}`}
+        onClose={() => setEditingHolding(null)}
+      >
+        {editingHolding && (
+          <form onSubmit={handleEditHolding}>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">名称</label>
+                <input className="form-input" name="name" defaultValue={editingHolding.name} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">代码（只读）</label>
+                <input className="form-input" value={editingHolding.code} disabled />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">类型</label>
+                <input className="form-input" value={ASSET_TYPE_LABELS[editingHolding.type] || editingHolding.type} disabled />
+              </div>
+              <div className="form-group">
+                <label className="form-label">市场</label>
+                <input className="form-input" value={MARKET_LABELS[editingHolding.market] || editingHolding.market} disabled />
+              </div>
+              <div className="form-group">
+                <label className="form-label">货币</label>
+                <input className="form-input" value={editingHolding.currency} disabled />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">持仓数量</label>
+                <input className="form-input" name="quantity" type="number" step="any" defaultValue={editingHolding.quantity} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">成本价</label>
+                <input className="form-input" name="cost_price" type="number" step="any" defaultValue={editingHolding.cost_price} required />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">备注</label>
+              <input className="form-input" name="notes" defaultValue={editingHolding.notes || ''} />
+            </div>
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setEditingHolding(null)} type="button">取消</Button>
+              <Button variant="primary" type="submit">保存</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* ── Delete Holding Modal ── */}
+      <Modal
+        open={deleteHolding !== null}
+        title="🗑 删除持仓"
+        onClose={() => setDeleteHolding(null)}
+      >
+        {deleteHolding && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+            <p>确认删除持仓「{deleteHolding.name}」({deleteHolding.code}) 吗？</p>
+            <div style={{
+              padding: 'var(--spacing-md)', background: 'var(--color-bg-secondary)',
+              borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)',
+            }}>
+              <div>持仓数量：<b>{deleteHolding.quantity.toLocaleString()}</b></div>
+              <div>当前市值：<b>{deleteHolding.currency} {deleteHolding.market_value.toLocaleString()}</b></div>
+            </div>
+            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+              此操作不可撤销，关联交易记录和价格历史将一并删除。
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)' }}>
+              <Button variant="secondary" onClick={() => setDeleteHolding(null)}>取消</Button>
+              <Button variant="danger" onClick={handleDeleteHolding}>确认删除</Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

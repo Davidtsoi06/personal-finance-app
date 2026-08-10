@@ -88,6 +88,28 @@ export function saveAiConfig(config: AiConfig): void {
   setSetting('ai.model', config.model || '');
 }
 
+// ── Daily Investment Summary ──
+
+export function getDailySummary(date: string): string | null {
+  return getSetting(`daily_summary.${date}`);
+}
+
+export function saveDailySummary(date: string, content: string): void {
+  setSetting(`daily_summary.${date}`, content);
+}
+
+// ── App Name ──
+
+const DEFAULT_APP_NAME = '个人理财投资软件';
+
+export function getAppName(): string {
+  return getSetting('app_name') || DEFAULT_APP_NAME;
+}
+
+export function setAppName(name: string): void {
+  setSetting('app_name', name.trim() || DEFAULT_APP_NAME);
+}
+
 /** Test the AI API connection with the given config. */
 export async function testAiConnection(config?: AiConfig): Promise<{ ok: boolean; error?: string }> {
   const c = config || getAiConfig();

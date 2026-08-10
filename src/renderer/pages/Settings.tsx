@@ -73,6 +73,8 @@ export function Settings() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState<'rates' | 'prices' | 'all' | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [appName, setAppName] = useState('个人理财投资软件');
+  const [appNameStatus, setAppNameStatus] = useState<string | null>(null);
 
   // ── Version / Update state ──
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
@@ -131,6 +133,31 @@ export function Settings() {
   }, []);
 
   useEffect(() => { loadCurrencies(); loadCustomFormats(); loadBankFormats(); }, [loadCurrencies, loadCustomFormats, loadBankFormats]);
+
+  // ── Load app name ──
+  useEffect(() => {
+    invoke<string>('settings:getAppName').then((name) => {
+      if (name) setAppName(name);
+    });
+  }, []);
+
+  const handleSaveAppName = async () => {
+    const input = document.getElementById('appNameInput') as HTMLInputElement;
+    if (!input) return;
+    const name = input.value.trim();
+    if (!name) {
+      setAppNameStatus('❌ 名称不能为空');
+      return;
+    }
+    try {
+      await invoke('settings:setAppName', name);
+      setAppName(name);
+      setAppNameStatus('✅ 应用名称已更新');
+      setTimeout(() => setAppNameStatus(null), 3000);
+    } catch (err: any) {
+      setAppNameStatus(`❌ 保存失败：${err.message}`);
+    }
+  };
 
   // ── Load version info ──
   useEffect(() => {
@@ -445,6 +472,25 @@ export function Settings() {
         <h2 className="page-title">设置</h2>
         <p className="page-subtitle">货币汇率、数据源、数据管理</p>
       </div>
+
+      {/* App name card */}
+      <Card title="🔧 应用名称">
+        <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+            <label className="form-label">软件显示名称</label>
+            <input className="form-input" id="appNameInput" defaultValue={appName} placeholder="个人理财投资软件" />
+          </div>
+          <Button variant="primary" onClick={handleSaveAppName}>保存</Button>
+        </div>
+        <div style={{ marginTop: 'var(--spacing-sm)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+          修改后立即生效。安装包名称在打包时固定，此处仅修改窗口标题和侧边栏显示名称。
+        </div>
+        {appNameStatus && (
+          <div style={{ marginTop: 'var(--spacing-sm)', padding: 'var(--spacing-xs) var(--spacing-md)', background: appNameStatus.startsWith('✅') ? '#F6FFED' : '#FFF2F0', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)' }}>
+            {appNameStatus}
+          </div>
+        )}
+      </Card>
 
       {/* Data source refresh card */}
       <Card title="📡 数据源更新">

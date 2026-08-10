@@ -6,15 +6,17 @@
 |------|------|------|------|
 | 0 | 项目初始化 | 文件夹结构、文档体系 | ✅ 完成 |
 | 1 | 框架搭建 | Electron + React + TypeScript + SQLite 跑通 | ✅ 完成 |
-| 2 | 数据层 | 数据库表创建、CRUD 服务（13 个） | ✅ 完成 |
-| 3 | UI 框架 | 设计令牌、通用组件（8 个）、布局 | ✅ 完成 |
-| 4 | 核心功能 | 仪表盘、账户、投资、记账、报表 | ✅ 完成 |
-| 5 | 数据源接入 | 汇率/价格 API + 定时调度 | ✅ 完成 |
+| 2 | 数据层 | 数据库表创建、CRUD 服务（15 个） | ✅ 完成 |
+| 3 | UI 框架 | 设计令牌、通用组件（7 个）、布局 | ✅ 完成 |
+| 4 | 核心功能 | 仪表盘、账户、投资、记账、报表（10 页面） | ✅ 完成 |
+| 5 | 数据源接入 | 汇率/价格 API + 主备双源架构 + 定时调度 | ✅ 完成 |
 | 6 | AI 助手 | DeepSeek 对话 + 持仓上下文 + 流式响应 | ✅ 完成 |
 | 7 | 智能功能 | 预算管理、涨跌提醒、Windows 通知 | ✅ 完成 |
 | 8 | 数据安全 | Excel 备份恢复、数据归档 | ✅ 完成 |
 | 9 | 自动更新 | electron-updater + GitHub Releases | ✅ 完成 |
-| 10 | 打包发布 | Windows .exe 安装包 | ⏳ 待开始 |
+| 10 | v1.1.0 — v1.3.0 | 人情债、银行日结单、账户层级、多币种余额 | ✅ 完成 |
+| 11 | v1.4.0 | Dashboard 增强 + 价格源增强 + 投资账户关联 | ✅ 完成 |
+| 12 | 打包发布 | Windows .exe 安装包 | ⏳ 待开始 |
 
 ---
 
@@ -45,36 +47,18 @@
 
 ## 第 2 阶段：数据层 ✅
 
-- [x] 编写完整建表 SQL 脚本（migrations v1 ~ v5）
-- [x] 实现 account-service CRUD
-- [x] 实现 asset-service CRUD + 价格更新
-- [x] 实现 transaction-service CRUD
-- [x] 实现 ledger-service CRUD + 月度汇总
-- [x] 实现 category-service CRUD
-- [x] 实现 currency-service CRUD + 汇率转换
-- [x] 实现 investment-account-service CRUD
-- [x] 实现 net-worth-service 记录 + 历史
-- [x] 实现 account-transaction-service CRUD
-- [x] 实现 custom-format-service CRUD
-- [x] 实现 settings-service KV 存储
-- [x] 实现 budget-service CRUD + 状态计算
-- [x] 实现 alert-service 配置 + 价格检查
+- [x] 编写完整建表 SQL 脚本（migrations v1 ~ v10）
+- [x] 实现 15 个 service：account, account-transaction, alert, asset, bank-format, budget, category, currency, custom-format, investment-account, ledger, net-worth, settings, social-obligation, transaction
 
 ---
 
 ## 第 3 阶段：UI 框架 ✅
 
 - [x] 定义 CSS 设计令牌（色彩/字体/间距/圆角/阴影）
-- [x] 实现 Layout 组件（侧边栏 220px + 内容区）
+- [x] 实现 Layout 组件（侧边栏 220px + 内容区，动态应用名称）
 - [x] 实现 Button 组件（primary/secondary/danger/sm/loading）
-- [x] 实现 Input 组件（通过 CSS form-input）
-- [x] 实现 Table 组件
-- [x] 实现 Modal 组件
-- [x] 实现 Card 组件
-- [x] 实现 Amount 金额显示组件（正负色 + 币种）
-- [x] 实现 Badge 标签组件
-- [x] 实现 ProgressBar 进度条组件（颜色自适应）
-- [x] 实现路由框架（react-router-dom v7）
+- [x] 实现 Table / Modal / Card / Amount（含 NetAmount）/ Badge / ProgressBar 组件
+- [x] 实现路由框架（react-router-dom v7，10 个路由）
 
 ---
 
@@ -82,25 +66,27 @@
 
 ### 4.1 仪表盘
 - [x] 四大统计卡片（总资产/现金/投资/月收支）
-- [x] 资产分布 ECharts 饼图（按大类聚合）
-- [x] 账户概览面板
+- [x] 资产分布 ECharts 饼图（两级下钻：大类 → 明细，v1.4.0）
+- [x] 资产概览面板（按类别分项，v1.4.0 增强）
+- [x] 资产查询与分析 Card（筛选/搜索/排序，v1.4.0 新增）
 - [x] 净资产走势图（NetWorthTrendChart）
 - [x] 月度预算进度卡片（BudgetCard）
 
 ### 4.2 账户管理
-- [x] 账户列表页（Accounts.tsx）
-- [x] 添加/编辑账户表单（AddAccountForm.tsx）
+- [x] 账户列表页（Accounts.tsx，树形展示 + 投资账户关联）
+- [x] 添加/编辑账户表单（AddAccountForm + 银行日结单导入）
 - [x] 账户详情页（AccountDetail.tsx，含存取记录）
-- [x] 账户余额汇总
+- [x] 账户余额汇总 + 多币种余额
 
 ### 4.3 投资管理（核心）
-- [x] 持仓列表页（Investments.tsx）
+- [x] 持仓列表页（Investments.tsx，卡片布局 + 关联银行标识）
 - [x] 添加持仓表单（AddAssetForm.tsx）
 - [x] 买卖交易表单（TradeForm.tsx，加权平均成本自动计算）
 - [x] 盈亏计算与显示（金额 + 百分比）
-- [x] 持仓详情页（HoldingsDetail.tsx，交易历史）
-- [x] 日结单导入（CSV/Excel，智能格式匹配）
+- [x] 持仓详情页（HoldingsDetail.tsx，交易历史 + 编辑/删除持仓 v1.4.0）
+- [x] 券商日结单导入（CSV/Excel，智能格式匹配）
 - [x] 自定义日结单格式管理
+- [x] 投资账户 ↔ 银行账户关联（v1.4.0）
 
 ### 4.4 记账功能
 - [x] 收支记录列表（Bookkeeping.tsx）
@@ -124,12 +110,15 @@
 ## 第 5 阶段：数据源接入 ✅
 
 - [x] 汇率 API 接入（exchangerate-api.com）
-- [x] A 股价格接入（新浪财经）
-- [x] 港股价格接入（新浪港股）
-- [x] 美股价格接入（Yahoo Finance）
+- [x] A 股价格（新浪主 + 腾讯备）
+- [x] 港股价格（新浪主 + 腾讯备）
+- [x] 美股价格（Yahoo Finance 主 + 新浪备）
+- [x] 黄金价格（新浪主 + Gold-API 备）
+- [x] 加密货币价格（CoinGecko 主 + Binance 备）
 - [x] 基金净值接入（天天基金）
-- [x] 定时调度器（scheduler.ts）
-- [x] 数据标准化工具（data-normalizer.ts）
+- [x] 智能市场检测 `detectMarket()`（v1.4.0）
+- [x] 通用 `fetchWithFallback()` failover 包装器（v1.4.0）
+- [x] 定时调度器（scheduler.ts，价格/汇率/AI 日摘要）
 
 ---
 
@@ -158,7 +147,7 @@
 
 ## 第 8 阶段：数据安全 ✅
 
-- [x] 一键备份（14 张表 → 1 个 Excel，保存对话框）
+- [x] 一键备份（16 张表 → 1 个 Excel，保存对话框）
 - [x] 一键恢复（读取 Excel → 预览 → 事务导入）
 - [x] 数据归档（按月生成 Excel 投资统计表 + 清理旧数据）
 - [x] ArchiveCard 归档设置卡片（文件夹预设 + 保留期限）
@@ -174,7 +163,33 @@
 
 ---
 
-## 第 10 阶段：打包发布 ⏳
+## 第 10 阶段：v1.1.0 — v1.3.0 ✅
+
+- [x] v6 migration: social_obligations 表（人情债）
+- [x] SocialObligations 页面 + social-obligation-service
+- [x] v7 migration: parent_account_id + account_balances（账户树形 + 多币种）
+- [x] v8 migration: asset_type 分类（bank/cash/insurance/investment/custom）
+- [x] v9 migration: custom_bank_formats（银行日结单自定义格式）
+- [x] 银行日结单导入（bank-statement-parser + bank-format-service + IPC）
+- [x] 统一资产汇总 `account:allAssetsSummary`
+
+---
+
+## 第 11 阶段：v1.4.0 ✅
+
+- [x] **Dashboard 饼图两级下钻**（大类 → 账户明细）
+- [x] **资产概览面板增强**（基于 allAssetsSummary，支持点击联动）
+- [x] **资产查询与分析模块**（搜索/筛选/排序/快速统计）
+- [x] **持仓编辑/删除功能**（HoldingsDetail 操作列 + Modal）
+- [x] **价格获取全面增强**（5 个市场主备双源 + failover + 智能检测 + 增强日志）
+- [x] **自定义软件名称**（app_settings 存储 + 窗口/侧边栏动态更新）
+- [x] **v10 migration: 投资账户 ↔ 银行账户关联**（funding_account_id）
+- [x] **资产统计修正**（关联投资市值计入银行总资产）
+- [x] **Investments 按钮重叠修复**（flex 布局替代绝对定位）
+
+---
+
+## 第 12 阶段：打包发布 ⏳
 
 - [ ] 配置 electron-builder.yml
 - [ ] 生成 Windows .exe 安装包（NSIS）
@@ -192,7 +207,7 @@
 | 🟡 P1 | 日历视图（月历 + 每日收支摘要） | 3–4 天 |
 | 🟡 P1 | 信用卡管理（账单日/还款日提醒） | 2–3 天 |
 | 🟡 P1 | 持仓详情 K 线图 / 成本曲线 | 3–4 天 |
-| 🟡 P1 | 账户卡片式展示（按类型图标分组） | 1–2 天 |
+| 🟡 P1 | 自动价格刷新（交易时段更高频率） | 1–2 天 |
 | 🟢 P2 | AI 对话历史持久化 | 1–2 天 |
 | 🟢 P2 | AI 智能记账（语音/文字 → 自动分类） | 5–7 天 |
 | 🟢 P2 | 存钱计划（365 存钱法等） | 2–3 天 |

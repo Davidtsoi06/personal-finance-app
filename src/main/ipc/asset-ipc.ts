@@ -145,6 +145,7 @@ export function registerAssetIpcHandlers(): void {
     return transactionService.createTransaction(data);
   });
   ipcMain.handle('transaction:delete', (_e, id: number) => transactionService.deleteTransaction(id));
+  ipcMain.handle('transaction:todayList', () => transactionService.getTodayTransactions());
 
   // ── Trade Statement Import (smart format matching) ──
   ipcMain.handle('trade:listBrokerFormats', () => getBrokerFormats());

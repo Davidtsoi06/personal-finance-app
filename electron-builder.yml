@@ -31,6 +31,7 @@ nsis:
   language: 2052
   unicode: true
   shortcutName: 个人理财投资软件
+  artifactName: "${name}-setup-${version}.${ext}"
 
 publish:
   provider: github

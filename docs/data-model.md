@@ -2,23 +2,25 @@
 
 ## 概览
 
-共 14 张业务表 + 1 张迁移元数据表（`meta`），通过版本号递增的 migration 脚本管理。
+共 16 张业务表 + 1 张迁移元数据表（`meta`），通过版本号递增的 migration 脚本管理（当前最新：v10）。
 
 ---
 
 ## 1. accounts — 账户表
 
-管理用户的全部资金账户（银行卡、现金、支付平台等）。
+管理用户的全部资金账户（银行卡、现金、支付平台等），支持树形层级结构。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER PK | 主键 |
 | name | TEXT | 账户名称（如"招商银行储蓄卡"） |
-| type | TEXT | 类型：cash / bank_card / credit_card / online_pay |
+| type | TEXT | 支付方式：cash / bank_card / credit_card / online_pay |
+| asset_type | TEXT | 资产大类：bank / cash / insurance / investment / custom（v8 新增） |
 | currency | TEXT | 币种：CNY / HKD / USD / EUR / JPY / GBP |
-| balance | REAL | 当前余额 |
+| balance | REAL | 当前余额（多币种汇总值） |
 | bank_name | TEXT | 银行名称（银行卡时） |
 | card_number | TEXT | 卡号后 4 位（加密存） |
+| parent_account_id | INTEGER FK | 父账户 ID，支持树形结构（v7 新增） |
 | is_active | INTEGER | 是否启用 0/1 |
 | sort_order | INTEGER | 排序顺序 |
 | created_at | TEXT | 创建时间 ISO8601 |
@@ -26,7 +28,21 @@
 
 ---
 
-## 2. investment_accounts — 投资账户表
+## 2. account_balances — 多币种余额表（v7 新增）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| account_id | INTEGER FK | 关联账户（CASCADE 删除） |
+| currency | TEXT | 币种 |
+| balance | REAL | 该币种余额 |
+| updated_at | TEXT | 更新时间 |
+
+`UNIQUE(account_id, currency)`
+
+---
+
+## 3. investment_accounts — 投资账户表
 
 管理券商/交易平台账户。
 
@@ -36,14 +52,15 @@
 | name | TEXT | 账户名称（如"富途牛牛"） |
 | broker | TEXT | 券商名称 |
 | currency | TEXT | 默认币种 |
-| account_number | TEXT | 账号（加密存） |
+| account_number | TEXT | 账号 |
+| funding_account_id | INTEGER FK | 关联的资金银行账户（v10 新增，可为空） |
 | notes | TEXT | 备注 |
 | created_at | TEXT | 创建时间 |
 | updated_at | TEXT | 更新时间 |
 
 ---
 
-## 3. assets — 资产持仓表
+## 4. assets — 资产持仓表
 
 管理投资类资产的持仓信息。
 
@@ -51,7 +68,7 @@
 |------|------|------|
 | id | INTEGER PK | 主键 |
 | name | TEXT | 资产名称（如"腾讯控股"） |
-| code | TEXT | 代码（如"00700.HK"） |
+| code | TEXT | 代码（如"00700"） |
 | type | TEXT | 类型：stock / fund / etf / gold / crypto / fixed_deposit |
 | market | TEXT | 市场：a_stock / hk_stock / us_stock / other |
 | currency | TEXT | 计价币种 |
@@ -62,14 +79,15 @@
 | total_cost | REAL | 总成本（= quantity × cost_price） |
 | profit_loss | REAL | 盈亏金额 |
 | profit_loss_pct | REAL | 盈亏百分比 |
-| investment_account_id | INTEGER FK | 关联投资账户 |
+| account_id | INTEGER FK | 关联账户（旧字段） |
+| investment_account_id | INTEGER FK | 关联投资账户（v2 新增） |
 | notes | TEXT | 备注 |
 | created_at | TEXT | 创建时间 |
 | updated_at | TEXT | 更新时间 |
 
 ---
 
-## 4. transactions — 投资交易记录表
+## 5. transactions — 投资交易记录表
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -87,7 +105,7 @@
 
 ---
 
-## 5. asset_prices — 资产价格历史表
+## 6. asset_prices — 资产价格历史表
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -98,7 +116,7 @@
 
 ---
 
-## 6. ledgers — 日常收支记账表
+## 7. ledgers — 日常收支记账表
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -117,7 +135,7 @@
 
 ---
 
-## 7. categories — 收支分类表
+## 8. categories — 收支分类表
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -131,7 +149,7 @@
 
 ---
 
-## 8. account_transactions — 存取记录表
+## 9. account_transactions — 存取记录表（v3 新增）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -146,12 +164,12 @@
 
 ---
 
-## 9. currencies — 货币表
+## 10. currencies — 货币表
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER PK | 主键 |
-| code | TEXT | 货币代码（CNY, HKD, USD...） |
+| code | TEXT UNIQUE | 货币代码（CNY, HKD, USD...） |
 | name | TEXT | 中文名称 |
 | symbol | TEXT | 符号（¥, HK$, $...） |
 | rate_to_base | REAL | 对本位币汇率 |
@@ -160,7 +178,7 @@
 
 ---
 
-## 10. exchange_rates — 汇率历史表
+## 11. exchange_rates — 汇率历史表
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -172,7 +190,7 @@
 
 ---
 
-## 11. net_worth_history — 净资产历史表
+## 12. net_worth_history — 净资产历史表（v2 新增）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -185,7 +203,7 @@
 
 ---
 
-## 12. custom_statement_formats — 自定义日结单格式表
+## 13. custom_statement_formats — 自定义日结单格式表（v4 新增）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -198,7 +216,35 @@
 
 ---
 
-## 13. budgets — 月度预算表（v5 新增）
+## 14. custom_bank_formats — 自定义银行日结单格式表（v9 新增）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| name | TEXT | 格式名称 |
+| keywords | TEXT | 检测关键词（逗号分隔） |
+| column_mapping | TEXT | 列映射 JSON |
+| has_header | INTEGER | 是否有表头行 0/1 |
+| created_at | TEXT | 创建时间 |
+
+---
+
+## 15. social_obligations — 人情债表（v6 新增）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| type | TEXT | 类型：owe（欠别人）/ owed（别人欠我） |
+| person | TEXT | 对方姓名 |
+| item | TEXT | 事项描述 |
+| status | TEXT | 状态：pending（待还）/ done（已还） |
+| notes | TEXT | 备注 |
+| created_at | TEXT | 创建时间 |
+| updated_at | TEXT | 更新时间 |
+
+---
+
+## 16. budgets — 月度预算表（v5 新增）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -213,7 +259,7 @@
 
 ---
 
-## 14. alert_config — 提醒配置表（v5 新增）
+## 17. alert_config — 提醒配置表（v5 新增）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -232,9 +278,9 @@
 
 ---
 
-## 15. app_settings — 应用设置表（v5 新增）
+## 18. app_settings — 应用设置表（v5 新增）
 
-键值存储，用于 AI 配置、归档设置等。
+键值存储，用于 AI 配置、归档设置、自定义名称等。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -250,6 +296,7 @@
 | `ai.apiUrl` | AI API 端点 | `https://api.deepseek.com/v1/chat/completions` |
 | `ai.apiKey` | AI API Key（仅主进程可读） | `""` |
 | `ai.model` | AI 模型名称 | `deepseek-chat` |
+| `app_name` | 自定义应用名称（v1.4.0 新增） | `个人理财投资软件` |
 | `archive.folderPath` | 归档文件夹路径 | `""` |
 | `archive.retentionMonths` | 数据保留月数 | `12` |
 | `archive.lastRun` | 上次归档日期 | — |
@@ -264,7 +311,12 @@
 | v2 | + investment_accounts, + assets.investment_account_id, + net_worth_history |
 | v3 | + account_transactions |
 | v4 | + custom_statement_formats |
-| v5 | + budgets, + alert_config, + app_settings, - borrow_lending, - gift_records |
+| v5 | + budgets, + alert_config, + app_settings, − borrow_lending, − gift_records |
+| v6 | + social_obligations（人情债） |
+| v7 | + parent_account_id（账户层级）, + account_balances（多币种余额） |
+| v8 | + asset_type 列（资产大类分类） |
+| v9 | + custom_bank_formats（银行日结单自定义格式） |
+| v10 | + funding_account_id（投资账户 ↔ 银行账户关联，v1.4.0） |
 
 ---
 
@@ -286,18 +338,19 @@
 ## ER 关系
 
 ```
-investment_accounts ──┐
-                      │ 1:N
-                      ▼
-accounts ──┐        assets ──→ asset_prices
-           │          │
-           │ 1:N      │ 1:N
-           ▼          ▼
-account_transactions  transactions
+accounts ──┬── account_balances（多币种余额）
+           ├── account_transactions（存取记录）
+           ├── ledgers（收支记账）
+           └── investment_accounts（via funding_account_id）
+                    │
+                    ├── assets（持仓）
+                    │     └── asset_prices（价格历史）
+                    └── transactions（交易记录）
 
-categories ──→ ledgers ←── accounts
+categories ──→ ledgers
 
 currencies ──→ exchange_rates
 
-(独立表) net_worth_history, budgets, alert_config, app_settings, custom_statement_formats
+(独立表) net_worth_history, budgets, alert_config, app_settings,
+        custom_statement_formats, custom_bank_formats, social_obligations
 ```

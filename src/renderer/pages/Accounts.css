@@ -1,0 +1,162 @@
+/* ── Account Tree View ── */
+.account-tree {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.account-tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 12px var(--spacing-md);
+  border-bottom: 1px solid var(--color-border-light, #f0f0f0);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.account-tree-row:last-child {
+  border-bottom: none;
+}
+
+.account-tree-row:hover {
+  background: var(--color-bg-hover, #f5f8fc);
+}
+
+.account-tree-row-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+
+.account-tree-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-tree-row-name {
+  font-weight: 500;
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-tree-row-meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-tree-row-currencies {
+  color: var(--color-primary-500);
+}
+
+.account-tree-row-balance {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+  min-width: 120px;
+  text-align: right;
+}
+
+.account-tree-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ── Placeholder ── */
+.card-placeholder {
+  text-align: center;
+  padding: var(--spacing-xl);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
+}
+
+/* ── Form error ── */
+.form-error {
+  color: var(--color-danger);
+  background: #FFF2F0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  border: 1px solid #FFCCC7;
+}
+
+/* ── Asset Type Grid (Step 1) ── */
+.asset-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
+}
+
+.asset-type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--spacing-md);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.asset-type-card:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg, #f0f5ff);
+  transform: translateY(-1px);
+}
+
+.asset-type-card-icon {
+  font-size: 2rem;
+}
+
+.asset-type-card-label {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+}
+
+.asset-type-card-desc {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* ── Sub-account row (bank form) ── */
+.form-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--spacing-md) 0 var(--spacing-sm);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.sub-account-row {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px dashed var(--color-border-light, #e8e8e8);
+}
+
+.sub-account-fields {
+  display: flex;
+  gap: var(--spacing-xs);
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.sub-account-fields .form-input,
+.sub-account-fields .form-select {
+  flex: 1;
+  min-width: 80px;
+}

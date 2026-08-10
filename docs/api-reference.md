@@ -36,7 +36,7 @@ GET https://api.exchangerate-api.com/v4/latest/USD
 
 ## 2. A股数据
 
-### 新浪财经 API
+### 主数据源：新浪财经 API
 
 **实时行情：**
 ```
@@ -48,28 +48,46 @@ GET https://hq.sinajs.cn/list=sh600036,sz000001
 var hq_str_sh600036="招商银行,38.50,38.20,38.60,39.00,38.00,...";
 ```
 
-### 东方财富 API
+### 备用数据源：腾讯财经 API
 
-**股票列表：**
+**实时行情：**
 ```
-GET https://push2.eastmoney.com/api/qt/clist/get
+GET https://qt.gtimg.cn/q=sh600036,sz000001
 ```
+
+**返回格式**：`~` 分隔的字段数组（v1.4.0 新增备源）
+
+### 市场检测规则
+
+6 位纯数字代码 → A 股。首字符 `6` → `sh`（上海），`0/3` → `sz`（深圳）。
 
 ---
 
 ## 3. 港股数据
 
-### 新浪港股 API
+### 主数据源：新浪港股 API
 
 ```
 GET https://hq.sinajs.cn/list=hk00700
 ```
 
+### 备用数据源：腾讯港股 API
+
+```
+GET https://qt.gtimg.cn/q=hk00700
+```
+
+（v1.4.0 新增备源）
+
+### 市场检测规则
+
+1-5 位纯数字代码 → 港股。代码补零到 5 位后请求。
+
 ---
 
 ## 4. 美股数据
 
-### Yahoo Finance
+### 主数据源：Yahoo Finance v8
 
 **基础URL**：`https://query1.finance.yahoo.com/v8/finance/chart/{symbol}`
 
@@ -77,6 +95,16 @@ GET https://hq.sinajs.cn/list=hk00700
 ```
 GET https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=1mo
 ```
+
+### 备用数据源：新浪美股 API
+
+```
+GET https://hq.sinajs.cn/list=gb_aapl
+```
+
+### 市场检测规则
+
+1-5 个字母代码 → 美股。
 
 ---
 
@@ -98,17 +126,25 @@ fundgz("110022", "易方达消费行业", "3.8520", "2026-08-03 15:00")
 
 ## 6. 黄金价格
 
-### 新浪贵金属
+### 主数据源：新浪贵金属
 
 ```
 GET https://hq.sinajs.cn/list=hf_XAU
 ```
 
+### 备用数据源：Gold-API（免费，无需 Key）
+
+```
+GET https://api.gold-api.com/price/XAU
+```
+
+（v1.4.0 新增备源）
+
 ---
 
 ## 7. 加密货币
 
-### CoinGecko API（免费）
+### 主数据源：CoinGecko API（免费）
 
 **基础URL**：`https://api.coingecko.com/api/v3`
 
@@ -127,36 +163,63 @@ GET https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_curren
 
 **限制**：免费版每分钟 10-30 次请求。
 
+### 备用数据源：Binance 公开 API
+
+```
+GET https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT
+```
+
+（v1.4.0 新增备源，不需要 API Key）
+
 ---
 
-## 数据获取架构
+## 数据获取架构（v1.4.0 重构）
 
 ```
-Renderer                      Main Process                    External API
-   │                              │                                │
-   │  invoke('price:fetch')       │                                │
-   │─────────────────────────────→│                                │
-   │                              │  fetchPrice(code)              │
-   │                              │───────────────────────────────→│
-   │                              │←───────────────────────────────│
-   │                              │  save to DB                    │
-   │←─────────────────────────────│                                │
-   │  return prices               │                                │
+Renderer                      Main Process                         External API
+   │                              │                                    │
+   │  invoke('data:refreshPrices')│                                    │
+   │─────────────────────────────→│                                    │
+   │                              │  detectMarket(code)                │
+   │                              │  fetchWithFallback(code, ...)      │
+   │                              │  ─── 主源 ───→                    │
+   │                              │  ←── 失败 ─── 　　                  │
+   │                              │  ─── 备源 ───→                    │
+   │                              │  ←── 成功 ─── 　　                  │
+   │                              │  save to DB                        │
+   │←─────────────────────────────│                                    │
+   │  return prices               │                                    │
 ```
+
+### failover 策略（`fetchWithFallback`）
+
+1. 尝试主数据源获取价格
+2. 主源返回无效值或异常 → 自动切换备用源
+3. 备源也失败 → 返回 `null`，保持上次有效价格
+4. 每次请求记录日志：来源、耗时、成功/失败原因
+
+### 智能市场检测（`detectMarket`）
+
+- 6 位纯数字 → A 股（6xxxxx → sh，0xxxxx/3xxxxx → sz）
+- 1-5 位纯数字 → 港股
+- 1-5 个字母 → 美股
+- 已有 `asset.market` 字段明确设置的市场优先（向后兼容）
+
+---
 
 ## 定时更新策略
 
 - 汇率：每 6 小时
-- A股：交易日 9:30-15:00 每 5 分钟
-- 港股：交易日 9:30-16:00 每 5 分钟
-- 美股：交易时段每 10 分钟
-- 基金：每日 15:30 后
-- 黄金：每 10 分钟
-- 加密货币：每 5 分钟
+- 全部价格（A 股/港股/美股/黄金/加密货币/基金）：每 30 分钟
+- AI 日摘要：每日 15:30
+
+> **注意**：当前版本所有价格类型统一为每 30 分钟刷新频率。未来可考虑针对各市场交易时段细化。
+
+---
 
 ## 降级策略
 
 1. API 请求超时 10 秒
-2. 失败后重试 1 次
-3. 仍失败则使用最近一次成功缓存的数据
+2. 主源失败 → 自动切换到备用数据源
+3. 双源均失败 → 使用最近一次成功缓存的数据
 4. 数据超过 24 小时未更新，在 UI 上显示"数据可能已过期"提示

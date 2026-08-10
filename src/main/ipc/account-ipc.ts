@@ -10,11 +10,15 @@ import { normalizeDate, normalizeCurrency } from '../services/data-normalizer';
 export function registerAccountIpcHandlers(): void {
   // ── Accounts ──
   ipcMain.handle('account:list', () => accountService.listAccounts());
-  ipcMain.handle('account:get', (_e, id: number) => accountService.getAccount(id));
+  ipcMain.handle('account:listTree', () => accountService.listAccountsAsTree());
+  ipcMain.handle('account:get', (_e, id: number) => accountService.getAccountWithTree(id));
   ipcMain.handle('account:create', (_e, data: any) => accountService.createAccount(data));
   ipcMain.handle('account:update', (_e, id: number, data: any) => accountService.updateAccount(id, data));
   ipcMain.handle('account:delete', (_e, id: number) => accountService.deleteAccount(id));
   ipcMain.handle('account:totalBalance', (_e, currency?: string) => accountService.getTotalBalance(currency));
+  ipcMain.handle('account:balances', (_e, accountId: number) => accountService.getAccountBalances(accountId));
+  ipcMain.handle('account:createWithChildren', (_e, data: any) => accountService.createAccountWithChildren(data));
+  ipcMain.handle('account:allAssetsSummary', () => accountService.getAllAssetsSummary());
 
   // ── Account Transactions (deposit/withdraw) ──
   ipcMain.handle('accountTransaction:list', (_e, accountId: number) =>

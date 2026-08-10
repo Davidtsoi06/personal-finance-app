@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import * as echarts from 'echarts';
 import { Card } from '../components/ui/Card';
-import { NetAmount } from '../components/ui/Amount';
+import { Button } from '../components/ui/Button';
+import { NetAmount, Amount } from '../components/ui/Amount';
+import { Table } from '../components/ui/Table';
 import { invoke } from '../hooks/useIpc';
 import { NetWorthTrendChart } from '../components/charts/NetWorthTrendChart';
-import { BIG_CATEGORY_LABEL, BIG_CATEGORY_ORDER } from '@shared/constants/labels';
-import { BIG_CATEGORY_COLORS } from '@shared/constants/chart-colors';
 import { BudgetCard } from '../components/cards/BudgetCard';
 import './Dashboard.css';
 
@@ -18,120 +18,216 @@ interface Summary {
   netWorth: number;
 }
 
-interface AssetSummary {
+interface AssetSummaryItem {
+  id: number;
   name: string;
+  asset_type: string;
   type: string;
   currency: string;
+  balance: number;
+  bank_name: string | null;
+  broker: string | null;
+  market_value_cny: number;
+  children: AssetSummaryItem[];
+  is_investment: boolean;
+}
+
+interface AssetRow {
+  id: number;
+  name: string;
+  code: string;
+  type: string;
+  market: string;
+  currency: string;
+  quantity: number;
+  cost_price: number;
+  current_price: number;
   market_value: number;
+  total_cost: number;
   profit_loss: number;
   profit_loss_pct: number;
+  account_id: number | null;
+  investment_account_id?: number | null;
+  notes: string | null;
 }
+
+const ASSET_ICONS: Record<string, string> = {
+  bank: '🏦',
+  cash: '💵',
+  insurance: '🛡️',
+  investment: '📈',
+  custom: '✏️',
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  bank: '#5B9BD5',
+  cash: '#67C23A',
+  insurance: '#E6A23C',
+  investment: '#F56C6C',
+  custom: '#909399',
+};
 
 export function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [assets, setAssets] = useState<AssetSummary[]>([]);
+  const [assetSummary, setAssetSummary] = useState<AssetSummaryItem[]>([]);
   const [nwHistory, setNwHistory] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [drillCategory, setDrillCategory] = useState<AssetSummaryItem | null>(null);
+
+  // Asset query filters
+  const [allAssets, setAllAssets] = useState<AssetRow[]>([]);
+  const [searchText, setSearchText] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [marketFilter, setMarketFilter] = useState('');
+  const [sortBy, setSortBy] = useState('market_value_desc');
   const chartRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    async function loadDashboard() {
-      try {
-        const [accounts, assetList, nwData] = await Promise.all([
-          invoke<any[]>('account:list'),
-          invoke<any[]>('asset:list'),
-          invoke<any[]>('netWorth:history', 30),
-        ]);
-        const now = new Date();
-        const monthlySummary = await invoke<{ income: number; expense: number }>(
-          'ledger:monthlySummary', now.getFullYear(), now.getMonth() + 1
-        );
-        const totalCash = (accounts || []).reduce((s: number, a: any) => s + (a.balance || 0), 0);
-        const totalInvestments = (assetList || []).reduce((s: number, a: any) => s + (a.market_value || 0), 0);
-        setSummary({
-          totalCash, totalInvestments,
-          totalAssets: totalCash + totalInvestments,
-          monthlyIncome: monthlySummary?.income || 0,
-          monthlyExpense: monthlySummary?.expense || 0,
-          netWorth: totalCash + totalInvestments,
-        });
-        setAssets(assetList || []);
-        setAccounts(accounts || []);
-        setNwHistory(nwData || []);
-        setLoading(false);
-      } catch (err) {
-        console.error(err);
-        setLoading(false);
-      }
-    }
-    loadDashboard();
-  }, []);
-
-  // ECharts pie chart — asset distribution by big category (incremental update)
   const chartInstanceRef = useRef<echarts.ECharts | null>(null);
 
+  const loadDashboard = useCallback(async () => {
+    try {
+      const [summaryData, nwData, assetsData] = await Promise.all([
+        invoke<AssetSummaryItem[]>('account:allAssetsSummary'),
+        invoke<any[]>('netWorth:history', 30),
+        invoke<AssetRow[]>('asset:list').catch(() => []),
+      ]);
+      const now = new Date();
+      const monthlySummary = await invoke<{ income: number; expense: number }>(
+        'ledger:monthlySummary', now.getFullYear(), now.getMonth() + 1
+      );
+
+      let totalBank = 0;
+      let totalInvestment = 0;
+      for (const item of (summaryData || [])) {
+        totalBank += item.market_value_cny || 0;
+        totalInvestment += item.is_investment ? (item.market_value_cny || 0) : 0;
+        // Non-investment asset types (bank, cash, insurance, custom) contribute to cash total
+        if (!item.is_investment && item.asset_type !== 'investment') {
+          totalBank += 0; // already counted above
+        }
+      }
+      // Recalculate: totalBank = sum of non-investment items
+      totalBank = 0;
+      totalInvestment = 0;
+      for (const item of (summaryData || [])) {
+        if (item.is_investment) {
+          totalInvestment += item.market_value_cny || 0;
+        } else {
+          totalBank += item.market_value_cny || 0;
+        }
+      }
+
+      setSummary({
+        totalCash: totalBank,
+        totalInvestments: totalInvestment,
+        totalAssets: totalBank + totalInvestment,
+        monthlyIncome: monthlySummary?.income || 0,
+        monthlyExpense: monthlySummary?.expense || 0,
+        netWorth: totalBank + totalInvestment,
+      });
+      setAssetSummary(summaryData || []);
+      setNwHistory(nwData || []);
+      setAllAssets(assetsData || []);
+      setLoading(false);
+    } catch (err) {
+      console.error(err);
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
+
+  // ── Pie chart with drill-down ──
   useEffect(() => {
     if (!chartRef.current) return;
 
-    // Init chart once, reuse on subsequent updates
     if (!chartInstanceRef.current) {
       chartInstanceRef.current = echarts.init(chartRef.current);
     }
     const chart = chartInstanceRef.current;
 
-    if (assets.length === 0 && accounts.length === 0) {
+    if (assetSummary.length === 0) {
       chart.setOption({ series: [{ data: [] }] });
       return;
     }
 
-    const byCategory: Record<string, number> = {};
+    let pieData: { name: string; value: number; itemStyle?: any }[] = [];
+    let title = '资产分布';
 
-    // Aggregate account balances into big categories
-    for (const a of accounts) {
-      const label = BIG_CATEGORY_LABEL[a.type];
-      if (!label) continue;
-      byCategory[label] = (byCategory[label] || 0) + (a.balance || 0);
+    if (drillCategory) {
+      // Level 2: show items within the selected category
+      title = `${ASSET_ICONS[drillCategory.asset_type] || ''} ${drillCategory.name}`;
+      const children = drillCategory.children || [];
+      if (children.length === 0) {
+        pieData = [{ name: drillCategory.name, value: drillCategory.market_value_cny }];
+      } else {
+        pieData = children.map(c => ({
+          name: c.name,
+          value: c.market_value_cny || c.balance || 0,
+        }));
+      }
+    } else {
+      // Level 1: top-level categories
+      pieData = assetSummary.map(item => ({
+        name: `${ASSET_ICONS[item.asset_type] || ''} ${item.name}`,
+        value: item.market_value_cny || 0,
+        itemStyle: { color: CATEGORY_COLORS[item.asset_type] || '#909399' },
+      }));
     }
 
-    // Aggregate all investment assets into one "投资" slice
-    const totalInvestment = assets.reduce((s, a) => s + (a.market_value || 0), 0);
-    if (totalInvestment > 0) {
-      byCategory['📈 投资'] = totalInvestment;
-    }
+    // Clear old click handler and set new one
+    chart.off('click');
+    chart.on('click', (params: any) => {
+      if (!drillCategory) {
+        // From level 1 → level 2: find the clicked category
+        const clicked = assetSummary.find(
+          item => `${ASSET_ICONS[item.asset_type] || ''} ${item.name}` === params.name
+        );
+        if (clicked && (clicked.children?.length || 0) > 0) {
+          setDrillCategory(clicked);
+        }
+      }
+    });
 
-    // Build data array in consistent display order
-    const data = BIG_CATEGORY_ORDER
-      .filter((name: string) => byCategory[name] != null && byCategory[name] > 0)
-      .map((name: string) => ({ name, value: byCategory[name] }));
-
-    const colors = data.map((d: { name: string; value: number }) => BIG_CATEGORY_COLORS[d.name] || '#5B9BD5');
-
-    // Incremental update — reuse existing chart instance
     chart.setOption({
+      title: {
+        text: drillCategory ? title : '',
+        left: 'center',
+        top: 8,
+        textStyle: { fontSize: 14, fontWeight: 600 },
+      },
       tooltip: {
         trigger: 'item',
         formatter: (p: any) => `${p.name}: ¥ ${p.value.toLocaleString()} (${p.percent}%)`,
       },
       series: [{
         type: 'pie',
-        radius: ['45%', '75%'],
-        center: ['50%', '50%'],
+        radius: drillCategory ? ['40%', '70%'] : ['45%', '75%'],
+        center: drillCategory ? ['50%', '55%'] : ['50%', '50%'],
         avoidLabelOverlap: false,
         label: { show: false },
         emphasis: {
           label: { show: true, fontWeight: 'bold' },
         },
-        data,
+        data: pieData,
         itemStyle: {
           borderRadius: 4,
           borderColor: '#fff',
           borderWidth: 2,
         },
       }],
-      color: colors,
     }, { notMerge: false });
-  }, [assets, accounts]);
+
+    // Handle click on center area to go back
+    if (drillCategory) {
+      chart.getZr().off('click');
+      chart.getZr().on('click', (params: any) => {
+        // Only go back if click is on the center area (inner circle)
+        if (!params.target) {
+          setDrillCategory(null);
+        }
+      });
+    }
+  }, [assetSummary, drillCategory]);
 
   // Resize listener
   useEffect(() => {
@@ -144,6 +240,37 @@ export function Dashboard() {
     };
   }, []);
 
+  // ── Filter & sort assets ──
+  const TYPE_LABELS: Record<string, string> = { stock: '股票', fund: '基金', etf: 'ETF', gold: '黄金', crypto: '加密货币', fixed_deposit: '定期存款' };
+  const MARKET_LABELS: Record<string, string> = { a_stock: 'A股', hk_stock: '港股', us_stock: '美股', other: '其他' };
+
+  const filteredAssets = allAssets
+    .filter(a => {
+      if (typeFilter && a.type !== typeFilter) return false;
+      if (marketFilter && a.market !== marketFilter) return false;
+      if (searchText) {
+        const q = searchText.toLowerCase();
+        return a.name.toLowerCase().includes(q) || (a.code || '').toLowerCase().includes(q);
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'market_value_asc': return a.market_value - b.market_value;
+        case 'profit_loss_desc': return b.profit_loss - a.profit_loss;
+        case 'profit_loss_asc': return a.profit_loss - b.profit_loss;
+        case 'profit_loss_pct_desc': return b.profit_loss_pct - a.profit_loss_pct;
+        case 'profit_loss_pct_asc': return a.profit_loss_pct - b.profit_loss_pct;
+        case 'market_value_desc':
+        default: return b.market_value - a.market_value;
+      }
+    });
+
+  const totalMktValue = filteredAssets.reduce((s, a) => s + a.market_value, 0);
+  const profitCount = filteredAssets.filter(a => a.profit_loss > 0).length;
+  const lossCount = filteredAssets.filter(a => a.profit_loss < 0).length;
+  const bestAsset = filteredAssets.reduce((best, a) => (!best || a.profit_loss_pct > best.profit_loss_pct) ? a : best, null as AssetRow | null);
+  const worstAsset = filteredAssets.reduce((worst, a) => (!worst || a.profit_loss_pct < worst.profit_loss_pct) ? a : worst, null as AssetRow | null);
 
   if (loading) return <div className="page-loading">加载中...</div>;
 
@@ -152,7 +279,7 @@ export function Dashboard() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2 className="page-title">仪表盘</h2>
+        <h2 className="page-title">资产结构</h2>
         <p className="page-subtitle">资产总览</p>
       </div>
 
@@ -184,29 +311,143 @@ export function Dashboard() {
       </div>
 
       <div className="dashboard-grid">
-        <Card title="资产分布">
-          {assets.length > 0 || accounts.length > 0 ? (
-            <div ref={chartRef} style={{ height: '280px' }} />
+        <Card title={drillCategory ? `📊 ${drillCategory.name} · 明细` : '📊 资产分布'}>
+          {assetSummary.length > 0 ? (
+            <div>
+              {drillCategory && (
+                <div style={{ marginBottom: '8px' }}>
+                  <Button variant="secondary" size="sm" onClick={() => setDrillCategory(null)}>
+                    ← 返回总览
+                  </Button>
+                </div>
+              )}
+              <div ref={chartRef} style={{ height: '280px' }} />
+              {!drillCategory && (
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', textAlign: 'center', marginTop: '8px' }}>
+                  点击扇区查看明细
+                </div>
+              )}
+            </div>
           ) : (
             <div className="card-placeholder">暂无资产数据</div>
           )}
         </Card>
 
-        <Card title="账户概览">
-          <div className="overview-stats">
-            <div className="overview-item">
-              <span className="overview-label">💵 现金 + 银行存款</span>
-              <NetAmount value={s?.totalCash || 0} currency="CNY" />
+        <Card title="💎 资产概览">
+          {assetSummary.length > 0 ? (
+            <div className="overview-stats">
+              {assetSummary.map(item => (
+                <div
+                  key={item.id}
+                  className="overview-item"
+                  style={{ cursor: (item.children?.length || 0) > 0 ? 'pointer' : 'default' }}
+                  onClick={() => {
+                    if ((item.children?.length || 0) > 0) setDrillCategory(item);
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span
+                      style={{
+                        display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%',
+                        background: CATEGORY_COLORS[item.asset_type] || '#909399',
+                      }}
+                    />
+                    <span className="overview-label">
+                      {ASSET_ICONS[item.asset_type] || ''} {item.name}
+                    </span>
+                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                      {item.children?.length || 0} 个
+                    </span>
+                  </div>
+                  <NetAmount value={item.market_value_cny} currency="CNY" />
+                </div>
+              ))}
+              <div className="overview-item overview-item--total">
+                <span className="overview-label">💎 总资产</span>
+                <NetAmount value={s?.netWorth || 0} currency="CNY" />
+              </div>
             </div>
-            <div className="overview-item">
-              <span className="overview-label">📈 投资市值</span>
-              <NetAmount value={s?.totalInvestments || 0} currency="CNY" />
-            </div>
-            <div className="overview-item overview-item--total">
-              <span className="overview-label">💎 净资产</span>
-              <NetAmount value={s?.netWorth || 0} currency="CNY" />
-            </div>
+          ) : (
+            <div className="card-placeholder">暂无资产数据</div>
+          )}
+        </Card>
+      </div>
+
+      {/* ── Asset Query & Analysis ── */}
+      <div style={{ marginTop: 'var(--spacing-lg)' }}>
+        <Card title="🔍 资产查询与分析">
+          {/* Filter toolbar */}
+          <div className="filter-toolbar">
+            <input
+              className="form-input"
+              placeholder="搜索名称或代码..."
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              style={{ flex: 1, minWidth: '160px' }}
+            />
+            <select className="form-select" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+              <option value="">全部类型</option>
+              {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select className="form-select" value={marketFilter} onChange={e => setMarketFilter(e.target.value)}>
+              <option value="">全部市场</option>
+              {Object.entries(MARKET_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select className="form-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+              <option value="market_value_desc">市值 ↓</option>
+              <option value="market_value_asc">市值 ↑</option>
+              <option value="profit_loss_desc">盈亏 ↓</option>
+              <option value="profit_loss_asc">盈亏 ↑</option>
+              <option value="profit_loss_pct_desc">收益率 ↓</option>
+              <option value="profit_loss_pct_asc">收益率 ↑</option>
+            </select>
           </div>
+
+          {/* Quick stats */}
+          {filteredAssets.length > 0 && (
+            <div className="query-stats">
+              <span>📊 总计 <strong>{filteredAssets.length}</strong> 个资产</span>
+              <span>💰 总市值 <strong>¥ {totalMktValue.toLocaleString()}</strong></span>
+              <span style={{ color: 'var(--color-success)' }}>📈 盈利 <strong>{profitCount}</strong> 个</span>
+              <span style={{ color: 'var(--color-danger)' }}>📉 亏损 <strong>{lossCount}</strong> 个</span>
+              {bestAsset && (
+                <span style={{ color: 'var(--color-success)' }}>🏆 最佳 <strong>{bestAsset.name}</strong> (+{bestAsset.profit_loss_pct?.toFixed(2)}%)</span>
+              )}
+              {worstAsset && (
+                <span style={{ color: 'var(--color-danger)' }}>💔 最差 <strong>{worstAsset.name}</strong> ({worstAsset.profit_loss_pct?.toFixed(2)}%)</span>
+              )}
+            </div>
+          )}
+
+          {/* Results table */}
+          {filteredAssets.length > 0 ? (
+            <Table
+              columns={[
+                { key: 'name', title: '名称', render: (row: AssetRow) => (
+                  <div>
+                    <div style={{ fontWeight: 500 }}>{row.name}</div>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>{row.code || '-'}</div>
+                  </div>
+                )},
+                { key: 'type', title: '类型', render: (row: AssetRow) => TYPE_LABELS[row.type] || row.type },
+                { key: 'market', title: '市场', render: (row: AssetRow) => MARKET_LABELS[row.market] || row.market || '-' },
+                { key: 'currency', title: '货币', render: (row: AssetRow) => row.currency },
+                { key: 'quantity', title: '持仓量', render: (row: AssetRow) => row.quantity?.toLocaleString() || '-' },
+                { key: 'cost_price', title: '成本价', render: (row: AssetRow) => <Amount value={row.cost_price} currency={row.currency} showSign={false} /> },
+                { key: 'current_price', title: '最新价', render: (row: AssetRow) => <Amount value={row.current_price} currency={row.currency} showSign={false} /> },
+                { key: 'market_value', title: '市值', render: (row: AssetRow) => <Amount value={row.market_value} currency={row.currency} showSign={false} /> },
+                { key: 'profit_loss', title: '盈亏', render: (row: AssetRow) => <Amount value={row.profit_loss} currency={row.currency} colored /> },
+                { key: 'profit_loss_pct', title: '收益率', render: (row: AssetRow) => (
+                  <span style={{ color: row.profit_loss_pct >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
+                    {row.profit_loss_pct >= 0 ? '+' : ''}{row.profit_loss_pct?.toFixed(2)}%
+                  </span>
+                )},
+              ]}
+              data={filteredAssets}
+            />
+          ) : (
+            <div className="card-placeholder">{allAssets.length === 0 ? '暂无资产数据' : '没有匹配的资产'}</div>
+          )}
         </Card>
       </div>
 

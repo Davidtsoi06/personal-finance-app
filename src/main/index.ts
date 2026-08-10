@@ -4,10 +4,10 @@ import fs = require('fs');
 import { initDatabase } from './database';
 import { registerIpcHandlers } from './ipc';
 import { initAutoUpdater } from './ipc/update-ipc';
-import { seedTestData } from './database/seed';
 import { startScheduler, stopScheduler } from './services/scheduler';
 import { recordNetWorth } from './database/services/net-worth-service';
 import { closeDatabase } from './database';
+import { getAppName } from './database/services/settings-service';
 
 let mainWindow: electron.BrowserWindow | null = null;
 
@@ -17,7 +17,7 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 680,
-    title: '个人理财投资软件',
+    title: getAppName(),
     backgroundColor: '#F5F7FA',
     webPreferences: {
       nodeIntegration: false,
@@ -42,13 +42,7 @@ function createWindow() {
 // Initialize database and IPC on startup
 electron.app.whenReady().then(() => {
   // Initialize database (creates tables if needed)
-  const db = initDatabase();
-
-  // Seed test data on first run
-  const accountCount = db.prepare('SELECT COUNT(*) as count FROM accounts').get() as any;
-  if (accountCount.count === 0) {
-    seedTestData();
-  }
+  initDatabase();
 
   // Register all IPC handlers
   registerIpcHandlers();

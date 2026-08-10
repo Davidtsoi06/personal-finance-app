@@ -3,7 +3,7 @@
  * All network calls and API key handling stay in the main process.
  */
 import { getAiConfig } from '../database/services/settings-service';
-import { gatherPortfolioContext } from './portfolio-context';
+import { gatherPortfolioContext, generateDailySummaryContext } from './portfolio-context';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -180,5 +180,41 @@ export async function chatStreaming(
     clearTimeout(timeout);
     if (err.name === 'AbortError') throw new Error('请求超时（60秒），请检查网络连接');
     throw err;
+  }
+}
+
+// ── Daily Investment Summary ──
+
+const DAILY_SUMMARY_SYSTEM_PROMPT = `你是一位专业的投资分析师。请根据用户当日的交易数据和投资组合变化，生成一份简洁的投资日报。格式要求：
+
+### 📊 今日交易概况
+（如有交易，列出买卖情况和金额；如无交易，说明今日无操作）
+
+### 📈 持仓表现
+（分析主要持仓的涨跌情况、整体组合表现）
+
+### 💡 分析与建议
+（基于当日数据，给出简短的分析和后续关注要点）
+
+注意：
+- 回答使用中文，总字数约 300-500 字
+- 不要编造数据，只基于提供的真实数据进行分析
+- 投资建议需包含风险提示`;
+
+export async function generateInvestmentSummary(date?: string): Promise<{
+  content: string;
+  generatedAt: string;
+}> {
+  const targetDate = date || new Date().toISOString().slice(0, 10);
+  const context = generateDailySummaryContext(targetDate);
+
+  try {
+    const result = await chat(
+      `请根据以下 ${targetDate} 的数据生成当日投资日报。`,
+      [{ role: 'system', content: DAILY_SUMMARY_SYSTEM_PROMPT + '\n\n' + context }]
+    );
+    return { content: result.content, generatedAt: new Date().toISOString() };
+  } catch (err: any) {
+    throw new Error(`生成投资日报失败：${err.message}`);
   }
 }

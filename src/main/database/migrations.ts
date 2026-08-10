@@ -328,4 +328,14 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       );
     `,
   },
+  {
+    version: 10,
+    sql: `
+      -- ============================================
+      -- Migration v10: Investment account ↔ bank account linkage
+      -- ============================================
+
+      ALTER TABLE investment_accounts ADD COLUMN funding_account_id INTEGER REFERENCES accounts(id);
+    `,
+  },
 ];
