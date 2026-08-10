@@ -42,23 +42,64 @@ a:hover {
   color: var(--color-primary-700);
 }
 
-/* 滚动条美化 */
+/* 滚动条美化 — 仿 VS Code 风格：宽轨道 + 可见滑块 + 箭头按钮 */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 14px;
+  height: 14px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 3px;
+  background: #B0B8C1;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 7px;
+  min-height: 40px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
+  background: #889098;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #667080;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* 上下箭头按钮 */
+::-webkit-scrollbar-button {
+  display: block;
+  height: 18px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+}
+
+::-webkit-scrollbar-button:vertical:decrement {
+  background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><polygon points="5,0 10,6 0,6" fill="%23666"/></svg>');
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+::-webkit-scrollbar-button:vertical:increment {
+  background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><polygon points="0,0 10,0 5,6" fill="%23666"/></svg>');
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+::-webkit-scrollbar-button:hover {
+  background-color: #E8EAED;
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--color-bg-secondary);
 }
 
 /* 选中颜色 */

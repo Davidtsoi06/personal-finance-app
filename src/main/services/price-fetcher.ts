@@ -98,7 +98,7 @@ async function fetchWithFallback(
 
 /** Primary: Sina Finance A-stock */
 async function fetchAStockSina(code: string): Promise<number | null> {
-  const prefix = code.startsWith('6') ? 'sh' : 'sz';
+  const prefix = (code.startsWith('5') || code.startsWith('6')) ? 'sh' : 'sz';
   const url = `https://hq.sinajs.cn/list=${prefix}${code}`;
   const response = await fetch(url, {
     headers: { Referer: 'https://finance.sina.com.cn' },
@@ -115,7 +115,7 @@ async function fetchAStockSina(code: string): Promise<number | null> {
 
 /** Fallback: Tencent Finance A-stock */
 async function fetchAStockTencent(code: string): Promise<number | null> {
-  const prefix = code.startsWith('6') ? 'sh' : 'sz';
+  const prefix = (code.startsWith('5') || code.startsWith('6')) ? 'sh' : 'sz';
   const url = `https://qt.gtimg.cn/q=${prefix}${code}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

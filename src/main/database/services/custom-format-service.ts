@@ -36,3 +36,19 @@ export function deleteCustomFormat(id: number): boolean {
   const r = db.prepare('DELETE FROM custom_statement_formats WHERE id = ?').run(id);
   return r.changes > 0;
 }
+
+export function updateCustomFormat(id: number, data: {
+  name: string;
+  keywords: string;
+  column_mapping: string;
+  has_header?: number;
+}): CustomFormatRow | undefined {
+  const db = getDatabase();
+  const existing = db.prepare('SELECT * FROM custom_statement_formats WHERE id = ?').get(id) as CustomFormatRow | undefined;
+  if (!existing) return undefined;
+  db.prepare(`
+    UPDATE custom_statement_formats SET name=?, keywords=?, column_mapping=?, has_header=?
+    WHERE id=?
+  `).run(data.name, data.keywords, data.column_mapping, data.has_header ?? existing.has_header, id);
+  return db.prepare('SELECT * FROM custom_statement_formats WHERE id = ?').get(id) as CustomFormatRow;
+}

@@ -36,11 +36,13 @@ export function registerSettingsIpcHandlers(): void {
   // ── Custom Statement Formats ──
   ipcMain.handle('customFormat:list', () => cfService.listCustomFormats());
   ipcMain.handle('customFormat:create', (_e, data: any) => cfService.createCustomFormat(data));
+  ipcMain.handle('customFormat:update', (_e, id: number, data: any) => cfService.updateCustomFormat(id, data));
   ipcMain.handle('customFormat:delete', (_e, id: number) => cfService.deleteCustomFormat(id));
 
   // ── Bank Statement Formats ──
   ipcMain.handle('bankFormat:list', () => bfService.listBankFormats());
   ipcMain.handle('bankFormat:create', (_e, data: any) => bfService.createBankFormat(data));
+  ipcMain.handle('bankFormat:update', (_e, id: number, data: any) => bfService.updateBankFormat(id, data));
   ipcMain.handle('bankFormat:delete', (_e, id: number) => bfService.deleteBankFormat(id));
 
   // ── Bank Statement Import ──

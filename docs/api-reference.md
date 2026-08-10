@@ -59,7 +59,7 @@ GET https://qt.gtimg.cn/q=sh600036,sz000001
 
 ### 市场检测规则
 
-6 位纯数字代码 → A 股。首字符 `6` → `sh`（上海），`0/3` → `sz`（深圳）。
+6 位纯数字代码 → A 股。首字符 `5/6` → `sh`（上海，含 ETF 和主板），`0/1/2/3` → `sz`（深圳）。
 
 ---
 
@@ -200,7 +200,7 @@ Renderer                      Main Process                         External API
 
 ### 智能市场检测（`detectMarket`）
 
-- 6 位纯数字 → A 股（6xxxxx → sh，0xxxxx/3xxxxx → sz）
+- 6 位纯数字 → A 股（5xxxxx/6xxxxx → sh，0xxxxx/1xxxxx/2xxxxx/3xxxxx → sz）
 - 1-5 位纯数字 → 港股
 - 1-5 个字母 → 美股
 - 已有 `asset.market` 字段明确设置的市场优先（向后兼容）

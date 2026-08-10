@@ -173,6 +173,10 @@ export function HoldingsDetail() {
     const costPrice = parseFloat(fd.get('cost_price') as string);
     const data: Record<string, any> = {
       name: fd.get('name'),
+      code: fd.get('code'),
+      type: fd.get('type'),
+      market: fd.get('market'),
+      currency: fd.get('currency'),
       notes: fd.get('notes'),
       quantity,
       cost_price: costPrice,
@@ -574,22 +578,37 @@ Date, Symbol, Description, Buy/Sell, Quantity, Price, Commission, Currency
                 <input className="form-input" name="name" defaultValue={editingHolding.name} required />
               </div>
               <div className="form-group">
-                <label className="form-label">代码（只读）</label>
-                <input className="form-input" value={editingHolding.code} disabled />
+                <label className="form-label">代码</label>
+                <input className="form-input" name="code" defaultValue={editingHolding.code} required />
               </div>
             </div>
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">类型</label>
-                <input className="form-input" value={ASSET_TYPE_LABELS[editingHolding.type] || editingHolding.type} disabled />
+                <select className="form-input" name="type" defaultValue={editingHolding.type}>
+                  {Object.entries(ASSET_TYPE_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label">市场</label>
-                <input className="form-input" value={MARKET_LABELS[editingHolding.market] || editingHolding.market} disabled />
+                <select className="form-input" name="market" defaultValue={editingHolding.market}>
+                  {Object.entries(MARKET_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label">货币</label>
-                <input className="form-input" value={editingHolding.currency} disabled />
+                <select className="form-input" name="currency" defaultValue={editingHolding.currency}>
+                  <option value="CNY">CNY 人民币</option>
+                  <option value="HKD">HKD 港币</option>
+                  <option value="USD">USD 美元</option>
+                  <option value="EUR">EUR 欧元</option>
+                  <option value="JPY">JPY 日元</option>
+                  <option value="GBP">GBP 英镑</option>
+                </select>
               </div>
             </div>
             <div className="form-row">

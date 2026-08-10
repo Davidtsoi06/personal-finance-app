@@ -92,6 +92,7 @@ export function Settings() {
   const [formatColumns, setFormatColumns] = useState<{ field: string }[]>(
     Array.from({ length: 8 }, () => ({ field: '' }))
   );
+  const [editingCustomFormatId, setEditingCustomFormatId] = useState<number | null>(null);
   const [formatSaving, setFormatSaving] = useState(false);
   const [formatMsg, setFormatMsg] = useState<string | null>(null);
 
@@ -104,6 +105,7 @@ export function Settings() {
   const [bankFormatColumns, setBankFormatColumns] = useState<{ field: string }[]>(
     Array.from({ length: 6 }, () => ({ field: '' }))
   );
+  const [editingBankFormatId, setEditingBankFormatId] = useState<number | null>(null);
   const [bankFormatSaving, setBankFormatSaving] = useState(false);
   const [bankFormatMsg, setBankFormatMsg] = useState<string | null>(null);
 
@@ -293,11 +295,26 @@ export function Settings() {
   };
 
   // ── Custom format handlers ──
-  const handleOpenFormatModal = () => {
-    setFormatName('');
-    setFormatKeywords('');
-    setFormatHasHeader(true);
-    setFormatColumns(Array.from({ length: 8 }, () => ({ field: '' })));
+  const handleOpenFormatModal = (fmt?: CustomFormat) => {
+    if (fmt) {
+      setEditingCustomFormatId(fmt.id);
+      setFormatName(fmt.name);
+      setFormatKeywords(fmt.keywords);
+      setFormatHasHeader(!!fmt.has_header);
+      try {
+        const cols: { position: number; field: string }[] = JSON.parse(fmt.column_mapping);
+        const maxPos = Math.max(...cols.map(c => c.position), 7);
+        const arr = Array.from({ length: maxPos + 1 }, () => ({ field: '' as string }));
+        for (const c of cols) arr[c.position] = { field: c.field };
+        setFormatColumns(arr);
+      } catch { setFormatColumns(Array.from({ length: 8 }, () => ({ field: '' }))); }
+    } else {
+      setEditingCustomFormatId(null);
+      setFormatName('');
+      setFormatKeywords('');
+      setFormatHasHeader(true);
+      setFormatColumns(Array.from({ length: 8 }, () => ({ field: '' })));
+    }
     setFormatMsg(null);
     setShowFormatModal(true);
   };
@@ -306,15 +323,9 @@ export function Settings() {
     if (!formatName.trim()) { setFormatMsg('❌ 请输入格式名称'); return; }
     if (!formatKeywords.trim()) { setFormatMsg('❌ 请输入检测关键词'); return; }
 
-    const mapping = formatColumns
-      .map((col, i) => ({ position: i, field: col.field || 'ignore' }))
-      .filter((col) => col.field !== 'ignore' || formatColumns.some((c, idx) => idx === col.position && c.field !== 'ignore'));
-
-    // Filter to only meaningful columns
     const cleanMapping = formatColumns
       .map((col, i) => ({ position: i, field: col.field || 'ignore' }));
 
-    // Check that we have at least date, quantity, and price
     const fields = cleanMapping.map((c) => c.field);
     if (!fields.includes('date') || !fields.includes('quantity') || !fields.includes('price')) {
       setFormatMsg('❌ 列映射必须包含：日期、成交数量、成交价格');
@@ -323,15 +334,20 @@ export function Settings() {
 
     setFormatSaving(true); setFormatMsg(null);
     try {
-      await invoke('customFormat:create', {
+      const data = {
         name: formatName.trim(),
         keywords: formatKeywords.trim(),
         column_mapping: JSON.stringify(cleanMapping),
         has_header: formatHasHeader ? 1 : 0,
-      });
+      };
+      if (editingCustomFormatId != null) {
+        await invoke('customFormat:update', editingCustomFormatId, data);
+      } else {
+        await invoke('customFormat:create', data);
+      }
       setShowFormatModal(false);
       loadCustomFormats();
-      setFormatMsg('✅ 格式保存成功');
+      setFormatMsg(editingCustomFormatId != null ? '✅ 格式已更新' : '✅ 格式保存成功');
     } catch (err: any) {
       setFormatMsg(`❌ 保存失败：${err.message}`);
     }
@@ -366,11 +382,26 @@ export function Settings() {
   };
 
   // ── Bank format handlers ──
-  const handleOpenBankFormatModal = () => {
-    setBankFormatName('');
-    setBankFormatKeywords('');
-    setBankFormatHasHeader(true);
-    setBankFormatColumns(Array.from({ length: 6 }, () => ({ field: '' })));
+  const handleOpenBankFormatModal = (fmt?: BankFormat) => {
+    if (fmt) {
+      setEditingBankFormatId(fmt.id);
+      setBankFormatName(fmt.name);
+      setBankFormatKeywords(fmt.keywords);
+      setBankFormatHasHeader(!!fmt.has_header);
+      try {
+        const cols: { position: number; field: string }[] = JSON.parse(fmt.column_mapping);
+        const maxPos = Math.max(...cols.map(c => c.position), 5);
+        const arr = Array.from({ length: maxPos + 1 }, () => ({ field: '' as string }));
+        for (const c of cols) arr[c.position] = { field: c.field };
+        setBankFormatColumns(arr);
+      } catch { setBankFormatColumns(Array.from({ length: 6 }, () => ({ field: '' }))); }
+    } else {
+      setEditingBankFormatId(null);
+      setBankFormatName('');
+      setBankFormatKeywords('');
+      setBankFormatHasHeader(true);
+      setBankFormatColumns(Array.from({ length: 6 }, () => ({ field: '' })));
+    }
     setBankFormatMsg(null);
     setShowBankFormatModal(true);
   };
@@ -390,15 +421,20 @@ export function Settings() {
 
     setBankFormatSaving(true); setBankFormatMsg(null);
     try {
-      await invoke('bankFormat:create', {
+      const data = {
         name: bankFormatName.trim(),
         keywords: bankFormatKeywords.trim(),
         column_mapping: JSON.stringify(cleanMapping),
         has_header: bankFormatHasHeader ? 1 : 0,
-      });
+      };
+      if (editingBankFormatId != null) {
+        await invoke('bankFormat:update', editingBankFormatId, data);
+      } else {
+        await invoke('bankFormat:create', data);
+      }
       setShowBankFormatModal(false);
       loadBankFormats();
-      setBankFormatMsg('✅ 格式保存成功');
+      setBankFormatMsg(editingBankFormatId != null ? '✅ 格式已更新' : '✅ 格式保存成功');
     } catch (err: any) {
       setBankFormatMsg(`❌ 保存失败：${err.message}`);
     }
@@ -449,7 +485,10 @@ export function Settings() {
       <span style={{ fontSize: 'var(--font-size-xs)' }}>{formatColumnMapPreview(r.column_mapping)}</span>
     )},
     { key: 'actions', title: '操作', render: (r) => (
-      <Button variant="secondary" onClick={() => handleDeleteFormat(r.id)}>🗑 删除</Button>
+      <div style={{ display: 'flex', gap: '4px' }}>
+        <Button variant="secondary" onClick={() => handleOpenFormatModal(r)}>✏️ 编辑</Button>
+        <Button variant="secondary" onClick={() => handleDeleteFormat(r.id)}>🗑 删除</Button>
+      </div>
     )},
   ];
 
@@ -460,7 +499,10 @@ export function Settings() {
       <span style={{ fontSize: 'var(--font-size-xs)' }}>{bankFormatColumnMapPreview(r.column_mapping)}</span>
     )},
     { key: 'actions', title: '操作', render: (r) => (
-      <Button variant="secondary" onClick={() => handleDeleteBankFormat(r.id)}>🗑 删除</Button>
+      <div style={{ display: 'flex', gap: '4px' }}>
+        <Button variant="secondary" onClick={() => handleOpenBankFormatModal(r)}>✏️ 编辑</Button>
+        <Button variant="secondary" onClick={() => handleDeleteBankFormat(r.id)}>🗑 删除</Button>
+      </div>
     )},
   ];
 
@@ -753,7 +795,7 @@ export function Settings() {
       </Modal>
 
       {/* ── Custom format config Modal ── */}
-      <Modal open={showFormatModal} title="📐 添加自定义日结单格式" onClose={() => setShowFormatModal(false)}>
+      <Modal open={showFormatModal} title={editingCustomFormatId ? '📐 编辑自定义日结单格式' : '📐 添加自定义日结单格式'} onClose={() => setShowFormatModal(false)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', minWidth: 500 }}>
             {/* Name + keywords */}
             <div>
@@ -828,7 +870,7 @@ export function Settings() {
         </Modal>
 
       {/* ── Bank format config Modal ── */}
-      <Modal open={showBankFormatModal} title="🏦 添加自定义银行日结单格式" onClose={() => setShowBankFormatModal(false)}>
+      <Modal open={showBankFormatModal} title={editingBankFormatId ? '🏦 编辑自定义银行日结单格式' : '🏦 添加自定义银行日结单格式'} onClose={() => setShowBankFormatModal(false)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', minWidth: 500 }}>
             {/* Name + keywords */}
             <div>
