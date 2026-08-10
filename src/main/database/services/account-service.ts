@@ -213,6 +213,45 @@ export function deleteAccount(id: number): DeleteResult {
   return { success: true };
 }
 
+/** Force-delete account and all related records (cascade). */
+export function forceDeleteAccount(id: number): DeleteResult {
+  const db = getDatabase();
+  const existing = getAccount(id);
+  if (!existing) return { success: false, error: '账户不存在' };
+
+  const deleteAll = db.transaction(() => {
+    // Soft-delete child accounts recursively
+    const childIds = db.prepare(
+      'SELECT id FROM accounts WHERE parent_account_id = ? AND is_active = 1'
+    ).all(id) as { id: number }[];
+    for (const child of childIds) {
+      forceDeleteAccount(child.id);
+    }
+
+    // Delete account_transactions
+    db.prepare('DELETE FROM account_transactions WHERE account_id = ?').run(id);
+
+    // Delete account_balances
+    db.prepare('DELETE FROM account_balances WHERE account_id = ?').run(id);
+
+    // Delete ledgers
+    db.prepare('DELETE FROM ledgers WHERE account_id = ?').run(id);
+
+    // Nullify asset links (keep the assets, just remove account linkage)
+    db.prepare('UPDATE assets SET account_id = NULL WHERE account_id = ?').run(id);
+
+    // Soft-delete the account itself
+    db.prepare('UPDATE accounts SET is_active = 0 WHERE id = ?').run(id);
+  });
+
+  try {
+    deleteAll();
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || '强制删除失败' };
+  }
+}
+
 // ── Balances ──
 
 export function getAccountBalances(accountId: number): AccountBalanceRow[] {

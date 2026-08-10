@@ -18,9 +18,9 @@ export function listCurrencies(): CurrencyRow[] {
   return db.prepare('SELECT * FROM currencies ORDER BY is_base DESC, code').all() as CurrencyRow[];
 }
 
-export function getBaseCurrency(): CurrencyRow {
+export function getBaseCurrency(): CurrencyRow | undefined {
   const db = getDatabase();
-  return db.prepare('SELECT * FROM currencies WHERE is_base = 1').get() as CurrencyRow;
+  return db.prepare('SELECT * FROM currencies WHERE is_base = 1').get() as CurrencyRow | undefined;
 }
 
 export function getCurrency(code: string): CurrencyRow | undefined {
@@ -34,9 +34,11 @@ export function updateRate(code: string, rateToBase: number): void {
     .run(rateToBase, code);
 
   // Record in history
-  const baseCode = getBaseCurrency().code;
-  db.prepare('INSERT INTO exchange_rates (from_currency, to_currency, rate) VALUES (?, ?, ?)')
-    .run(code, baseCode, rateToBase);
+  const base = getBaseCurrency();
+  if (base) {
+    db.prepare('INSERT INTO exchange_rates (from_currency, to_currency, rate) VALUES (?, ?, ?)')
+      .run(code, base.code, rateToBase);
+  }
 }
 
 export function getRateHistory(code: string, limit?: number) {

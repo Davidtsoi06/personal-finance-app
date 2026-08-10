@@ -72,7 +72,7 @@ export function checkPriceAlerts(
 
     const changePct = ((newPrice - oldPrice) / oldPrice) * 100;
 
-    if (changePct <= -(dropCfg?.threshold || 999) && dropCfg) {
+    if (changePct <= -(dropCfg?.threshold ?? 999) && dropCfg) {
       const asset = db.prepare(
         'SELECT name, code, currency, quantity, market_value FROM assets WHERE id = ?'
       ).get(assetId) as any;
@@ -88,7 +88,7 @@ export function checkPriceAlerts(
       }
     }
 
-    if (changePct >= (surgeCfg?.threshold || 999) && surgeCfg) {
+    if (changePct >= (surgeCfg?.threshold ?? 999) && surgeCfg) {
       const asset = db.prepare(
         'SELECT name, code, currency, quantity, market_value FROM assets WHERE id = ?'
       ).get(assetId) as any;

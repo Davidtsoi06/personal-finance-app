@@ -44,6 +44,8 @@ export function HoldingsDetail() {
   const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
   const [deleteHolding, setDeleteHolding] = useState<Holding | null>(null);
+  const [editingTrade, setEditingTrade] = useState<TradeRecord | null>(null);
+  const [deletingTrade, setDeletingTrade] = useState<TradeRecord | null>(null);
 
   // ── Import broker selection ──
   const [brokerFormats, setBrokerFormats] = useState<string[]>([]);
@@ -204,6 +206,34 @@ export function HoldingsDetail() {
     }
   };
 
+  /** Edit trade record */
+  const handleEditTrade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTrade) return;
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const quantity = parseFloat(fd.get('quantity') as string);
+    const price = parseFloat(fd.get('price') as string);
+    const fee = parseFloat(fd.get('fee') as string) || 0;
+    try {
+      await invoke('transaction:update', editingTrade.id, {
+        type: fd.get('type'), quantity, price, fee,
+        currency: fd.get('currency'), date: fd.get('date'), notes: fd.get('notes'),
+      });
+      setEditingTrade(null);
+      load();
+    } catch (err: any) { console.error(err); }
+  };
+
+  /** Delete trade record */
+  const handleDeleteTrade = async () => {
+    if (!deletingTrade) return;
+    try {
+      await invoke('transaction:delete', deletingTrade.id);
+      setDeletingTrade(null);
+      load();
+    } catch (err: any) { console.error(err); }
+  };
+
   const totalMV = holdings.reduce((s, h) => s + h.market_value, 0);
   const totalPL = holdings.reduce((s, h) => s + h.profit_loss, 0);
 
@@ -301,6 +331,15 @@ export function HoldingsDetail() {
           {r.type === 'buy' ? '-' : '+'}
           <Amount value={r.total_amount} currency={r.currency} showSign={false} />
         </span>
+      ),
+    },
+    {
+      key: 'actions', title: '操作', align: 'center',
+      render: (r) => (
+        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+          <Button variant="secondary" size="sm" onClick={() => setEditingTrade(r)}>✏️</Button>
+          <Button variant="secondary" size="sm" onClick={() => setDeletingTrade(r)}>🗑</Button>
+        </div>
       ),
     },
   ];
@@ -423,7 +462,7 @@ export function HoldingsDetail() {
       <Modal open={showImport} title="📥 导入日结单" onClose={() => setShowImport(false)} width="700px">
         <div>
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-md)' }}>
-            粘贴 CSV 日结单，或直接上传券商 Excel 文件。自动检测格式或手动选择券商。
+            粘贴 CSV 日结单，或直接上传文件（支持 CSV / Excel）。自动检测格式或手动选择券商。
           </p>
 
           {/* Broker format selector */}
@@ -481,7 +520,7 @@ Date, Symbol, Description, Buy/Sell, Quantity, Price, Commission, Currency
                 <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
                   <Button variant="secondary" onClick={() => setShowImport(false)}>取消</Button>
                   <Button variant="secondary" onClick={handleExcelUpload}>
-                    📂 上传 Excel
+                    📂 上传文件
                   </Button>
                 </div>
                 <Button variant="primary" onClick={handleParseStatement} disabled={!csvText.trim()}>
@@ -658,6 +697,75 @@ Date, Symbol, Description, Buy/Sell, Quantity, Price, Commission, Currency
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ── Edit Trade Modal ── */}
+      <Modal open={!!editingTrade} title="✏️ 编辑交易记录" onClose={() => setEditingTrade(null)}>
+        {editingTrade && (
+          <form onSubmit={handleEditTrade}>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">方向</label>
+                <select className="form-select" name="type" defaultValue={editingTrade.type}>
+                  <option value="buy">🟢 买入</option>
+                  <option value="sell">🔴 卖出</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">币种</label>
+                <select className="form-select" name="currency" defaultValue={editingTrade.currency}>
+                  <option value="CNY">¥ 人民币</option>
+                  <option value="HKD">HK$ 港币</option>
+                  <option value="USD">$ 美元</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">数量 *</label>
+                <input className="form-input" name="quantity" type="number" step="any" defaultValue={editingTrade.quantity} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">价格 *</label>
+                <input className="form-input" name="price" type="number" step="any" defaultValue={editingTrade.price} required />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">手续费</label>
+                <input className="form-input" name="fee" type="number" step="any" defaultValue={editingTrade.fee} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">日期</label>
+                <input className="form-input" name="date" type="date" defaultValue={editingTrade.date} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">备注</label>
+              <input className="form-input" name="notes" defaultValue={editingTrade.notes || ''} />
+            </div>
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setEditingTrade(null)} type="button">取消</Button>
+              <Button variant="primary" type="submit">保存修改</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* ── Delete Trade Modal ── */}
+      <Modal open={!!deletingTrade} title="🗑 删除交易记录" onClose={() => setDeletingTrade(null)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+          <p>确认删除此交易记录吗？持仓数据将自动回滚。</p>
+          {deletingTrade && (
+            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: 'var(--spacing-sm)', borderRadius: 'var(--radius-sm)' }}>
+              {deletingTrade.type === 'buy' ? '🟢 买入' : '🔴 卖出'} · {deletingTrade.asset_name} · {deletingTrade.quantity}股@{deletingTrade.price} · {deletingTrade.date}
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)' }}>
+            <Button variant="secondary" onClick={() => setDeletingTrade(null)}>取消</Button>
+            <Button variant="danger" onClick={handleDeleteTrade}>确认删除</Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

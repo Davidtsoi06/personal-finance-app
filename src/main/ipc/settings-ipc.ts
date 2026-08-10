@@ -116,9 +116,9 @@ export function registerSettingsIpcHandlers(): void {
     const xlsx = require('xlsx') as typeof import('xlsx');
 
     const result = await dialog.showOpenDialog({
-      title: '选择银行日结单 Excel 文件',
+      title: '选择银行日结单文件',
       filters: [
-        { name: 'Excel 文件', extensions: ['xlsx', 'xls'] },
+        { name: 'Excel / CSV 文件', extensions: ['xlsx', 'xls', 'csv'] },
         { name: '所有文件', extensions: ['*'] },
       ],
       properties: ['openFile'],
@@ -132,8 +132,21 @@ export function registerSettingsIpcHandlers(): void {
 
     try {
       const fs = require('fs');
-      const fileBuffer = fs.readFileSync(filePath);
       const ext = filePath.split('.').pop()?.toLowerCase();
+
+      // CSV — 直接读取文本，复用已有解析器
+      if (ext === 'csv') {
+        const csvText = fs.readFileSync(filePath, 'utf-8');
+        const parseResult = bankParser.parseBankStatement(csvText, formatName);
+        return {
+          canceled: false,
+          fileName: filePath.split(/[\\/]/).pop() || filePath,
+          ...parseResult,
+        };
+      }
+
+      // Excel — xlsx 库解析
+      const fileBuffer = fs.readFileSync(filePath);
       const workbook = ext === 'xls'
         ? xlsx.read(fileBuffer, { type: 'buffer', codepage: 936 })
         : xlsx.read(fileBuffer, { type: 'buffer' });

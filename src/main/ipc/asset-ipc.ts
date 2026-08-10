@@ -17,7 +17,12 @@ export function registerAssetIpcHandlers(): void {
     data.code = normalizeCode(data.code);
     return assetService.createAsset(data);
   });
-  ipcMain.handle('asset:update', (_e, id: number, data: any) => assetService.updateAsset(id, data));
+  ipcMain.handle('asset:update', (_e, id: number, data: any) => {
+    if (data.currency) data.currency = normalizeCurrency(data.currency, 'CNY');
+    if (data.code) data.code = normalizeCode(data.code);
+    if (data.name) data.name = normalizeString(data.name);
+    return assetService.updateAsset(id, data);
+  });
   ipcMain.handle('asset:delete', (_e, id: number) => assetService.deleteAsset(id));
   ipcMain.handle('asset:updatePrice', (_e, id: number, price: number) => assetService.updateCurrentPrice(id, price));
   ipcMain.handle('asset:totalMarketValue', (_e, currency?: string) => assetService.getTotalMarketValue(currency));
@@ -38,88 +43,100 @@ export function registerAssetIpcHandlers(): void {
     const code = normalizeCode(data.code);
     const name = normalizeString(data.name);
 
-    let asset = db.prepare(
-      'SELECT * FROM assets WHERE code = ? AND investment_account_id = ?'
-    ).get(code, data.investmentAccountId) as any;
-
     if (data.type === 'buy') {
-      if (asset) {
-        const newQty = asset.quantity + data.quantity;
-        const newTotalCost = asset.total_cost + (data.quantity * data.price + fee);
-        const newAvgCost = newTotalCost / newQty;
-        const newMktValue = newQty * data.price;
-        const newPL = newMktValue - newTotalCost;
-        const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
+      const tx = db.transaction(() => {
+        let asset = db.prepare(
+          'SELECT * FROM assets WHERE code = ? AND investment_account_id = ?'
+        ).get(code, data.investmentAccountId) as any;
 
-        db.prepare(`
-          UPDATE assets SET quantity=?, cost_price=?, current_price=?, market_value=?,
-            total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
-          WHERE id=?
-        `).run(newQty, newAvgCost, data.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
+        if (asset) {
+          const newQty = asset.quantity + data.quantity;
+          const newTotalCost = asset.total_cost + (data.quantity * data.price + fee);
+          const newAvgCost = newTotalCost / newQty;
+          const newMktValue = newQty * data.price;
+          const newPL = newMktValue - newTotalCost;
+          const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
 
-        const txnResult = db.prepare(`
-          INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(asset.id, 'buy', data.quantity, data.price, fee,
-          data.quantity * data.price + fee, currency, date, data.notes || '买入');
+          db.prepare(`
+            UPDATE assets SET quantity=?, cost_price=?, current_price=?, market_value=?,
+              total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
+            WHERE id=?
+          `).run(newQty, newAvgCost, data.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
 
-        db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
-          .run(asset.id, data.price);
+          const txnResult = db.prepare(`
+            INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(asset.id, 'buy', data.quantity, data.price, fee,
+            data.quantity * data.price + fee, currency, date, data.notes || '买入');
 
-        return { success: true, assetId: asset.id, transactionId: txnResult.lastInsertRowid };
-      } else {
-        const totalCost = data.quantity * data.price + fee;
-        const marketValue = data.quantity * data.price;
-        const assetResult = db.prepare(`
-          INSERT INTO assets (name, code, type, market, currency, quantity, cost_price,
-            current_price, market_value, total_cost, profit_loss, profit_loss_pct,
-            investment_account_id, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          name, code, data.assetType || 'stock',
-          data.market || (currency === 'HKD' ? 'hk_stock' : currency === 'USD' ? 'us_stock' : 'a_stock'),
-          currency, data.quantity, data.price, data.price, marketValue, totalCost,
-          marketValue - totalCost, totalCost > 0 ? ((marketValue - totalCost) / totalCost) * 100 : 0,
-          data.investmentAccountId, data.notes || null
-        );
-        const assetId = assetResult.lastInsertRowid as number;
+          db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
+            .run(asset.id, data.price);
 
-        const txnResult = db.prepare(`
-          INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(assetId, 'buy', data.quantity, data.price, fee,
-          data.quantity * data.price + fee, currency, date, data.notes || '买入');
+          return { success: true, assetId: asset.id, transactionId: txnResult.lastInsertRowid };
+        } else {
+          const totalCost = data.quantity * data.price + fee;
+          const marketValue = data.quantity * data.price;
+          const assetResult = db.prepare(`
+            INSERT INTO assets (name, code, type, market, currency, quantity, cost_price,
+              current_price, market_value, total_cost, profit_loss, profit_loss_pct,
+              investment_account_id, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            name, code, data.assetType || 'stock',
+            data.market || (currency === 'HKD' ? 'hk_stock' : currency === 'USD' ? 'us_stock' : 'a_stock'),
+            currency, data.quantity, data.price, data.price, marketValue, totalCost,
+            marketValue - totalCost, totalCost > 0 ? ((marketValue - totalCost) / totalCost) * 100 : 0,
+            data.investmentAccountId, data.notes || null
+          );
+          const assetId = assetResult.lastInsertRowid as number;
 
-        return { success: true, assetId, transactionId: txnResult.lastInsertRowid };
-      }
+          const txnResult = db.prepare(`
+            INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(assetId, 'buy', data.quantity, data.price, fee,
+            data.quantity * data.price + fee, currency, date, data.notes || '买入');
+
+          return { success: true, assetId, transactionId: txnResult.lastInsertRowid };
+        }
+      });
+
+      return tx();
     } else {
+      // Sell validation — must run outside transaction since it's read-only checks
+      const asset = db.prepare(
+        'SELECT * FROM assets WHERE code = ? AND investment_account_id = ?'
+      ).get(code, data.investmentAccountId) as any;
       if (!asset) return { success: false, error: `未找到代码为 ${code} 的持仓` };
       if (asset.quantity < data.quantity) {
         return { success: false, error: `持仓不足：持有 ${asset.quantity} 股，尝试卖出 ${data.quantity} 股` };
       }
 
-      const newQty = asset.quantity - data.quantity;
-      const newTotalCost = newQty > 0 ? asset.total_cost * (newQty / asset.quantity) : 0;
-      const newMktValue = newQty * data.price;
-      const newPL = newMktValue - newTotalCost;
-      const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
+      const tx = db.transaction(() => {
+        const newQty = asset.quantity - data.quantity;
+        const newTotalCost = newQty > 0 ? asset.total_cost * (newQty / asset.quantity) : 0;
+        const newMktValue = newQty * data.price;
+        const newPL = newMktValue - newTotalCost;
+        const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
 
-      db.prepare(`
-        UPDATE assets SET quantity=?, current_price=?, market_value=?,
-          total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
-        WHERE id=?
-      `).run(newQty, data.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
+        db.prepare(`
+          UPDATE assets SET quantity=?, current_price=?, market_value=?,
+            total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
+          WHERE id=?
+        `).run(newQty, data.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
 
-      const txnResult = db.prepare(`
-        INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(asset.id, 'sell', data.quantity, data.price, fee,
-        data.quantity * data.price - fee, currency, date, data.notes || '卖出');
+        const txnResult = db.prepare(`
+          INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(asset.id, 'sell', data.quantity, data.price, fee,
+          data.quantity * data.price - fee, currency, date, data.notes || '卖出');
 
-      db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
-        .run(asset.id, data.price);
+        db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
+          .run(asset.id, data.price);
 
-      return { success: true, assetId: asset.id, transactionId: txnResult.lastInsertRowid };
+        return { success: true, assetId: asset.id, transactionId: txnResult.lastInsertRowid };
+      });
+
+      return tx();
     }
   });
 
@@ -143,6 +160,11 @@ export function registerAssetIpcHandlers(): void {
     data.date = normalizeDate(data.date);
     data.currency = normalizeCurrency(data.currency, 'CNY');
     return transactionService.createTransaction(data);
+  });
+  ipcMain.handle('transaction:update', (_e, id: number, data: any) => {
+    if (data.date) data.date = normalizeDate(data.date);
+    if (data.currency) data.currency = normalizeCurrency(data.currency, 'CNY');
+    return transactionService.updateTransaction(id, data);
   });
   ipcMain.handle('transaction:delete', (_e, id: number) => transactionService.deleteTransaction(id));
   ipcMain.handle('transaction:todayList', () => transactionService.getTodayTransactions());
@@ -268,9 +290,9 @@ export function registerAssetIpcHandlers(): void {
     const xlsx = require('xlsx') as typeof import('xlsx');
 
     const result = await dialog.showOpenDialog({
-      title: '选择日结单 Excel 文件',
+      title: '选择日结单文件',
       filters: [
-        { name: 'Excel 文件', extensions: ['xlsx', 'xls'] },
+        { name: 'Excel / CSV 文件', extensions: ['xlsx', 'xls', 'csv'] },
         { name: '所有文件', extensions: ['*'] },
       ],
       properties: ['openFile'],
@@ -284,8 +306,21 @@ export function registerAssetIpcHandlers(): void {
 
     try {
       const fs = require('fs');
-      const fileBuffer = fs.readFileSync(filePath);
       const ext = filePath.split('.').pop()?.toLowerCase();
+
+      // CSV — 直接读取文本，复用已有解析器
+      if (ext === 'csv') {
+        const csvText = fs.readFileSync(filePath, 'utf-8');
+        const parseResult = parseStatement(csvText, formatName);
+        return {
+          canceled: false,
+          fileName: filePath.split(/[\\/]/).pop() || filePath,
+          ...parseResult,
+        };
+      }
+
+      // Excel — xlsx 库解析
+      const fileBuffer = fs.readFileSync(filePath);
       const workbook = ext === 'xls'
         ? xlsx.read(fileBuffer, { type: 'buffer', codepage: 936 })
         : xlsx.read(fileBuffer, { type: 'buffer' });

@@ -16,7 +16,12 @@ export function registerLedgerIpcHandlers(): void {
     data.description = normalizeString(data.description);
     return ledgerService.createLedger(data);
   });
-  ipcMain.handle('ledger:update', (_e, id: number, data: any) => ledgerService.updateLedger(id, data));
+  ipcMain.handle('ledger:update', (_e, id: number, data: any) => {
+    if (data.date) data.date = normalizeDate(data.date);
+    if (data.currency) data.currency = normalizeCurrency(data.currency, 'CNY');
+    if (data.description) data.description = normalizeString(data.description);
+    return ledgerService.updateLedger(id, data);
+  });
   ipcMain.handle('ledger:delete', (_e, id: number) => ledgerService.deleteLedger(id));
   ipcMain.handle('ledger:monthlySummary', (_e, year: number, month: number) =>
     ledgerService.getMonthlySummary(year, month)

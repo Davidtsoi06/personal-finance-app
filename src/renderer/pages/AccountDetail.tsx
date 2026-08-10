@@ -39,6 +39,8 @@ export function AccountDetail() {
   const [txType, setTxType] = useState<'deposit' | 'withdraw'>('deposit');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [editingTx, setEditingTx] = useState<AccountTransaction | null>(null);
+  const [deletingTx, setDeletingTx] = useState<AccountTransaction | null>(null);
 
   // ── Bank statement import state ──
   const [showBankImport, setShowBankImport] = useState(false);
@@ -97,6 +99,32 @@ export function AccountDetail() {
       setError(err.message || '操作失败');
     }
     setSaving(false);
+  };
+
+  const handleEditTx = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTx) return;
+    setSaving(true);
+    const form = e.target as HTMLFormElement;
+    const data: Record<string, unknown> = {};
+    new FormData(form).forEach((v, k) => { data[k] = v; });
+    const amount = parseFloat((data.amount ?? '') as string) || 0;
+    if (amount <= 0 || isNaN(amount)) { setSaving(false); return; }
+    try {
+      await invoke('accountTransaction:update', editingTx.id, { ...data, amount });
+      setEditingTx(null);
+      load();
+    } catch (err: any) { console.error(err); }
+    setSaving(false);
+  };
+
+  const handleDeleteTx = async () => {
+    if (!deletingTx) return;
+    try {
+      await invoke('accountTransaction:delete', deletingTx.id);
+      setDeletingTx(null);
+      load();
+    } catch (err: any) { console.error(err); }
   };
 
   // ── Bank statement import handlers ──
@@ -211,6 +239,15 @@ export function AccountDetail() {
     {
       key: 'notes', title: '备注',
       render: (r) => r.notes || <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
+    },
+    {
+      key: 'actions', title: '操作', align: 'center',
+      render: (r) => (
+        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+          <Button variant="secondary" size="sm" onClick={() => setEditingTx(r)}>✏️</Button>
+          <Button variant="secondary" size="sm" onClick={() => setDeletingTx(r)}>🗑</Button>
+        </div>
+      ),
     },
   ];
 
@@ -398,11 +435,68 @@ export function AccountDetail() {
         </form>
       </Modal>
 
+      {/* ── Edit Transaction Modal ── */}
+      <Modal open={!!editingTx} title="✏️ 编辑存取记录" onClose={() => setEditingTx(null)}>
+        {editingTx && (
+          <form onSubmit={handleEditTx}>
+            <div className="form-group">
+              <label className="form-label">金额 *</label>
+              <input className="form-input" name="amount" type="number" step="any" defaultValue={editingTx.amount} required autoFocus />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">类型</label>
+                <select className="form-select" name="type" defaultValue={editingTx.type}>
+                  <option value="deposit">📥 存入</option>
+                  <option value="withdraw">📤 取出</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">币种</label>
+                <select className="form-select" name="currency" defaultValue={editingTx.currency}>
+                  <option value="CNY">¥ 人民币</option>
+                  <option value="HKD">HK$ 港币</option>
+                  <option value="USD">$ 美元</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">日期</label>
+              <input className="form-input" name="date" type="date" defaultValue={editingTx.date} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">备注</label>
+              <input className="form-input" name="notes" defaultValue={editingTx.notes || ''} />
+            </div>
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setEditingTx(null)} type="button">取消</Button>
+              <Button variant="primary" type="submit" disabled={saving}>保存修改</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* ── Delete Transaction Modal ── */}
+      <Modal open={!!deletingTx} title="🗑 删除存取记录" onClose={() => setDeletingTx(null)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+          <p>确认删除此存取记录吗？余额将自动回滚。</p>
+          {deletingTx && (
+            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: 'var(--spacing-sm)', borderRadius: 'var(--radius-sm)' }}>
+              {deletingTx.type === 'deposit' ? '📥 存入' : '📤 取出'} · {deletingTx.currency} {deletingTx.amount.toLocaleString()} · {deletingTx.date}
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)' }}>
+            <Button variant="secondary" onClick={() => setDeletingTx(null)}>取消</Button>
+            <Button variant="danger" onClick={handleDeleteTx}>确认删除</Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Bank Statement Import Modal */}
       <Modal open={showBankImport} title="📥 导入银行日结单" onClose={() => setShowBankImport(false)} width="700px">
         <div>
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-md)' }}>
-            粘贴 CSV 日结单，或直接上传银行 Excel 文件。自动检测格式或手动选择银行格式。
+            粘贴 CSV 日结单，或直接上传文件（支持 CSV / Excel）。自动检测格式或手动选择银行格式。
           </p>
 
           {/* Bank format selector */}
@@ -460,7 +554,7 @@ export function AccountDetail() {
                 <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
                   <Button variant="secondary" onClick={() => setShowBankImport(false)}>取消</Button>
                   <Button variant="secondary" onClick={handleBankExcelUpload}>
-                    📂 上传 Excel
+                    📂 上传文件
                   </Button>
                 </div>
                 <Button variant="primary" onClick={handleBankParse} disabled={!bankCsvText.trim()}>

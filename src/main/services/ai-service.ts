@@ -41,12 +41,22 @@ export async function chat(
 
   const portfolioCtx = gatherPortfolioContext();
 
-  // Build messages: system + context + history + user
-  const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT + '\n\n' + portfolioCtx },
-    ...history.slice(-20), // keep last 20 messages (10 conversation turns)
-    { role: 'user', content: userMessage },
-  ];
+  // If history already starts with a system message (e.g. daily summary),
+  // merge portfolio context into it instead of creating a second system message.
+  let messages: ChatMessage[];
+  if (history.length > 0 && history[0].role === 'system') {
+    messages = [
+      { role: 'system', content: history[0].content + '\n\n' + portfolioCtx },
+      ...history.slice(1),
+      { role: 'user', content: userMessage },
+    ];
+  } else {
+    messages = [
+      { role: 'system', content: SYSTEM_PROMPT + '\n\n' + portfolioCtx },
+      ...history.slice(-20),
+      { role: 'user', content: userMessage },
+    ];
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60000);
@@ -106,11 +116,21 @@ export async function chatStreaming(
 
   const portfolioCtx = gatherPortfolioContext();
 
-  const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT + '\n\n' + portfolioCtx },
-    ...history.slice(-20),
-    { role: 'user', content: userMessage },
-  ];
+  // If history already starts with a system message, merge portfolio context into it.
+  let messages: ChatMessage[];
+  if (history.length > 0 && history[0].role === 'system') {
+    messages = [
+      { role: 'system', content: history[0].content + '\n\n' + portfolioCtx },
+      ...history.slice(1),
+      { role: 'user', content: userMessage },
+    ];
+  } else {
+    messages = [
+      { role: 'system', content: SYSTEM_PROMPT + '\n\n' + portfolioCtx },
+      ...history.slice(-20),
+      { role: 'user', content: userMessage },
+    ];
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60000);

@@ -98,17 +98,6 @@ export function Dashboard() {
       let totalBank = 0;
       let totalInvestment = 0;
       for (const item of (summaryData || [])) {
-        totalBank += item.market_value_cny || 0;
-        totalInvestment += item.is_investment ? (item.market_value_cny || 0) : 0;
-        // Non-investment asset types (bank, cash, insurance, custom) contribute to cash total
-        if (!item.is_investment && item.asset_type !== 'investment') {
-          totalBank += 0; // already counted above
-        }
-      }
-      // Recalculate: totalBank = sum of non-investment items
-      totalBank = 0;
-      totalInvestment = 0;
-      for (const item of (summaryData || [])) {
         if (item.is_investment) {
           totalInvestment += item.market_value_cny || 0;
         } else {

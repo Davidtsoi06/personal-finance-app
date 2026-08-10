@@ -147,13 +147,13 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 
 | 域 | 频道示例 | 说明 |
 |----|---------|------|
-| `account` | `account:list`, `account:allAssetsSummary`, `account:createWithChildren` | 账户 CRUD + 树形 + 统一资产汇总 |
-| `accountTransaction` | `accountTransaction:list`, `accountTransaction:create` | 存取记录 |
+| `account` | `account:list`, `account:forceDelete`, `account:allAssetsSummary`, `account:createWithChildren` | 账户 CRUD + 树形 + 强制删除 + 统一资产汇总 |
+| `accountTransaction` | `accountTransaction:list`, `accountTransaction:create`, `accountTransaction:update`, `accountTransaction:delete` | 存取记录（含编辑/删除） |
 | `asset` | `asset:list`, `asset:update`, `asset:totalMarketValue` | 资产持仓 |
-| `transaction` | `transaction:list`, `transaction:todayList` | 交易记录 |
-| `trade` | `trade:record`, `trade:parseStatement`, `trade:importParsed` | 交易操作 + 券商日结单 |
-| `bank` | `bank:listFormats`, `bank:parseStatement`, `bank:importParsed` | 银行日结单导入 |
-| `bankFormat` | `bankFormat:list`, `bankFormat:create`, `bankFormat:delete` | 银行日结单格式管理 |
+| `transaction` | `transaction:list`, `transaction:update`, `transaction:delete`, `transaction:todayList` | 投资交易记录（含编辑/删除，自动回滚持仓） |
+| `trade` | `trade:record`, `trade:parseStatement`, `trade:importParsed`, `trade:importExcel` | 交易操作 + 券商日结单（CSV/Excel） |
+| `bank` | `bank:listFormats`, `bank:parseStatement`, `bank:importParsed`, `bank:importExcel` | 银行日结单导入（CSV/Excel） |
+| `bankFormat` | `bankFormat:list`, `bankFormat:create`, `bankFormat:update`, `bankFormat:delete` | 银行日结单格式管理 |
 | `ledger` | `ledger:list`, `ledger:create`, `ledger:monthlySummary` | 收支记账 |
 | `category` | `category:list`, `category:create` | 收支分类 |
 | `currency` | `currency:list`, `currency:convert`, `currency:rateHistory` | 货币汇率 |
@@ -168,7 +168,7 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 | `settings` | `settings:getAiConfig`, `settings:getAppName`, `settings:setAppName` | 应用设置 |
 | `ai` | `ai:chat`, `ai:chatStream`, `ai:dailySummary` | AI 对话 |
 | `archive` | `archive:getPendingMonths`, `archive:execute`, `archive:getSettings` | 数据归档 |
-| `customFormat` | `customFormat:list`, `customFormat:create` | 券商日结单自定义格式 |
+| `customFormat` | `customFormat:list`, `customFormat:create`, `customFormat:update`, `customFormat:delete` | 券商日结单自定义格式 |
 | `update` | `update:check`, `update:download`, `update:getVersion` | 自动更新 |
 | `app` | `app:ping` | 应用状态 |
 

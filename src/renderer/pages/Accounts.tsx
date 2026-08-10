@@ -64,6 +64,11 @@ export function Accounts() {
   const [deleteTarget, setDeleteTarget] = useState<Account | null>(null);
   const [deleteError, setDeleteError] = useState('');
 
+  // ── Add child account to existing parent ──
+  const [showAddChild, setShowAddChild] = useState(false);
+  const [childParentId, setChildParentId] = useState<number | null>(null);
+  const [childParentName, setChildParentName] = useState('');
+
   // ── Edit / Delete for investment accounts ──
   const [editingInv, setEditingInv] = useState<InvAccount | null>(null);
   const [deleteInvTarget, setDeleteInvTarget] = useState<InvAccount | null>(null);
@@ -188,6 +193,41 @@ export function Accounts() {
       if (result.success) { setDeleteTarget(null); load(); }
       else { setDeleteError(result.error || '删除失败'); }
     } catch (err: any) { setDeleteError(err.message || '删除失败'); }
+  };
+
+  const handleForceDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await invoke('account:forceDelete', deleteTarget.id);
+      setDeleteTarget(null); setDeleteError(''); load();
+    } catch (err: any) { setDeleteError(err.message || '强制删除失败'); }
+  };
+
+  // ── Add child account ──
+  const handleOpenAddChild = (parent: Account) => {
+    setChildParentId(parent.id);
+    setChildParentName(parent.name);
+    setShowAddChild(true);
+  };
+
+  const handleSaveChild = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const data: Record<string, unknown> = {
+      name: fd.get('name'),
+      type: fd.get('type') || 'bank_card',
+      asset_type: 'bank',
+      currency: fd.get('currency') || 'CNY',
+      balance: parseFloat(fd.get('balance') as string) || 0,
+      bank_name: fd.get('bank_name') || '',
+      card_number: fd.get('card_number') || '',
+      parent_account_id: childParentId,
+    };
+    try {
+      await invoke('account:create', data);
+      setShowAddChild(false);
+      load();
+    } catch (err) { console.error(err); }
   };
 
   // ── Edit investment account ──
@@ -353,13 +393,64 @@ export function Accounts() {
       {/* ── Delete Regular Account Modal ── */}
       <Modal open={!!deleteTarget} title="删除账户" onClose={() => { setDeleteTarget(null); setDeleteError(''); }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-          <p>确认删除账户「{deleteTarget?.name}」吗？此操作不可撤销。</p>
+          <p>确认删除账户「{deleteTarget?.name}」吗？</p>
+          <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+            若有子账户、存取记录、收支记录，将全部一并删除。
+            关联的投资持仓将解除关联（不删除持仓）。
+          </p>
           {deleteError && <div className="form-error">{deleteError}</div>}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)' }}>
             <Button variant="secondary" onClick={() => { setDeleteTarget(null); setDeleteError(''); }}>取消</Button>
-            <Button variant="danger" onClick={handleDelete}>确认删除</Button>
+            <Button variant="secondary" onClick={handleDelete}>尝试安全删除</Button>
+            <Button variant="danger" onClick={handleForceDelete}>强制删除（含全部关联记录）</Button>
           </div>
         </div>
+      </Modal>
+
+      {/* ── Add Child Account Modal ── */}
+      <Modal open={showAddChild} title={`➕ 添加子账户 — ${childParentName}`} onClose={() => setShowAddChild(false)}>
+        <form onSubmit={handleSaveChild}>
+          <div className="form-group">
+            <label className="form-label">子账户名称 *</label>
+            <input className="form-input" name="name" required placeholder="如：储蓄卡、工资卡" />
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">类型</label>
+              <select className="form-select" name="type" defaultValue="bank_card">
+                <option value="bank_card">🏦 银行卡</option>
+                <option value="credit_card">💳 信用卡</option>
+                <option value="online_pay">📱 在线支付</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">币种</label>
+              <select className="form-select" name="currency" defaultValue="CNY">
+                <option value="CNY">¥ 人民币</option>
+                <option value="HKD">HK$ 港币</option>
+                <option value="USD">$ 美元</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">银行名称</label>
+              <input className="form-input" name="bank_name" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">卡号</label>
+              <input className="form-input" name="card_number" />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">初始余额</label>
+            <input className="form-input" name="balance" type="number" step="0.01" defaultValue="0" />
+          </div>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={() => setShowAddChild(false)} type="button">取消</Button>
+            <Button variant="primary" type="submit">添加子账户</Button>
+          </div>
+        </form>
       </Modal>
 
       {/* ── Edit Investment Account Modal ── */}
@@ -410,8 +501,7 @@ export function Accounts() {
           onClick={() => { if (!acc.children || acc.children.length === 0) navigate(`/accounts/${acc.id}`); }}
         >
           <div className="account-tree-row-icon">
-            {acc.children && acc.children.length > 0 ? '📁' :
-             acc.type === 'bank_card' ? '🏦' :
+            {acc.type === 'bank_card' ? '🏦' :
              acc.type === 'credit_card' ? '💳' :
              acc.type === 'online_pay' ? '📱' : '💵'}
           </div>
@@ -433,6 +523,9 @@ export function Accounts() {
             <Amount value={acc.balance} currency={acc.currency} colored />
           </div>
           <div className="account-tree-row-actions" onClick={e => e.stopPropagation()}>
+            {acc.type === 'bank_card' && !acc.parent_account_id && (
+              <Button variant="secondary" size="sm" onClick={() => handleOpenAddChild(acc)}>➕ 子账户</Button>
+            )}
             <Button variant="secondary" size="sm" onClick={() => setEditingAcc(acc)}>✏️ 编辑</Button>
             <Button variant="secondary" size="sm" onClick={() => { setDeleteTarget(acc); setDeleteError(''); }}>
               🗑 删除

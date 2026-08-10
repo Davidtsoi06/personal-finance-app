@@ -18,6 +18,7 @@ export interface AssetRow {
   profit_loss: number;
   profit_loss_pct: number;
   account_id: number | null;
+  investment_account_id: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -96,13 +97,13 @@ export function updateAsset(id: number, data: Partial<AssetRow>): AssetRow | und
   }
 
   db.prepare(`
-    UPDATE assets SET name=?, code=?, type=?, market=?, currency=?, quantity=?, cost_price=?, current_price=?, market_value=?, total_cost=?, profit_loss=?, profit_loss_pct=?, account_id=?, notes=?, updated_at=?
+    UPDATE assets SET name=?, code=?, type=?, market=?, currency=?, quantity=?, cost_price=?, current_price=?, market_value=?, total_cost=?, profit_loss=?, profit_loss_pct=?, account_id=?, investment_account_id=?, notes=?, updated_at=?
     WHERE id=?
   `).run(
     merged.name, merged.code, merged.type, merged.market, merged.currency,
     merged.quantity, merged.cost_price, merged.current_price, merged.market_value,
     merged.total_cost, merged.profit_loss, merged.profit_loss_pct,
-    merged.account_id, merged.notes, merged.updated_at, id
+    merged.account_id, merged.investment_account_id, merged.notes, merged.updated_at, id
   );
 
   return getAsset(id);

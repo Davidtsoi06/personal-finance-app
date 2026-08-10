@@ -73,8 +73,96 @@ export function createTransaction(data: {
 
 export function deleteTransaction(id: number): boolean {
   const db = getDatabase();
+  const tx = getTransaction(id);
+  if (!tx) return false;
+
+  // Reverse asset adjustments
+  reverseAssetAdjustment(tx);
+
   const result = db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
   return result.changes > 0;
+}
+
+/** Update a transaction, reversing old asset effects and applying new ones. */
+export function updateTransaction(id: number, data: {
+  type?: string; quantity?: number; price?: number; fee?: number; currency?: string; date?: string; notes?: string;
+}): TransactionRow | undefined {
+  const db = getDatabase();
+  const existing = getTransaction(id);
+  if (!existing) return undefined;
+
+  const newType = data.type || existing.type;
+  const newQuantity = data.quantity ?? existing.quantity;
+  const newPrice = data.price ?? existing.price;
+  const newFee = data.fee !== undefined ? data.fee : existing.fee;
+  const newTotalAmount = newQuantity * newPrice + newFee;
+  const newCurrency = data.currency || existing.currency;
+  const newDate = data.date || existing.date;
+  const newNotes = data.notes !== undefined ? data.notes : existing.notes;
+
+  const tx = db.transaction(() => {
+    // 1. Reverse old transaction's asset effect
+    reverseAssetAdjustment(existing);
+
+    // 2. Update the row
+    db.prepare(`UPDATE transactions SET type=?, quantity=?, price=?, fee=?, total_amount=?, currency=?, date=?, notes=? WHERE id=?`)
+      .run(newType, newQuantity, newPrice, newFee, newTotalAmount, newCurrency, newDate, newNotes, id);
+
+    // 3. Apply new transaction's asset effect
+    applyAssetAdjustment(existing.asset_id, newType, newQuantity, newPrice, newFee);
+
+    // 4. Update current price
+    updateCurrentPrice(existing.asset_id, newPrice);
+  });
+
+  tx();
+  return getTransaction(id);
+}
+
+/** Reverse the asset quantity/cost changes from a transaction. */
+function reverseAssetAdjustment(tx: TransactionRow): void {
+  const db = getDatabase();
+  const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(tx.asset_id) as any;
+  if (!asset) return;
+
+  if (tx.type === 'buy') {
+    const newQty = Math.max(0, asset.quantity - tx.quantity);
+    const newTotalCost = Math.max(0, asset.total_cost - tx.total_amount);
+    const newAvgCost = newQty > 0 ? newTotalCost / newQty : 0;
+    db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
+      .run(newQty, newTotalCost, newAvgCost, tx.asset_id);
+  } else if (tx.type === 'sell') {
+    const newQty = asset.quantity + tx.quantity;
+    const newTotalCost = asset.total_cost + tx.total_amount;
+    const newAvgCost = newQty > 0 ? newTotalCost / newQty : 0;
+    db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
+      .run(newQty, newTotalCost, newAvgCost, tx.asset_id);
+  }
+
+  // Recalculate derived fields
+  updateCurrentPrice(tx.asset_id, asset.current_price || 0);
+}
+
+/** Apply a new transaction's asset adjustment. */
+function applyAssetAdjustment(assetId: number, type: string, quantity: number, price: number, fee: number): void {
+  const db = getDatabase();
+  const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(assetId) as any;
+  if (!asset) return;
+
+  if (type === 'buy') {
+    const newQty = asset.quantity + quantity;
+    const newTotalCost = asset.total_cost + quantity * price + fee;
+    const newAvgCost = newQty > 0 ? newTotalCost / newQty : 0;
+    db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
+      .run(newQty, newTotalCost, newAvgCost, assetId);
+  } else if (type === 'sell') {
+    const newQty = Math.max(0, asset.quantity - quantity);
+    const costBasis = asset.cost_price > 0 ? asset.cost_price * quantity : quantity * price;
+    const newTotalCost = Math.max(0, asset.total_cost - costBasis);
+    const newAvgCost = newQty > 0 ? newTotalCost / newQty : 0;
+    db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
+      .run(newQty, newTotalCost, newAvgCost, assetId);
+  }
 }
 
 /** Get all today's transactions with asset names. */
