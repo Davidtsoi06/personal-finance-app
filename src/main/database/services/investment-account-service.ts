@@ -11,6 +11,7 @@ export interface InvestmentAccountRow {
   currency: string;
   account_number: string | null;
   funding_account_id: number | null;
+  cash_balance: number;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -32,12 +33,13 @@ export function createInvestmentAccount(data: {
   currency?: string;
   account_number?: string;
   funding_account_id?: number;
+  cash_balance?: number;
   notes?: string;
 }): InvestmentAccountRow {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT INTO investment_accounts (name, broker, currency, account_number, funding_account_id, notes)
-    VALUES (@name, @broker, @currency, @account_number, @funding_account_id, @notes)
+    INSERT INTO investment_accounts (name, broker, currency, account_number, funding_account_id, cash_balance, notes)
+    VALUES (@name, @broker, @currency, @account_number, @funding_account_id, @cash_balance, @notes)
   `);
   const result = stmt.run({
     name: data.name,
@@ -45,6 +47,7 @@ export function createInvestmentAccount(data: {
     currency: data.currency || 'CNY',
     account_number: data.account_number || null,
     funding_account_id: data.funding_account_id || null,
+    cash_balance: data.cash_balance || 0,
     notes: data.notes || null,
   });
   return getInvestmentAccount(result.lastInsertRowid as number) as InvestmentAccountRow;
@@ -56,9 +59,9 @@ export function updateInvestmentAccount(id: number, data: Partial<InvestmentAcco
   if (!existing) return undefined;
   const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
   db.prepare(`
-    UPDATE investment_accounts SET name=?, broker=?, currency=?, account_number=?, funding_account_id=?, notes=?, updated_at=?
+    UPDATE investment_accounts SET name=?, broker=?, currency=?, account_number=?, funding_account_id=?, cash_balance=?, notes=?, updated_at=?
     WHERE id=?
-  `).run(merged.name, merged.broker, merged.currency, merged.account_number, merged.funding_account_id, merged.notes, merged.updated_at, id);
+  `).run(merged.name, merged.broker, merged.currency, merged.account_number, merged.funding_account_id, merged.cash_balance ?? 0, merged.notes, merged.updated_at, id);
   return getInvestmentAccount(id);
 }
 
@@ -136,12 +139,30 @@ export function getAccountSummary(id: number) {
     SELECT
       COUNT(*) as asset_count,
       COALESCE(SUM(market_value), 0) as total_market_value,
-      COALESCE(SUM(profit_loss), 0) as total_profit_loss
+      COALESCE(SUM(profit_loss), 0) as total_profit_loss,
+      (SELECT cash_balance FROM investment_accounts WHERE id = ?) as cash_balance
     FROM assets WHERE investment_account_id = ?
-  `).get(id) as any;
+  `).get(id, id) as any;
   return {
     assetCount: row.asset_count,
     totalMarketValue: row.total_market_value,
     totalProfitLoss: row.total_profit_loss,
+    cashBalance: row.cash_balance || 0,
   };
+}
+
+/** Add cash to an investment account (e.g., from bank transfer). */
+export function addCashBalance(investmentAccountId: number, amount: number): void {
+  const db = getDatabase();
+  db.prepare(
+    "UPDATE investment_accounts SET cash_balance = cash_balance + ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(amount, investmentAccountId);
+}
+
+/** Withdraw cash from an investment account. */
+export function withdrawCashBalance(investmentAccountId: number, amount: number): void {
+  const db = getDatabase();
+  db.prepare(
+    "UPDATE investment_accounts SET cash_balance = MAX(0, cash_balance - ?), updated_at = datetime('now') WHERE id = ?"
+  ).run(amount, investmentAccountId);
 }

@@ -14,6 +14,7 @@ interface Holding {
   id: number; name: string; code: string; type: string; market: string;
   currency: string; quantity: number; cost_price: number; current_price: number;
   market_value: number; total_cost: number; profit_loss: number; profit_loss_pct: number;
+  investment_account_id?: number | null;
 }
 
 interface TradeRecord {
@@ -47,6 +48,9 @@ export function HoldingsDetail() {
   const [editingTrade, setEditingTrade] = useState<TradeRecord | null>(null);
   const [deletingTrade, setDeletingTrade] = useState<TradeRecord | null>(null);
 
+  // ── Investment accounts for edit holding modal dropdown ──
+  const [invAccounts, setInvAccounts] = useState<Array<{id: number; name: string; broker: string | null}>>([]);
+
   // ── Import broker selection ──
   const [brokerFormats, setBrokerFormats] = useState<string[]>([]);
   const [selectedBroker, setSelectedBroker] = useState('');
@@ -68,6 +72,13 @@ export function HoldingsDetail() {
   }, [accountId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load investment accounts for edit-holding modal dropdown
+  useEffect(() => {
+    invoke<Array<{id: number; name: string; broker: string | null}>>('investmentAccount:list')
+      .then(list => setInvAccounts(list || []))
+      .catch(() => {});
+  }, []);
 
   // ── Load broker formats when import modal opens ──
   useEffect(() => {
@@ -180,6 +191,7 @@ export function HoldingsDetail() {
       market: fd.get('market'),
       currency: fd.get('currency'),
       notes: fd.get('notes'),
+      investment_account_id: fd.get('investment_account_id') || null,
       quantity,
       cost_price: costPrice,
     };
@@ -663,6 +675,15 @@ Date, Symbol, Description, Buy/Sell, Quantity, Price, Commission, Currency
             <div className="form-group">
               <label className="form-label">备注</label>
               <input className="form-input" name="notes" defaultValue={editingHolding.notes || ''} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">投资账户</label>
+              <select className="form-select" name="investment_account_id" defaultValue={editingHolding.investment_account_id || ''}>
+                <option value="">不关联</option>
+                {invAccounts.map(ia => (
+                  <option key={ia.id} value={ia.id}>📈 {ia.name}{ia.broker ? ` (${ia.broker})` : ''}</option>
+                ))}
+              </select>
             </div>
             <div className="form-actions">
               <Button variant="secondary" onClick={() => setEditingHolding(null)} type="button">取消</Button>

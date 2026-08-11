@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '../ui/Button';
 import { invoke } from '../../hooks/useIpc';
 
@@ -8,8 +8,21 @@ interface Props {
   investmentAccountId?: number;
 }
 
+interface InvAccountOption {
+  id: number;
+  name: string;
+  broker: string | null;
+}
+
 export function AddAssetForm({ onClose, onSaved, investmentAccountId }: Props) {
   const [saving, setSaving] = useState(false);
+  const [invAccounts, setInvAccounts] = useState<InvAccountOption[]>([]);
+
+  useEffect(() => {
+    invoke<InvAccountOption[]>('investmentAccount:list').then((list) => {
+      setInvAccounts(list || []);
+    }).catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +32,14 @@ export function AddAssetForm({ onClose, onSaved, investmentAccountId }: Props) {
     new FormData(form).forEach((v, k) => { data[k] = v; });
     data.quantity = parseFloat(data.quantity as string) || 0;
     data.cost_price = parseFloat(data.cost_price as string) || 0;
-    if (investmentAccountId) (data as any).investmentAccountId = investmentAccountId;
+    // Use form's investment_account_id if provided, otherwise fall back to prop
+    const formInvId = (data as any).investment_account_id;
+    if (formInvId) {
+      (data as any).investmentAccountId = parseInt(formInvId);
+    } else if (investmentAccountId) {
+      (data as any).investmentAccountId = investmentAccountId;
+    }
+    delete (data as any).investment_account_id;
     try {
       await invoke('asset:create', data);
       onSaved();
@@ -90,6 +110,19 @@ export function AddAssetForm({ onClose, onSaved, investmentAccountId }: Props) {
           </select>
         </div>
       </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">投资账户</label>
+          <select className="form-select" name="investment_account_id" defaultValue={investmentAccountId || ''}>
+            <option value="">不关联</option>
+            {invAccounts.map(ia => (
+              <option key={ia.id} value={ia.id}>
+                📈 {ia.name}{ia.broker ? ` (${ia.broker})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group" />
       <div className="form-group">
         <label className="form-label">备注</label>
         <input className="form-input" name="notes" placeholder="可选备注" />

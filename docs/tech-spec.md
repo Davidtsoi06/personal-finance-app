@@ -56,7 +56,8 @@ Electron App
 │   │       ├── category-service.ts          # 收支分类 CRUD
 │   │       ├── currency-service.ts          # 货币 + 汇率转换 + 汇率历史
 │   │       ├── custom-format-service.ts     # 券商日结单自定义格式 CRUD
-│   │       ├── investment-account-service.ts # 投资账户 CRUD + 持仓汇总 + 日统计
+│   │       ├── investment-account-service.ts # 投资账户 CRUD + 持仓汇总 + 日统计 + 现金余额
+│   │       ├── fixed-deposit-service.ts      # 定期存款 CRUD（v1.4.3 新增）
 │   │       ├── ledger-service.ts            # 收支记账 CRUD + 月度汇总
 │   │       ├── net-worth-service.ts         # 净值记录 + 历史
 │   │       ├── settings-service.ts          # KV 设置（AI/归档/自定义名称）
@@ -157,7 +158,8 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 | `ledger` | `ledger:list`, `ledger:create`, `ledger:monthlySummary` | 收支记账 |
 | `category` | `category:list`, `category:create` | 收支分类 |
 | `currency` | `currency:list`, `currency:convert`, `currency:rateHistory` | 货币汇率 |
-| `investmentAccount` | `investmentAccount:list`, `investmentAccount:summary`, `investmentAccount:dailyStats` | 投资账户 |
+| `investmentAccount` | `investmentAccount:list`, `investmentAccount:summary`, `investmentAccount:dailyStats`, `investmentAccount:addCash`, `investmentAccount:withdrawCash` | 投资账户 + 现金余额管理（v1.4.3） |
+| `fixedDeposit` | `fixedDeposit:listByAccount`, `fixedDeposit:create`, `fixedDeposit:update`, `fixedDeposit:delete` | 定期存款 CRUD（v1.4.3 新增） |
 | `netWorth` | `netWorth:history`, `netWorth:record` | 净值历史 |
 | `report` | `report:monthlyTrend`, `report:categoryBreakdown`, `report:assetPerformance` | 报表数据 |
 | `export` | `export:toExcel` | 单表导出 |

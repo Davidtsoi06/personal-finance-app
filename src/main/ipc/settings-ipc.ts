@@ -21,6 +21,14 @@ export function registerSettingsIpcHandlers(): void {
   ipcMain.handle('investmentAccount:holdings', (_e, id: number) => iaService.getAccountHoldings(id));
   ipcMain.handle('investmentAccount:summary', (_e, id: number) => iaService.getAccountSummary(id));
   ipcMain.handle('investmentAccount:dailyStats', () => iaService.getDailyTradeStats());
+  ipcMain.handle('investmentAccount:addCash', (_e, id: number, amount: number) => {
+    iaService.addCashBalance(id, amount);
+    return { success: true };
+  });
+  ipcMain.handle('investmentAccount:withdrawCash', (_e, id: number, amount: number) => {
+    iaService.withdrawCashBalance(id, amount);
+    return { success: true };
+  });
   ipcMain.handle('investmentAccount:allSummary', () => {
     const accounts = iaService.listInvestmentAccounts();
     return accounts.map(acc => ({
@@ -32,6 +40,21 @@ export function registerSettingsIpcHandlers(): void {
   // ── Net Worth ──
   ipcMain.handle('netWorth:history', (_e, days?: number) => nwService.getNetWorthHistory(days));
   ipcMain.handle('netWorth:record', () => nwService.recordNetWorth());
+
+  // ── Fixed Deposits ──
+  const fdService = require('../database/services/fixed-deposit-service');
+  ipcMain.handle('fixedDeposit:listByAccount', (_e, accountId: number) =>
+    fdService.listByAccount(accountId)
+  );
+  ipcMain.handle('fixedDeposit:create', (_e, data: any) =>
+    fdService.createFixedDeposit(data)
+  );
+  ipcMain.handle('fixedDeposit:update', (_e, id: number, data: any) =>
+    fdService.updateFixedDeposit(id, data)
+  );
+  ipcMain.handle('fixedDeposit:delete', (_e, id: number) =>
+    fdService.deleteFixedDeposit(id)
+  );
 
   // ── Custom Statement Formats ──
   ipcMain.handle('customFormat:list', () => cfService.listCustomFormats());

@@ -2,7 +2,7 @@
 
 ## 概览
 
-共 16 张业务表 + 1 张迁移元数据表（`meta`），通过版本号递增的 migration 脚本管理（当前最新：v10）。
+共 17 张业务表 + 1 张迁移元数据表（`_migrations`），通过版本号递增的 migration 脚本管理（当前最新：v11）。
 
 ---
 
@@ -54,6 +54,7 @@
 | currency | TEXT | 默认币种 |
 | account_number | TEXT | 账号 |
 | funding_account_id | INTEGER FK | 关联的资金银行账户（v10 新增，可为空） |
+| cash_balance | REAL | 闲置现金余额（v11 新增，默认 0） |
 | notes | TEXT | 备注 |
 | created_at | TEXT | 创建时间 |
 | updated_at | TEXT | 更新时间 |
@@ -160,6 +161,7 @@
 | currency | TEXT | 币种 |
 | date | TEXT | 日期 |
 | notes | TEXT | 备注 |
+| investment_account_id | INTEGER FK | 关联投资账户（v11 新增，取款转入券商时追踪现金余额） |
 | created_at | TEXT | 创建时间 |
 
 ---
@@ -303,6 +305,25 @@
 
 ---
 
+## 19. fixed_deposits — 定期存款表（v11 新增）
+
+银行账户下的定期存款记录。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| account_id | INTEGER FK | 关联银行账户 |
+| amount | REAL | 存款金额（本金） |
+| currency | TEXT | 币种 |
+| interest_rate | REAL | 年利率（%） |
+| start_date | TEXT | 起始日期 |
+| maturity_date | TEXT | 到期日期 |
+| notes | TEXT | 备注 |
+| created_at | TEXT | 创建时间 |
+| updated_at | TEXT | 更新时间 |
+
+---
+
 ## 迁移历史
 
 | 版本 | 变更内容 |
@@ -317,6 +338,7 @@
 | v8 | + asset_type 列（资产大类分类） |
 | v9 | + custom_bank_formats（银行日结单自定义格式） |
 | v10 | + funding_account_id（投资账户 ↔ 银行账户关联，v1.4.0） |
+| v11 | + cash_balance（投资账户闲置现金）, + account_transactions.investment_account_id, + fixed_deposits 表（v1.4.3） |
 
 ---
 

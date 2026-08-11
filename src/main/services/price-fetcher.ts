@@ -219,6 +219,22 @@ async function fetchUSStock(symbol: string): Promise<number | null> {
   }
 }
 
+// ─── Fund (天天基金) ─────────────────────────────────────────────
+
+/** Fetch fund NAV from 天天基金 API. Response: jsonpgz({...}) — we extract `dwjz` (单位净值). */
+async function fetchFundPrice(code: string): Promise<number | null> {
+  const url = `https://fundgz.1234567.com.cn/js/${code}.js`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const text = await response.text();
+  const jsonMatch = text.match(/jsonpgz\((.+)\)/);
+  if (!jsonMatch) throw new Error('返回格式异常：未找到 jsonpgz 回调');
+  const data = JSON.parse(jsonMatch[1]);
+  const nav = parseFloat(data.dwjz);
+  if (isNaN(nav) || nav <= 0) throw new Error(`净值解析失败, dwjz=${data.dwjz}`);
+  return nav;
+}
+
 // ─── Gold ───────────────────────────────────────────────────────
 
 /** Primary: Sina Finance gold futures */
@@ -355,13 +371,36 @@ export async function fetchAllPrices(): Promise<{
     }
   }
 
+  // Fetch fund NAVs in parallel (天天基金 API, no rate limiting needed)
+  let updated = 0;
+  const errors: string[] = [];
+
+  const fundAssets = assets.filter((a: any) => a.type === 'fund');
+  if (fundAssets.length > 0) {
+    const fundResults = await Promise.all(
+      fundAssets.map(async (asset: any) => {
+        try {
+          const price = await fetchFundPrice(asset.code);
+          return { id: asset.id, code: asset.code, price, error: null };
+        } catch (err: any) {
+          return { id: asset.id, code: asset.code, price: null, error: `${asset.code}: ${err.message}` };
+        }
+      })
+    );
+    for (const r of fundResults) {
+      if (r.price && r.price > 0) {
+        updateCurrentPrice(r.id, r.price);
+        updated++;
+      } else if (r.error) {
+        errors.push(r.error);
+      }
+    }
+  }
+
   // Fetch stock prices in concurrent batches (5 per batch, 200ms between batches)
   const BATCH_SIZE = 5;
   const BATCH_DELAY_MS = 200;
-  const stockAssets = assets.filter((a: any) => a.type !== 'gold' && a.type !== 'crypto');
-
-  let updated = 0;
-  const errors: string[] = [];
+  const stockAssets = assets.filter((a: any) => a.type !== 'gold' && a.type !== 'crypto' && a.type !== 'fund');
 
   for (let i = 0; i < stockAssets.length; i += BATCH_SIZE) {
     const batch = stockAssets.slice(i, i + BATCH_SIZE);

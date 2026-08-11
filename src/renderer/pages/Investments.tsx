@@ -10,7 +10,7 @@ import { invoke } from '../hooks/useIpc';
 interface InvAccount {
   id: number; name: string; broker: string | null; currency: string;
   account_number: string | null; funding_account_id?: number | null; notes: string | null;
-  assetCount?: number; totalMarketValue?: number; totalProfitLoss?: number;
+  assetCount?: number; totalMarketValue?: number; totalProfitLoss?: number; cashBalance?: number;
 }
 
 interface DailyStats {
@@ -232,6 +232,11 @@ export function Investments() {
                   </div>
                   <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
                     {acc.assetCount || 0} 个持仓
+                    {acc.cashBalance !== undefined && acc.cashBalance > 0 && (
+                      <span style={{ marginLeft: '8px', color: 'var(--color-primary-500)' }}>
+                        💵 {acc.cashBalance.toLocaleString()} {acc.currency}
+                      </span>
+                    )}
                     <span style={{ marginLeft: '8px', color: (acc.totalProfitLoss || 0) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                       {(acc.totalProfitLoss || 0) >= 0 ? '+' : ''}{((acc.totalProfitLoss || 0)).toLocaleString()} {acc.currency}
                     </span>

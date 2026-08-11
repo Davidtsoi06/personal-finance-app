@@ -338,4 +338,29 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       ALTER TABLE investment_accounts ADD COLUMN funding_account_id INTEGER REFERENCES accounts(id);
     `,
   },
+  {
+    version: 11,
+    sql: `
+      -- ============================================
+      -- Migration v11: Broker cash balance + fixed deposits + account tx linking
+      -- ============================================
+
+      ALTER TABLE investment_accounts ADD COLUMN cash_balance REAL NOT NULL DEFAULT 0;
+
+      ALTER TABLE account_transactions ADD COLUMN investment_account_id INTEGER REFERENCES investment_accounts(id);
+
+      CREATE TABLE IF NOT EXISTS fixed_deposits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL REFERENCES accounts(id),
+        amount REAL NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'CNY',
+        interest_rate REAL NOT NULL DEFAULT 0,
+        start_date TEXT NOT NULL,
+        maturity_date TEXT NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `,
+  },
 ];

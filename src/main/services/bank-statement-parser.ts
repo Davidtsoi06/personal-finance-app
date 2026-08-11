@@ -6,6 +6,12 @@
 import { getDatabase } from '../database';
 import { normalizeDate, normalizeCurrency } from './data-normalizer';
 
+/** Safely convert a cell value (string/number from xlsx or CSV) to a trimmed string. */
+function safeTrim(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  return String(v).trim();
+}
+
 /** Parsed bank record from a statement */
 export interface ParsedBankRecord {
   date: string;
@@ -176,14 +182,14 @@ function parseStandardLine(cols: string[]): ParsedBankRecord | null {
   if (isNaN(amount)) return null;
   // Amount may be absolute — direction comes from type field
   const absAmount = Math.abs(amount);
-  const type = detectType(typeStr || '', amount);
+  const type = detectType(safeTrim(typeStr), amount);
 
   return {
-    date: normalizeDate(date?.trim()) || new Date().toISOString().slice(0, 10),
+    date: normalizeDate(safeTrim(date)) || new Date().toISOString().slice(0, 10),
     amount: absAmount,
     type,
-    description: description?.trim() || '',
-    currency: normalizeCurrency(currency?.trim() || '', 'CNY'),
+    description: safeTrim(description),
+    currency: normalizeCurrency(safeTrim(currency), 'CNY'),
   };
 }
 
@@ -234,17 +240,17 @@ function buildColMap(fmt: CustomBankFormat): Record<string, number> {
 function mapRowToBankRecord(cols: string[], colMap: Record<string, number>): ParsedBankRecord | null {
   if (cols.length < 3) return null;
 
-  const date = normalizeDate(colMap['date'] !== undefined ? cols[colMap['date']]?.trim() : '');
+  const date = normalizeDate(colMap['date'] !== undefined ? safeTrim(cols[colMap['date']]) : '');
   const rawAmount = colMap['amount'] !== undefined ? parseFloat(cols[colMap['amount']]) : NaN;
   if (isNaN(rawAmount) || !date) return null;
 
   const absAmount = Math.abs(rawAmount);
-  const typeRaw = colMap['type'] !== undefined ? cols[colMap['type']]?.trim() : '';
+  const typeRaw = colMap['type'] !== undefined ? safeTrim(cols[colMap['type']]) : '';
   const type = detectType(typeRaw, rawAmount);
 
-  const description = colMap['description'] !== undefined ? cols[colMap['description']]?.trim() : '';
+  const description = colMap['description'] !== undefined ? safeTrim(cols[colMap['description']]) : '';
   const currency = normalizeCurrency(
-    colMap['currency'] !== undefined ? cols[colMap['currency']]?.trim() : '',
+    colMap['currency'] !== undefined ? safeTrim(cols[colMap['currency']]) : '',
     'CNY'
   );
   const balance = colMap['balance'] !== undefined ? parseFloat(cols[colMap['balance']]) : undefined;
@@ -428,15 +434,15 @@ function tryGenericDetectionOnRows(rows: string[][]): BankParseResult {
     } else {
       amount = parseFloat(rows[i][combinedAmountIdx]);
       if (isNaN(amount) || amount === 0) continue;
-      const typeRaw = typeIdx !== -1 ? rows[i][typeIdx]?.trim() : '';
+      const typeRaw = typeIdx !== -1 ? safeTrim(rows[i][typeIdx]) : '';
       type = detectType(typeRaw, amount);
     }
 
-    const date = normalizeDate(rows[i][dateIdx]?.trim());
+    const date = normalizeDate(safeTrim(rows[i][dateIdx]));
     if (!date) continue;
 
-    const description = descIdx !== -1 ? rows[i][descIdx]?.trim() : '';
-    const currency = normalizeCurrency(currIdx !== -1 ? rows[i][currIdx]?.trim() : '', 'CNY');
+    const description = descIdx !== -1 ? safeTrim(rows[i][descIdx]) : '';
+    const currency = normalizeCurrency(currIdx !== -1 ? safeTrim(rows[i][currIdx]) : '', 'CNY');
     const balance = balIdx !== -1 ? parseFloat(rows[i][balIdx]) : undefined;
 
     records.push({

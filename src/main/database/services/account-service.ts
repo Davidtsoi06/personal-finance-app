@@ -399,13 +399,56 @@ export interface AssetSummaryItem {
 export function getAllAssetsSummary(): AssetSummaryItem[] {
   const db = getDatabase();
 
-  const accounts = db.prepare(`
+  // Fetch ALL active accounts (not just roots) so we can roll up child balances
+  const allAccounts = db.prepare(`
     SELECT a.*, COALESCE(c.rate_to_base, 1) as rate_to_cny
     FROM accounts a
     LEFT JOIN currencies c ON a.currency = c.code
-    WHERE a.is_active = 1 AND a.parent_account_id IS NULL
+    WHERE a.is_active = 1
     ORDER BY a.asset_type, a.sort_order, a.id
   `).all() as (AccountRow & { rate_to_cny: number })[];
+  type AccountWithRate = typeof allAccounts[0];
+
+  // Separate roots from children; build child lookup map
+  const roots: AccountWithRate[] = [];
+  const childrenOf = new Map<number, AccountWithRate[]>();
+  for (const acc of allAccounts) {
+    if (acc.parent_account_id && acc.parent_account_id > 0) {
+      const list = childrenOf.get(acc.parent_account_id) || [];
+      list.push(acc);
+      childrenOf.set(acc.parent_account_id, list);
+    } else {
+      roots.push(acc);
+    }
+  }
+
+  /** Recursively sum an account's own balance + all descendants' balances */
+  function totalBalanceWithChildren(acc: AccountWithRate): number {
+    let total = acc.balance;
+    const kids = childrenOf.get(acc.id);
+    if (kids) {
+      for (const child of kids) {
+        total += totalBalanceWithChildren(child);
+      }
+    }
+    return total;
+  }
+
+  // Fetch fixed deposits linked to bank accounts for investment classification
+  const allFixedDeposits = db.prepare(`
+    SELECT fd.*, a.currency as account_currency
+    FROM fixed_deposits fd
+    JOIN accounts a ON fd.account_id = a.id
+    WHERE a.is_active = 1
+  `).all() as any[];
+
+  // Build fixed deposit lookup by account_id
+  const fdsByAccount = new Map<number, any[]>();
+  for (const fd of allFixedDeposits) {
+    const list = fdsByAccount.get(fd.account_id) || [];
+    list.push(fd);
+    fdsByAccount.set(fd.account_id, list);
+  }
 
   const invAccounts = db.prepare(`
     SELECT ia.*, COALESCE(c.rate_to_base, 1) as rate_to_cny,
@@ -419,9 +462,9 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
 
   const result: AssetSummaryItem[] = [];
 
-  // Group regular accounts by asset_type
-  const accountGroups = new Map<string, (typeof accounts[0])[]>();
-  for (const acc of accounts) {
+  // Group root-level accounts by asset_type
+  const accountGroups = new Map<string, AccountWithRate[]>();
+  for (const acc of roots) {
     const list = accountGroups.get(acc.asset_type) || [];
     list.push(acc);
     accountGroups.set(acc.asset_type, list);
@@ -431,16 +474,17 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     if (assetType === 'investment') {
       // Investment-type accounts: show individually
       for (const acc of accList) {
+        const bal = totalBalanceWithChildren(acc);
         result.push({
           id: acc.id,
           name: acc.name,
           asset_type: acc.asset_type,
           type: acc.type,
           currency: acc.currency,
-          balance: acc.balance,
+          balance: bal,
           bank_name: acc.bank_name,
           broker: null,
-          market_value_cny: acc.balance * acc.rate_to_cny,
+          market_value_cny: bal * acc.rate_to_cny,
           children: [],
           is_investment: false,
         });
@@ -464,21 +508,45 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
         is_investment: false,
       };
       for (const acc of accList) {
+        const bal = totalBalanceWithChildren(acc);
+        // Fixed deposits linked to this account — subtract from cash and classify as investment
+        const accFds = fdsByAccount.get(acc.id) || [];
+        const fdTotal = accFds.reduce((s: number, fd: any) => s + fd.amount, 0);
+        const availableBal = bal - fdTotal;
+
         const childSummary: AssetSummaryItem = {
           id: acc.id,
           name: acc.name,
           asset_type: acc.asset_type,
           type: acc.type,
           currency: acc.currency,
-          balance: acc.balance,
+          balance: availableBal,
           bank_name: acc.bank_name,
           broker: null,
-          market_value_cny: acc.balance * acc.rate_to_cny,
+          market_value_cny: availableBal * acc.rate_to_cny,
           children: [],
           is_investment: false,
         };
-        groupItem.market_value_cny += childSummary.market_value_cny;
-        groupItem.balance += acc.balance;
+
+        // Add fixed deposits as investment sub-items under this account
+        for (const fd of accFds) {
+          childSummary.children!.push({
+            id: -fd.id,
+            name: `定期存款 · ${fd.currency} ${fd.amount.toLocaleString()}`,
+            asset_type: 'investment',
+            type: 'fixed_deposit',
+            currency: fd.currency,
+            balance: fd.amount,
+            bank_name: null,
+            broker: null,
+            market_value_cny: fd.amount * acc.rate_to_cny,
+            children: [],
+            is_investment: true,
+          });
+        }
+
+        groupItem.market_value_cny += childSummary.market_value_cny + fdTotal * acc.rate_to_cny;
+        groupItem.balance += bal;
         groupItem.children!.push(childSummary);
       }
       result.push(groupItem);

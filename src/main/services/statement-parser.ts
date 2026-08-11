@@ -6,6 +6,12 @@
 import { getDatabase } from '../database';
 import { normalizeDate, normalizeCurrency, normalizeCode, normalizeTradeType } from './data-normalizer';
 
+/** Safely convert a cell value (string/number from xlsx or CSV) to a trimmed string. */
+function safeTrim(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  return String(v).trim();
+}
+
 /** Parsed trade record from a statement */
 export interface ParsedTrade {
   date: string;
@@ -207,46 +213,24 @@ function parseStandardLine(cols: string[]): ParsedTrade | null {
   const fee = parseFloat(feeStr) || 0;
   if (isNaN(quantity) || isNaN(price)) return null;
 
-  const type = typeStr?.trim().toLowerCase();
-  if (type === 'buy' || type?.includes('买')) {
-    return {
-      date: date?.trim() || new Date().toISOString().slice(0, 10),
-      code: code?.trim() || '',
-      name: name?.trim() || code?.trim() || '',
-      type: 'buy' as const,
-      quantity, price, fee,
-      currency: (currency?.trim() || 'HKD').toUpperCase(),
-    };
+  const sDate = safeTrim(date) || new Date().toISOString().slice(0, 10);
+  const sCode = safeTrim(code);
+  const sName = safeTrim(name) || sCode;
+  const sCurrency = (safeTrim(currency) || 'HKD').toUpperCase();
+  const type = safeTrim(typeStr).toLowerCase();
+
+  const base = { date: sDate, code: sCode, name: sName, type: 'buy' as const, quantity, price, fee, currency: sCurrency };
+
+  if (type === 'buy' || type.includes('买')) {
+    return { ...base, type: 'buy' as const };
   }
-  if (type === 'sell' || type?.includes('卖')) {
-    return {
-      date: date?.trim() || new Date().toISOString().slice(0, 10),
-      code: code?.trim() || '',
-      name: name?.trim() || code?.trim() || '',
-      type: 'sell' as const,
-      quantity, price, fee,
-      currency: (currency?.trim() || 'HKD').toUpperCase(),
-    };
+  if (type === 'sell' || type.includes('卖')) {
+    return { ...base, type: 'sell' as const };
   }
-  if (type?.includes('分拆') || type?.includes('拆分') || type === 'split') {
-    return {
-      date: date?.trim() || new Date().toISOString().slice(0, 10),
-      code: code?.trim() || '',
-      name: name?.trim() || code?.trim() || '',
-      type: 'split' as const,
-      quantity, price, fee,
-      currency: (currency?.trim() || 'HKD').toUpperCase(),
-    };
+  if (type.includes('分拆') || type.includes('拆分') || type === 'split') {
+    return { ...base, type: 'split' as const };
   }
-  // 'other' type
-  return {
-    date: date?.trim() || new Date().toISOString().slice(0, 10),
-    code: code?.trim() || '',
-    name: name?.trim() || code?.trim() || '',
-    type: 'other' as const,
-    quantity, price, fee,
-    currency: (currency?.trim() || 'HKD').toUpperCase(),
-  };
+  return { ...base, type: 'other' as const };
 }
 
 /** Build column position → field mapping from a custom format definition */
@@ -265,10 +249,10 @@ function buildColMap(broker: CustomBrokerFormat): Record<string, number> {
 function mapRowToTrade(cols: string[], colMap: Record<string, number>): ParsedTrade | null {
   if (cols.length < 4) return null;
 
-  const date = normalizeDate(colMap['date'] !== undefined ? cols[colMap['date']]?.trim() : '');
-  const code = normalizeCode(colMap['code'] !== undefined ? cols[colMap['code']]?.trim() : '');
-  const name = colMap['name'] !== undefined ? cols[colMap['name']]?.trim() : code;
-  const typeRaw = colMap['type'] !== undefined ? cols[colMap['type']]?.trim() : '';
+  const date = normalizeDate(colMap['date'] !== undefined ? safeTrim(cols[colMap['date']]) : '');
+  const code = normalizeCode(colMap['code'] !== undefined ? safeTrim(cols[colMap['code']]) : '');
+  const name = colMap['name'] !== undefined ? safeTrim(cols[colMap['name']]) : code;
+  const typeRaw = colMap['type'] !== undefined ? safeTrim(cols[colMap['type']]) : '';
   const qty = parseFloat(cols[colMap['quantity']]);
   const price = parseFloat(cols[colMap['price']]);
   const rawAmount = colMap['amount'] !== undefined ? parseFloat(cols[colMap['amount']]) : NaN;
@@ -278,7 +262,7 @@ function mapRowToTrade(cols: string[], colMap: Record<string, number>): ParsedTr
     fee = Math.abs(Math.abs(rawNetAmount) - Math.abs(rawAmount));
   }
   const currency = normalizeCurrency(
-    colMap['currency'] !== undefined ? cols[colMap['currency']]?.trim() : '',
+    colMap['currency'] !== undefined ? safeTrim(cols[colMap['currency']]) : '',
     'HKD'
   );
 

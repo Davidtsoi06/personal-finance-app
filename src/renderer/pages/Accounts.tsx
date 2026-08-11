@@ -491,6 +491,22 @@ export function Accounts() {
     </div>
   );
 
+  // ── Recursive balance sum including children and linked investments ──
+  function getTotalBalanceRecursive(acc: Account): number {
+    let total = acc.balance;
+    if (acc.children) {
+      for (const child of acc.children) {
+        total += getTotalBalanceRecursive(child);
+      }
+    }
+    // Include linked investment accounts' market value + cash balance
+    const linkedInvs = investments.filter(inv => inv.funding_account_id === acc.id);
+    for (const inv of linkedInvs) {
+      total += (inv.totalMarketValue || 0);
+    }
+    return total;
+  }
+
   // ── Recursive tree render for regular accounts ──
   function renderTree(list: Account[], depth: number): React.ReactNode {
     return list.map((acc) => (
@@ -520,7 +536,7 @@ export function Accounts() {
             </div>
           </div>
           <div className="account-tree-row-balance">
-            <Amount value={acc.balance} currency={acc.currency} colored />
+            <Amount value={getTotalBalanceRecursive(acc)} currency={acc.currency} colored={acc.children && acc.children.length > 0 ? false : true} />
           </div>
           <div className="account-tree-row-actions" onClick={e => e.stopPropagation()}>
             {acc.type === 'bank_card' && !acc.parent_account_id && (
