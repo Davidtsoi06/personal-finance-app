@@ -11,6 +11,7 @@ interface InvAccount {
   id: number; name: string; broker: string | null; currency: string;
   account_number: string | null; funding_account_id?: number | null; notes: string | null;
   assetCount?: number; totalMarketValue?: number; totalProfitLoss?: number; cashBalance?: number;
+  totalValue?: number;
 }
 
 interface DailyStats {
@@ -36,6 +37,11 @@ export function Investments() {
   const [deleteTarget, setDeleteTarget] = useState<InvAccount | null>(null);
   const [deleteError, setDeleteError] = useState('');
 
+  // Cash management state
+  const [cashTarget, setCashTarget] = useState<InvAccount | null>(null);
+  const [cashType, setCashType] = useState<'add' | 'withdraw'>('add');
+  const [cashSaving, setCashSaving] = useState(false);
+
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -49,7 +55,7 @@ export function Investments() {
       setTodayTrades(trades || []);
       const enriched = await Promise.all(
         (list || []).map(async (acc) => {
-          const summary = await invoke<{ assetCount: number; totalMarketValue: number; totalProfitLoss: number }>(
+          const summary = await invoke<{ assetCount: number; totalMarketValue: number; totalProfitLoss: number; cashBalance: number; totalValue: number }>(
             'investmentAccount:summary', acc.id
           );
           return { ...acc, ...summary };
@@ -92,6 +98,26 @@ export function Investments() {
       if (result.success) { setDeleteTarget(null); load(); }
       else { setDeleteError(result.error || '删除失败'); }
     } catch (err: any) { setDeleteError(err.message || '删除失败'); }
+  };
+
+  // ── Cash Management ──
+  const handleCashOp = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!cashTarget) return;
+    setCashSaving(true);
+    const form = e.target as HTMLFormElement;
+    const amount = parseFloat((form.elements as any).amount.value) || 0;
+    if (amount <= 0) { setCashSaving(false); return; }
+    try {
+      if (cashType === 'add') {
+        await invoke('investmentAccount:addCash', cashTarget.id, amount);
+      } else {
+        await invoke('investmentAccount:withdrawCash', cashTarget.id, amount);
+      }
+      setCashTarget(null);
+      load();
+    } catch (err: any) { console.error(err); }
+    setCashSaving(false);
   };
 
   // Format time from ISO string
@@ -228,7 +254,7 @@ export function Investments() {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ marginBottom: '4px' }}>
-                    <Amount value={acc.totalMarketValue || 0} currency={acc.currency} showSign={false} size="lg" />
+                    <Amount value={acc.totalValue || acc.totalMarketValue || 0} currency={acc.currency} showSign={false} size="lg" />
                   </div>
                   <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
                     {acc.assetCount || 0} 个持仓
@@ -242,6 +268,18 @@ export function Investments() {
                     </span>
                   </div>
                 </div>
+              </div>
+              {/* Cash management */}
+              <div onClick={e => e.stopPropagation()} style={{
+                display: 'flex', gap: '6px', paddingTop: '4px',
+                borderTop: '1px solid var(--color-border-light)',
+              }}>
+                <Button variant="secondary" size="sm" onClick={() => { setCashTarget(acc); setCashType('add'); }}>
+                  💵 存入
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => { setCashTarget(acc); setCashType('withdraw'); }}>
+                  📤 取出
+                </Button>
               </div>
             </div>
           </div>
@@ -349,6 +387,32 @@ export function Investments() {
             <Button variant="danger" onClick={handleDelete}>确认删除</Button>
           </div>
         </div>
+      </Modal>
+
+      {/* ── Cash Management Modal ── */}
+      <Modal
+        open={!!cashTarget}
+        title={cashType === 'add' ? `💵 存入现金 — ${cashTarget?.name || ''}` : `📤 提取现金 — ${cashTarget?.name || ''}`}
+        onClose={() => setCashTarget(null)}
+      >
+        <form onSubmit={handleCashOp}>
+          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-md)' }}>
+            当前现金余额：{cashTarget?.currency} {(cashTarget?.cashBalance || 0).toLocaleString()}
+          </p>
+          <div className="form-group">
+            <label className="form-label">金额 *</label>
+            <input
+              className="form-input" name="amount" type="number" step="any"
+              required placeholder="0.00" autoFocus
+            />
+          </div>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={() => setCashTarget(null)} type="button">取消</Button>
+            <Button variant={cashType === 'add' ? 'primary' : 'danger'} type="submit" disabled={cashSaving}>
+              {cashSaving ? '处理中...' : cashType === 'add' ? '确认存入' : '确认取出'}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

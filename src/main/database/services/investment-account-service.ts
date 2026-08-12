@@ -132,7 +132,7 @@ export function getDailyTradeStats(): {
   };
 }
 
-/** Get summary stats for an investment account */
+/** Get summary stats for an investment account (holdings + cash). */
 export function getAccountSummary(id: number) {
   const db = getDatabase();
   const row = db.prepare(`
@@ -143,11 +143,14 @@ export function getAccountSummary(id: number) {
       (SELECT cash_balance FROM investment_accounts WHERE id = ?) as cash_balance
     FROM assets WHERE investment_account_id = ?
   `).get(id, id) as any;
+  const cashBalance = row?.cash_balance || 0;
   return {
-    assetCount: row.asset_count,
-    totalMarketValue: row.total_market_value,
-    totalProfitLoss: row.total_profit_loss,
-    cashBalance: row.cash_balance || 0,
+    assetCount: row?.asset_count || 0,
+    totalMarketValue: row?.total_market_value || 0,
+    totalProfitLoss: row?.total_profit_loss || 0,
+    cashBalance,
+    /** Holdings market value + cash balance — the real total. */
+    totalValue: (row?.total_market_value || 0) + cashBalance,
   };
 }
 
