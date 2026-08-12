@@ -6,6 +6,7 @@
  *   A-stock:    Sina → Tencent
  *   HK stock:   Sina → Tencent
  *   US stock:   Yahoo → Sina
+ *   Fund:       东方财富历史净值 → 新浪
  *   Gold:       Sina → Gold-API
  *   Crypto:     CoinGecko → Binance
  *
@@ -219,50 +220,46 @@ async function fetchUSStock(symbol: string): Promise<number | null> {
   }
 }
 
-// ─── Fund (天天基金 → 东方财富备用) ───────────────────────────────
+// ─── Fund (东方财富历史净值 → 新浪备用) ──────────────────────────
 
-/** Primary: 天天基金 API — 加 Referer 防盗链. Response: jsonpgz({...}) — we extract `dwjz` (单位净值). */
-async function fetchFundPriceTiantian(code: string): Promise<number | null> {
-  const url = `https://fundgz.1234567.com.cn/js/${code}.js`;
+/** Primary: 东方财富历史净值 API — 返回已公布的单位净值（每日更新一次，约 20:00 后）。*/
+async function fetchFundPriceEastMoneyNav(code: string): Promise<number | null> {
+  const url = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=1&pageSize=1`;
   const response = await fetch(url, {
     headers: { Referer: 'https://fundf10.eastmoney.com/' },
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const text = await response.text();
-  // Check for empty / error response
-  if (!text || text.length < 20) throw new Error('返回数据为空');
-  const jsonMatch = text.match(/jsonpgz\((.+)\)/);
-  if (!jsonMatch) throw new Error('返回格式异常：未找到 jsonpgz 回调');
-  const data = JSON.parse(jsonMatch[1]);
-  // dwjz = 单位净值 (actual NAV), jzrq = 净值日期
-  const nav = parseFloat(data.dwjz);
-  if (isNaN(nav) || nav <= 0) throw new Error(`净值解析失败, dwjz=${data.dwjz}, jzrq=${data.jzrq}`);
+  const data = await response.json() as any;
+  if (data.ErrCode !== 0) throw new Error(`API 错误: ErrCode=${data.ErrCode}, ErrMsg=${data.ErrMsg || '无'}`);
+  const list = data.Data?.LSJZList;
+  if (!list || list.length === 0) throw new Error('返回数据无净值记录');
+  const nav = parseFloat(list[0].DWJZ);
+  if (isNaN(nav) || nav <= 0) throw new Error(`净值解析失败, DWJZ=${list[0].DWJZ}, FSRQ=${list[0].FSRQ}`);
   return nav;
 }
 
-/** Fallback: 东方财富基金估值 API. Response: jsonpgz({...}) with gz (估值) and dwjz (净值). */
-async function fetchFundPriceEastMoney(code: string): Promise<number | null> {
-  const url = `https://fundgzapi.eastmoney.com/fundgz_api/FundGzApi.ashx?fundcode=${code}&type=lsjz`;
+/** Fallback: 新浪财经基金 API — 与 A 股/港股使用同一稳定的新浪接口。*/
+async function fetchFundPriceSina(code: string): Promise<number | null> {
+  const url = `https://hq.sinajs.cn/list=f_${code}`;
   const response = await fetch(url, {
-    headers: { Referer: 'https://fund.eastmoney.com/' },
+    headers: { Referer: 'https://finance.sina.com.cn' },
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const text = await response.text();
   if (!text || text.length < 20) throw new Error('返回数据为空');
-  const jsonMatch = text.match(/jsonpgz\((.+)\)/);
-  if (!jsonMatch) throw new Error('返回格式异常：未找到 jsonpgz 回调');
-  const data = JSON.parse(jsonMatch[1]);
-  // EastMoney returns dwjz and gz — prefer dwjz, fallback to gz
-  const nav = parseFloat(data.dwjz) || parseFloat(data.gz);
-  if (isNaN(nav) || nav <= 0) throw new Error(`净值解析失败, dwjz=${data.dwjz}, gz=${data.gz}`);
+  const match = text.match(/"([^"]+)"/);
+  if (!match) throw new Error('返回格式异常：未找到引号包裹的数据');
+  const fields = match[1].split(',');
+  const nav = parseFloat(fields[1]);
+  if (isNaN(nav) || nav <= 0) throw new Error(`净值解析失败, field[1]=${fields[1]}`);
   return nav;
 }
 
 async function fetchFundPrice(code: string): Promise<number | null> {
-  return fetchWithFallback(code, '基金', '天天基金',
-    () => fetchFundPriceTiantian(code),
-    '东方财富',
-    () => fetchFundPriceEastMoney(code),
+  return fetchWithFallback(code, '基金', '东方财富历史净值',
+    () => fetchFundPriceEastMoneyNav(code),
+    '新浪',
+    () => fetchFundPriceSina(code),
   );
 }
 

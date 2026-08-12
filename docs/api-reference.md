@@ -110,17 +110,45 @@ GET https://hq.sinajs.cn/list=gb_aapl
 
 ## 5. 基金净值
 
-### 天天基金 API
+### 主数据源：东方财富历史净值 API
 
-**基金搜索：**
+**获取最新净值：**
 ```
-GET https://fundgz.1234567.com.cn/js/{fund_code}.js
+GET https://api.fund.eastmoney.com/f10/lsjz?fundCode={fund_code}&pageIndex=1&pageSize=1
+Referer: https://fundf10.eastmoney.com/
 ```
 
 **返回示例：**
 ```json
-fundgz("110022", "易方达消费行业", "3.8520", "2026-08-03 15:00")
+{
+  "Data": {
+    "LSJZList": [{
+      "FSRQ": "2026-08-12",
+      "DWJZ": "2.9500",
+      "LJJZ": "2.9500"
+    }]
+  },
+  "ErrCode": 0
+}
 ```
+
+> `DWJZ` = 单位净值，`LJJZ` = 累计净值，`FSRQ` = 净值日期。已公布净值每日约 20:00 更新一次。
+
+### 备用数据源：新浪财经基金 API
+
+```
+GET https://hq.sinajs.cn/list=f_{fund_code}
+Referer: https://finance.sina.com.cn
+```
+
+**返回示例：**
+```
+var hq_str_f_110022="易方达消费行业股票,2.95,2.95,2.953,2026-08-12,36.5105"
+```
+
+字段顺序：名称、最新净值、累计净值、前一日净值、日期、成立以来累计净值。
+
+> v1.5.1 修复：天天基金 `fundgz.1234567.com.cn` 和东方财富 `fundgzapi.eastmoney.com` 已于 2026-08 停止返回 JSON（防盗链升级），替换为上述两个新数据源。
 
 ---
 
