@@ -379,10 +379,7 @@ export const MIGRATIONS: Migration[] = [
       -- Migration v12: Asset hierarchy restructure
       -- ============================================
 
-      -- 1. New field: display_alias for bank card nickname
-      ALTER TABLE accounts ADD COLUMN display_alias TEXT;
-
-      -- 2. Insurance policies table (replaces asset_type='insurance' accounts)
+      -- 1. Insurance policies table (replaces asset_type='insurance' accounts)
       CREATE TABLE IF NOT EXISTS insurance_policies (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -404,7 +401,7 @@ export const MIGRATIONS: Migration[] = [
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
 
-      -- 3. Premium payment records
+      -- 2. Premium payment records
       CREATE TABLE IF NOT EXISTS premium_payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         policy_id INTEGER NOT NULL REFERENCES insurance_policies(id),
@@ -417,6 +414,14 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
     migrate: (db) => {
+      // 0) Add display_alias column if not exists (safe retry)
+      const hasCol = db.prepare(
+        "SELECT 1 FROM pragma_table_info('accounts') WHERE name = 'display_alias'"
+      ).get();
+      if (!hasCol) {
+        db.exec('ALTER TABLE accounts ADD COLUMN display_alias TEXT');
+      }
+
       // a) Migrate insurance accounts → insurance_policies
       const insuranceAccounts = db.prepare(
         "SELECT * FROM accounts WHERE asset_type = 'insurance' AND is_active = 1"
@@ -429,13 +434,18 @@ export const MIGRATIONS: Migration[] = [
         `).run(acc.name, acc.balance || 0, acc.currency, acc.created_at, '从旧版保险账户自动迁移', acc.bank_name || null);
       }
 
-      // b) Delete insurance accounts + their balances/transactions
+      // b) Delete insurance accounts — clean ALL child tables before deleting parent
       if (insuranceAccounts.length > 0) {
         const insIds = insuranceAccounts.map((a: any) => a.id);
         for (const id of insIds) {
-          db.prepare('DELETE FROM account_balances WHERE account_id = ?').run(id);
+          db.prepare('DELETE FROM ledgers WHERE account_id = ?').run(id);
           db.prepare('DELETE FROM account_transactions WHERE account_id = ?').run(id);
           db.prepare('DELETE FROM fixed_deposits WHERE account_id = ?').run(id);
+          db.prepare('DELETE FROM account_balances WHERE account_id = ?').run(id);
+          // Nullify asset links (keep the assets, just remove account linkage)
+          db.prepare('UPDATE assets SET account_id = NULL WHERE account_id = ?').run(id);
+          // Nullify funding_account links on investment accounts
+          db.prepare('UPDATE investment_accounts SET funding_account_id = NULL WHERE funding_account_id = ?').run(id);
         }
         db.prepare('DELETE FROM accounts WHERE asset_type = ?').run('insurance');
       }
@@ -444,10 +454,12 @@ export const MIGRATIONS: Migration[] = [
       const ccIds = db.prepare("SELECT id FROM accounts WHERE type = 'credit_card'").all() as any[];
       if (ccIds.length > 0) {
         for (const row of ccIds) {
-          db.prepare('DELETE FROM account_balances WHERE account_id = ?').run(row.id);
+          db.prepare('DELETE FROM ledgers WHERE account_id = ?').run(row.id);
           db.prepare('DELETE FROM account_transactions WHERE account_id = ?').run(row.id);
           db.prepare('DELETE FROM fixed_deposits WHERE account_id = ?').run(row.id);
-          db.prepare('DELETE FROM ledgers WHERE account_id = ?').run(row.id);
+          db.prepare('DELETE FROM account_balances WHERE account_id = ?').run(row.id);
+          db.prepare('UPDATE assets SET account_id = NULL WHERE account_id = ?').run(row.id);
+          db.prepare('UPDATE investment_accounts SET funding_account_id = NULL WHERE funding_account_id = ?').run(row.id);
         }
         db.prepare("DELETE FROM accounts WHERE type = 'credit_card'").run();
       }
@@ -467,9 +479,10 @@ export const MIGRATIONS: Migration[] = [
         ).run(bankName, child.id);
       }
 
-      // e) Delete empty parent containers (balance=0, no children left, asset_type='bank')
+      // e) Soft-delete empty parent containers (balance=0, no children left, asset_type='bank')
+      // Use UPDATE is_active=0 instead of DELETE to avoid FOREIGN KEY constraint failures
       db.prepare(`
-        DELETE FROM accounts WHERE id IN (
+        UPDATE accounts SET is_active = 0 WHERE id IN (
           SELECT a.id FROM accounts a
           WHERE a.asset_type = 'bank'
             AND a.balance = 0
