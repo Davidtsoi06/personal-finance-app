@@ -1,6 +1,7 @@
 # 个人理财投资软件 v1.5.0 更新说明
 
-> 发布日期：2026-08-12
+> 发布日期：2026-08-12  
+> 安装包：`personal-finance-setup-1.5.0.exe`（112 MB）
 
 ---
 
@@ -26,7 +27,7 @@
 - **独立保单表**（`insurance_policies`）+ 保费缴纳记录（`premium_payments`）
 - 支持 6 种险种：人寿、医疗、年金、重疾、意外、其他
 - **保费缴纳半自动化**：点击缴费 → 自动扣银行款 + 记录流水
-- **到期提醒**：每日早晨检查，Windows 通知即将到期的保费
+- **到期提醒**：每日早晨 8:57 检查，Windows 通知即将到期的保费
 - 保单管理页（/insurance）：列表/添加/编辑/删除/缴费
 
 ---
@@ -57,12 +58,64 @@
 
 ---
 
+## 🐛 Bug 修复
+
+### 多币种余额 CNY 换算修复（重要）
+
+之前含港币/美元等外币的银行账户，**总资产统计存在严重错误**：
+
+- **问题**：`accounts.balance` 将 CNY、HKD、USD 等不同币种的余额数值直接相加，未做汇率转换。例如 CNY 10,000 + HKD 50,000 + USD 5,000 = 65,000（完全无意义的数字）
+- **影响范围**：Dashboard 现金及存款、Accounts 页银行总资产、净资产走势图
+- **修复**：
+  - 所有资产汇总计算改为从 `account_balances` 逐币种 × 汇率 = CNY 等值
+  - 净资产记录（`net_worth_history`）同步修复
+  - 启动时自动修复全部现有账户的 `balance` 为 CNY 等值
+
+### 基金价格 API 修复
+
+之前大量基金持仓无法更新现价：
+
+- **问题**：天天基金 API 缺少 `Referer` 请求头，被防盗链机制拦截
+- **修复**：
+  - 主源（天天基金）添加 `Referer: https://fundf10.eastmoney.com/`
+  - 新增东方财富基金 API 作为备用源（`fundgzapi.eastmoney.com`）
+  - 双源 failover，主源失败自动切换备源
+
+---
+
 ## 🔧 其他改进
 
 - Dashboard 饼图新增电子钱包分类（💬 蓝紫色）
 - 流水账 `listLedgers()` 支持按 `accountId` 过滤
 - 资产管理首页统计卡片（总资产/银行数/券商数/钱包/保单现金）
 - 数据库迁移 v12：JS 数据迁移函数支持 + 保险迁移 + 信用卡清理 + 账户结构扁平化
+
+---
+
+## 📦 安装方式
+
+1. 下载 `personal-finance-setup-1.5.0.exe`（112 MB）
+2. 双击安装，可选择安装目录
+3. 支持从 v1.1.0+ 直接覆盖升级，**数据不受影响**
+4. 首次启动会自动修复多币种余额的 CNY 换算值
+
+---
+
+## 🔧 技术细节
+
+| 项目 | 内容 |
+|------|------|
+| 版本号 | `1.4.3` → `1.5.0` |
+| 数据库迁移 | v12（insurance_policies + premium_payments + display_alias + JS 迁移函数）|
+| 新建文件 | `insurance-service.ts`, `insurance-ipc.ts`, `wallet-ipc.ts`, `Insurance.tsx`, `WalletFlow.tsx`, `SlidePanel.tsx` |
+| 修改文件 | 33 个文件，+2,660 行，-1,153 行 |
+| 新增 IPC 频道 | `insurance:*`（9 个）, `wallet:*`（4 个）, `asset:listByAccount` |
+| 服务层 | 15 → 17 个 service |
+| 页面数 | 10 → 12 个 |
+| 数据库表 | 17 → 19 张 |
+| 构建状态 | ✅ Vite + tsc + electron-builder 零错误 |
+| 平台 | Windows 10/11，Electron 40 |
+| 安装包大小 | 112 MB |
 
 ---
 
