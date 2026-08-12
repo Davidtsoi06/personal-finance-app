@@ -7,7 +7,7 @@ import { Table, Column } from '../components/ui/Table';
 import { Amount } from '../components/ui/Amount';
 import { Badge } from '../components/ui/Badge';
 import { invoke } from '../hooks/useIpc';
-import { ACCOUNT_TYPE_LABELS } from '@shared/constants/labels';
+import { ACCOUNT_TYPE_LABELS, ASSET_TYPE_LABELS } from '@shared/constants/labels';
 
 interface AccountBalance {
   id: number; account_id: number; currency: string; balance: number;
@@ -35,6 +35,13 @@ interface FixedDeposit {
   notes: string | null; created_at: string; updated_at: string;
 }
 
+interface BankAsset {
+  id: number; name: string; code: string; type: string; market: string;
+  currency: string; quantity: number; cost_price: number; current_price: number;
+  market_value: number; total_cost: number; profit_loss: number; profit_loss_pct: number;
+  investment_account_id: number | null; account_id: number | null;
+}
+
 export function AccountDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -56,6 +63,9 @@ export function AccountDetail() {
   const [fdSaving, setFdSaving] = useState(false);
   const [fdError, setFdError] = useState('');
 
+  // ── Bank products state ──
+  const [bankAssets, setBankAssets] = useState<BankAsset[]>([]);
+
   // ── Bank statement import state ──
   const [showBankImport, setShowBankImport] = useState(false);
   const [bankCsvText, setBankCsvText] = useState('');
@@ -73,14 +83,16 @@ export function AccountDetail() {
 
   const load = useCallback(async () => {
     try {
-      const [acc, txs, fds] = await Promise.all([
+      const [acc, txs, fds, assets] = await Promise.all([
         invoke<Account>('account:get', accountId),
         invoke<AccountTransaction[]>('accountTransaction:list', accountId),
         invoke<FixedDeposit[]>('fixedDeposit:listByAccount', accountId).catch(() => []),
+        invoke<BankAsset[]>('asset:listByAccount', accountId).catch(() => []),
       ]);
       setAccount(acc);
       setTransactions(txs || []);
       setFixedDeposits(fds || []);
+      setBankAssets(assets || []);
       setLoading(false);
     } catch (err) { console.error(err); setLoading(false); }
   }, [accountId]);
@@ -428,6 +440,56 @@ export function AccountDetail() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Bank Products (stocks/funds/ETFs held at bank) */}
+      <Card title="📊 银行理财产品">
+        {bankAssets.length === 0 ? (
+          <div className="card-placeholder">暂无银行理财产品，持仓中的银行理财/基金/ETF会显示在这里</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+            {bankAssets.map(asset => {
+              const isPositive = asset.profit_loss >= 0;
+              return (
+                <div
+                  key={asset.id}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: 'var(--spacing-sm) var(--spacing-md)',
+                    background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => navigate(`/holdings/${asset.id}`)}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, marginBottom: '2px', display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)' }}>
+                      <span>{asset.name}</span>
+                      <Badge label={ASSET_TYPE_LABELS[asset.type] || asset.type} color="primary" />
+                    </div>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                      {asset.code}
+                      {asset.currency !== 'CNY' && ` · ${asset.currency}`}
+                      {' · '}数量 {asset.quantity.toLocaleString()}
+                      {' · '}成本 {asset.cost_price.toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', marginLeft: 'var(--spacing-md)' }}>
+                    <div style={{ fontWeight: 600 }}>
+                      <Amount value={asset.market_value} currency={asset.currency} colored={false} />
+                    </div>
+                    <div style={{
+                      fontSize: 'var(--font-size-xs)',
+                      color: isPositive ? 'var(--color-success)' : 'var(--color-danger)',
+                    }}>
+                      {isPositive ? '+' : ''}{asset.profit_loss.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {' '}({asset.profit_loss_pct >= 0 ? '+' : ''}{asset.profit_loss_pct.toFixed(2)}%)
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>

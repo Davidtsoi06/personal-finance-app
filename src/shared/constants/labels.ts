@@ -15,6 +15,7 @@ export const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 export const ACCOUNT_ASSET_TYPE_LABELS: Record<string, string> = {
   bank: '🏦 银行',
   cash: '💵 现金',
+  e_wallet: '📱 电子钱包',
   insurance: '🛡️ 保险',
   investment: '📈 投资',
   custom: '✏️ 自定义',

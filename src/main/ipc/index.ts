@@ -8,6 +8,8 @@ import { registerAssetIpcHandlers } from './asset-ipc';
 import { registerLedgerIpcHandlers } from './ledger-ipc';
 import { registerReportIpcHandlers } from './report-ipc';
 import { registerSettingsIpcHandlers } from './settings-ipc';
+import { registerInsuranceIpcHandlers } from './insurance-ipc';
+import { registerWalletIpcHandlers } from './wallet-ipc';
 
 export function registerIpcHandlers(): void {
   // Auto-update
@@ -19,4 +21,6 @@ export function registerIpcHandlers(): void {
   registerLedgerIpcHandlers();
   registerReportIpcHandlers();
   registerSettingsIpcHandlers();
+  registerInsuranceIpcHandlers();
+  registerWalletIpcHandlers();
 }

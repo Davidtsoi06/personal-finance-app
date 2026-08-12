@@ -7,6 +7,61 @@ import { getDatabase } from '../database';
 
 let intervals: ReturnType<typeof setInterval>[] = [];
 let dailySummaryTimeout: ReturnType<typeof setTimeout> | null = null;
+let premiumCheckTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/** Check for insurance premiums due today or within 7 days, send notifications. */
+function schedulePremiumDueCheck(): void {
+  if (premiumCheckTimeout) clearTimeout(premiumCheckTimeout);
+
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(8, 57, 0, 0); // 8:57 AM daily
+
+  if (now >= target) {
+    target.setDate(target.getDate() + 1);
+  }
+
+  const delayMs = target.getTime() - now.getTime();
+
+  premiumCheckTimeout = setTimeout(async () => {
+    try {
+      const db = getDatabase();
+      const month = new Date().getMonth() + 1;
+      const day = new Date().getDate();
+
+      // Find policies with premium due this month, within a 30-day window
+      const duePolicies = db.prepare(`
+        SELECT * FROM insurance_policies
+        WHERE is_active = 1
+          AND premium_due_month IS NOT NULL
+          AND premium_due_month = ?
+          AND premium_due_day IS NOT NULL
+          AND premium_due_day BETWEEN ? AND ?
+        ORDER BY premium_due_day
+      `).all(month, day, Math.min(day + 7, 31)) as any[];
+
+      if (duePolicies.length > 0) {
+        try {
+          const { Notification } = require('electron');
+          for (const policy of duePolicies) {
+            const daysUntil = (policy.premium_due_day - day);
+            const urgency = daysUntil <= 0 ? '🔔 今天到期' : `⏰ ${daysUntil}天后到期`;
+            const n = new Notification({
+              title: `${urgency}：${policy.name}`,
+              body: `年保费 ¥${(policy.annual_premium || 0).toLocaleString()} · ${policy.company || '未知公司'} · 现金价值 ¥${(policy.cash_value || 0).toLocaleString()}`,
+            });
+            n.show();
+          }
+        } catch { /* notification may fail */ }
+      }
+    } catch (err: any) {
+      console.error(`[Scheduler] 保费提醒检查失败: ${err.message}`);
+    }
+    schedulePremiumDueCheck();
+  }, delayMs);
+
+  console.log(`[Scheduler] Premium due check scheduled in ${Math.round(delayMs / 60000)} minutes`);
+}
 
 /** Schedule the daily AI summary at 15:30, then recur every 24h. */
 function scheduleDailyAISummary(): void {
@@ -79,6 +134,9 @@ export function startScheduler(): void {
 
   // Schedule daily AI investment summary at 15:30 (market close)
   scheduleDailyAISummary();
+
+  // Schedule daily premium due check at 8:57 AM
+  schedulePremiumDueCheck();
 }
 
 /** Stop all scheduled updates */
@@ -88,6 +146,10 @@ export function stopScheduler(): void {
   if (dailySummaryTimeout) {
     clearTimeout(dailySummaryTimeout);
     dailySummaryTimeout = null;
+  }
+  if (premiumCheckTimeout) {
+    clearTimeout(premiumCheckTimeout);
+    premiumCheckTimeout = null;
   }
 }
 

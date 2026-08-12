@@ -26,6 +26,10 @@ export function registerAssetIpcHandlers(): void {
   ipcMain.handle('asset:delete', (_e, id: number) => assetService.deleteAsset(id));
   ipcMain.handle('asset:updatePrice', (_e, id: number, price: number) => assetService.updateCurrentPrice(id, price));
   ipcMain.handle('asset:totalMarketValue', (_e, currency?: string) => assetService.getTotalMarketValue(currency));
+  ipcMain.handle('asset:listByAccount', (_e, accountId: number) => {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM assets WHERE account_id = ? ORDER BY type, name').all(accountId);
+  });
 
   // ── Trade Records (buy/sell with auto asset management) ──
   ipcMain.handle('trade:record', async (_e, data: {

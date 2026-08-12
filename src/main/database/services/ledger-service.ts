@@ -24,6 +24,7 @@ export function listLedgers(params?: {
   startDate?: string;
   endDate?: string;
   categoryId?: number;
+  accountId?: number;
   limit?: number;
 }): LedgerRow[] {
   const db = getDatabase();
@@ -45,6 +46,10 @@ export function listLedgers(params?: {
   if (params?.categoryId) {
     sql += ' AND l.category_id = ?';
     args.push(params.categoryId);
+  }
+  if (params?.accountId) {
+    sql += ' AND l.account_id = ?';
+    args.push(params.accountId);
   }
 
   sql += ' ORDER BY l.date DESC, l.id DESC LIMIT ?';

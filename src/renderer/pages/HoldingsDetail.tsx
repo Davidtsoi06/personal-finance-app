@@ -6,6 +6,7 @@ import { Modal } from '../components/ui/Modal';
 import { Table, Column } from '../components/ui/Table';
 import { Amount, PctAmount } from '../components/ui/Amount';
 import { Badge } from '../components/ui/Badge';
+import { SlidePanel } from '../components/ui/SlidePanel';
 import { TradeForm } from '../components/forms/TradeForm';
 import { invoke } from '../hooks/useIpc';
 import { MARKET_LABELS, ASSET_TYPE_LABELS } from '@shared/constants/labels';
@@ -15,6 +16,7 @@ interface Holding {
   currency: string; quantity: number; cost_price: number; current_price: number;
   market_value: number; total_cost: number; profit_loss: number; profit_loss_pct: number;
   investment_account_id?: number | null;
+  notes?: string | null;
 }
 
 interface TradeRecord {
@@ -466,9 +468,9 @@ export function HoldingsDetail() {
       </div>
 
       {/* Trade Form Modal */}
-      <Modal open={showTrade} title="📝 记录交易" onClose={() => setShowTrade(false)} width="520px">
+      <SlidePanel open={showTrade} title="📝 记录交易" onClose={() => setShowTrade(false)} width={520}>
         <TradeForm investmentAccountId={accountId} onClose={() => setShowTrade(false)} onSaved={load} />
-      </Modal>
+      </SlidePanel>
 
       {/* Import Statement Modal with Smart Parsing */}
       <Modal open={showImport} title="📥 导入日结单" onClose={() => setShowImport(false)} width="700px">

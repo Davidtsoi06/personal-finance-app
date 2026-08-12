@@ -8,6 +8,7 @@ import { startScheduler, stopScheduler } from './services/scheduler';
 import { recordNetWorth } from './database/services/net-worth-service';
 import { closeDatabase } from './database';
 import { getAppName } from './database/services/settings-service';
+import { recalculateAllAccountBalances } from './database/services/account-service';
 
 let mainWindow: electron.BrowserWindow | null = null;
 
@@ -43,6 +44,10 @@ function createWindow() {
 electron.app.whenReady().then(() => {
   // Initialize database (creates tables if needed)
   initDatabase();
+
+  // One-time fix: recalculate all account balances to CNY-equivalent
+  const balanceResult = recalculateAllAccountBalances();
+  console.log(`[Main] 账户余额 CNC 等值重算完成: ${balanceResult.updated} 账户`);
 
   // Register all IPC handlers
   registerIpcHandlers();

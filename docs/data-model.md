@@ -2,7 +2,7 @@
 
 ## 概览
 
-共 17 张业务表 + 1 张迁移元数据表（`_migrations`），通过版本号递增的 migration 脚本管理（当前最新：v11）。
+共 19 张业务表 + 1 张迁移元数据表（`_migrations`），通过版本号递增的 migration 脚本管理（当前最新：v12）。
 
 ---
 
@@ -20,6 +20,7 @@
 | balance | REAL | 当前余额（多币种汇总值） |
 | bank_name | TEXT | 银行名称（银行卡时） |
 | card_number | TEXT | 卡号后 4 位（加密存） |
+| display_alias | TEXT | 卡片显示别名（v12 新增） |
 | parent_account_id | INTEGER FK | 父账户 ID，支持树形结构（v7 新增） |
 | is_active | INTEGER | 是否启用 0/1 |
 | sort_order | INTEGER | 排序顺序 |
@@ -324,6 +325,50 @@
 
 ---
 
+## 20. insurance_policies — 保单表（v12 新增）
+
+独立的保单管理表，从 accounts 表中分离保险类数据。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| name | TEXT | 保单名称（如"平安福"） |
+| company | TEXT | 保险公司 |
+| policy_number | TEXT | 保单号码 |
+| type | TEXT | 险种：life / health / annuity / critical / accident / other |
+| annual_premium | REAL | 年度保费 |
+| premium_currency | TEXT | 保费币种 |
+| cash_value | REAL | 现金价值 |
+| cash_value_currency | TEXT | 现金价值币种 |
+| insured_person | TEXT | 被保险人 |
+| start_date | TEXT | 生效日期 |
+| premium_due_month | INTEGER | 缴费月（1-12） |
+| premium_due_day | INTEGER | 缴费日（1-31） |
+| account_id | INTEGER FK | 关联银行账户（扣款账户） |
+| notes | TEXT | 备注 |
+| is_active | INTEGER | 是否有效 0/1 |
+| created_at | TEXT | 创建时间 |
+| updated_at | TEXT | 更新时间 |
+
+---
+
+## 21. premium_payments — 保费缴纳记录表（v12 新增）
+
+记录每次保费缴纳，自动生成银行存取记录和流水账。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| policy_id | INTEGER FK | 关联保单 |
+| amount | REAL | 缴纳金额 |
+| currency | TEXT | 币种 |
+| paid_date | TEXT | 缴纳日期 |
+| account_id | INTEGER FK | 付款账户 |
+| notes | TEXT | 备注 |
+| created_at | TEXT | 创建时间 |
+
+---
+
 ## 迁移历史
 
 | 版本 | 变更内容 |
@@ -339,6 +384,7 @@
 | v9 | + custom_bank_formats（银行日结单自定义格式） |
 | v10 | + funding_account_id（投资账户 ↔ 银行账户关联，v1.4.0） |
 | v11 | + cash_balance（投资账户闲置现金）, + account_transactions.investment_account_id, + fixed_deposits 表（v1.4.3） |
+| v12 | + insurance_policies 表, + premium_payments 表, + accounts.display_alias, + JS 迁移函数支持（v1.5.0） |
 
 ---
 

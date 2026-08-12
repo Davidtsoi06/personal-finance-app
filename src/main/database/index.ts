@@ -57,6 +57,10 @@ function runMigrations(database: Database.Database): void {
       database.exec('BEGIN');
       try {
         database.exec(migration.sql);
+        // Run JS migration logic if provided (e.g., data transformation)
+        if (migration.migrate) {
+          migration.migrate(database);
+        }
         database
           .prepare('INSERT INTO _migrations (version) VALUES (?)')
           .run(migration.version);

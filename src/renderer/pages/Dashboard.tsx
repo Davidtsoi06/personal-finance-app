@@ -54,6 +54,7 @@ interface AssetRow {
 const ASSET_ICONS: Record<string, string> = {
   bank: '🏦',
   cash: '💵',
+  e_wallet: '💬',
   insurance: '🛡️',
   investment: '📈',
   custom: '✏️',
@@ -62,6 +63,7 @@ const ASSET_ICONS: Record<string, string> = {
 const CATEGORY_COLORS: Record<string, string> = {
   bank: '#5B9BD5',
   cash: '#67C23A',
+  e_wallet: '#409EFF',
   insurance: '#E6A23C',
   investment: '#F56C6C',
   custom: '#909399',

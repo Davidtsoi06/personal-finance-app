@@ -13,6 +13,7 @@ export interface AccountRow {
   bank_name: string | null;
   card_number: string | null;
   asset_type: string;
+  display_alias: string | null;
   parent_account_id: number | null;
   is_active: number;
   sort_order: number;
@@ -283,13 +284,16 @@ export function updateAccountBalance(accountId: number, currency: string, delta:
     ).run(accountId, currency, delta);
   }
 
-  // Sync the main balance field on accounts (sum of all currency balances)
-  const row = db.prepare(
-    'SELECT COALESCE(SUM(balance), 0) as total FROM account_balances WHERE account_id = ?'
-  ).get(accountId) as { total: number };
+  // Sync accounts.balance to CNY-equivalent total from all currency balances
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as total_cny
+    FROM account_balances ab
+    LEFT JOIN currencies c ON ab.currency = c.code
+    WHERE ab.account_id = ?
+  `).get(accountId) as { total_cny: number };
   db.prepare(
     "UPDATE accounts SET balance = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(row.total, accountId);
+  ).run(row.total_cny, accountId);
 }
 
 // ── Aggregation ──
@@ -302,10 +306,40 @@ export function getTotalBalance(currency?: string): number {
     ).get(currency) as any;
     return row.total;
   }
-  const row = db.prepare(
-    'SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE is_active = 1'
-  ).get() as any;
-  return row.total;
+  // Return CNY-equivalent total across all active accounts
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as total_cny
+    FROM account_balances ab
+    JOIN accounts a ON a.id = ab.account_id AND a.is_active = 1
+    LEFT JOIN currencies c ON ab.currency = c.code
+  `).get() as any;
+  return row.total_cny;
+}
+
+/**
+ * Recalculate accounts.balance for ALL active accounts as CNY-equivalent total.
+ * Run once after migrating from the old raw-sum balance to CNY-equivalent balance.
+ * Safe to call multiple times — it's idempotent.
+ */
+export function recalculateAllAccountBalances(): { updated: number } {
+  const db = getDatabase();
+  let updated = 0;
+
+  const allRows = db.prepare(`
+    SELECT ab.account_id,
+      COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as balance_cny
+    FROM account_balances ab
+    LEFT JOIN currencies c ON ab.currency = c.code
+    GROUP BY ab.account_id
+  `).all() as { account_id: number; balance_cny: number }[];
+
+  const stmt = db.prepare("UPDATE accounts SET balance = ?, updated_at = datetime('now') WHERE id = ?");
+  for (const row of allRows) {
+    stmt.run(row.balance_cny, row.account_id);
+    updated++;
+  }
+
+  return { updated };
 }
 
 /** Create a parent account + multiple children in a single transaction (bank type). */
@@ -390,59 +424,76 @@ export interface AssetSummaryItem {
   balance: number;
   bank_name: string | null;
   broker: string | null;
+  card_number: string | null;
+  display_alias: string | null;
   market_value_cny: number;
+  cash_balance?: number;
+  asset_count?: number;
+  total_profit_loss?: number;
   children?: AssetSummaryItem[];
   is_investment: boolean;
 }
 
-/** Aggregate all asset types (accounts + investment accounts) for unified view. */
+/** Get system wallet accounts (WeChat, Alipay, Cash). */
+export function getSystemWallets(): AccountRow[] {
+  const db = getDatabase();
+  return db.prepare(
+    "SELECT * FROM accounts WHERE (asset_type IN ('e_wallet', 'cash')) AND is_active = 1 ORDER BY asset_type, sort_order, id"
+  ).all() as AccountRow[];
+}
+
+/** List all bank accounts grouped by bank_name. */
+export function listByBankName(): Map<string, AccountRow[]> {
+  const db = getDatabase();
+  const all = db.prepare(
+    "SELECT * FROM accounts WHERE asset_type = 'bank' AND type != 'credit_card' AND is_active = 1 ORDER BY sort_order, id"
+  ).all() as AccountRow[];
+
+  const groups = new Map<string, AccountRow[]>();
+  for (const acc of all) {
+    const key = acc.bank_name || '未分类银行';
+    const list = groups.get(key) || [];
+    list.push(acc);
+    groups.set(key, list);
+  }
+  return groups;
+}
+
+/** Aggregate all asset types for the new 4-layer architecture. */
 export function getAllAssetsSummary(): AssetSummaryItem[] {
   const db = getDatabase();
 
-  // Fetch ALL active accounts (not just roots) so we can roll up child balances
+  // Fetch ALL active accounts
   const allAccounts = db.prepare(`
-    SELECT a.*, COALESCE(c.rate_to_base, 1) as rate_to_cny
+    SELECT a.*
     FROM accounts a
-    LEFT JOIN currencies c ON a.currency = c.code
     WHERE a.is_active = 1
     ORDER BY a.asset_type, a.sort_order, a.id
-  `).all() as (AccountRow & { rate_to_cny: number })[];
-  type AccountWithRate = typeof allAccounts[0];
+  `).all() as AccountRow[];
 
-  // Separate roots from children; build child lookup map
-  const roots: AccountWithRate[] = [];
-  const childrenOf = new Map<number, AccountWithRate[]>();
-  for (const acc of allAccounts) {
-    if (acc.parent_account_id && acc.parent_account_id > 0) {
-      const list = childrenOf.get(acc.parent_account_id) || [];
-      list.push(acc);
-      childrenOf.set(acc.parent_account_id, list);
-    } else {
-      roots.push(acc);
-    }
+  // Pre-compute CNY-equivalent balance per account from account_balances × currency rates
+  const cnyBalances = db.prepare(`
+    SELECT ab.account_id,
+      COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as balance_cny
+    FROM account_balances ab
+    LEFT JOIN currencies c ON ab.currency = c.code
+    GROUP BY ab.account_id
+  `).all() as { account_id: number; balance_cny: number }[];
+
+  const cnyMap = new Map<number, number>();
+  for (const row of cnyBalances) {
+    cnyMap.set(row.account_id, row.balance_cny);
   }
 
-  /** Recursively sum an account's own balance + all descendants' balances */
-  function totalBalanceWithChildren(acc: AccountWithRate): number {
-    let total = acc.balance;
-    const kids = childrenOf.get(acc.id);
-    if (kids) {
-      for (const child of kids) {
-        total += totalBalanceWithChildren(child);
-      }
-    }
-    return total;
-  }
-
-  // Fetch fixed deposits linked to bank accounts for investment classification
+  // Fetch fixed deposits
   const allFixedDeposits = db.prepare(`
-    SELECT fd.*, a.currency as account_currency
+    SELECT fd.*, a.currency as account_currency, COALESCE(c.rate_to_base, 1) as rate_to_cny
     FROM fixed_deposits fd
     JOIN accounts a ON fd.account_id = a.id
+    LEFT JOIN currencies c ON fd.currency = c.code
     WHERE a.is_active = 1
   `).all() as any[];
 
-  // Build fixed deposit lookup by account_id
   const fdsByAccount = new Map<number, any[]>();
   for (const fd of allFixedDeposits) {
     const list = fdsByAccount.get(fd.account_id) || [];
@@ -450,9 +501,12 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     fdsByAccount.set(fd.account_id, list);
   }
 
+  // Fetch investment accounts with market values
   const invAccounts = db.prepare(`
     SELECT ia.*, COALESCE(c.rate_to_base, 1) as rate_to_cny,
-      COALESCE(SUM(a.market_value), 0) as total_market_value
+      COALESCE(SUM(a.market_value), 0) as total_market_value,
+      COUNT(a.id) as asset_count,
+      COALESCE(SUM(a.profit_loss), 0) as total_profit_loss
     FROM investment_accounts ia
     LEFT JOIN currencies c ON ia.currency = c.code
     LEFT JOIN assets a ON a.investment_account_id = ia.id
@@ -460,182 +514,161 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     ORDER BY ia.name
   `).all() as any[];
 
-  const result: AssetSummaryItem[] = [];
+  // Bank assets (from assets.account_id) — bank wealth products
+  const bankAssets = db.prepare(`
+    SELECT a.*, acc.bank_name, acc.card_number, acc.display_alias,
+      COALESCE(c.rate_to_base, 1) as rate_to_cny
+    FROM assets a
+    JOIN accounts acc ON a.account_id = acc.id
+    LEFT JOIN currencies c ON a.currency = c.code
+    WHERE a.account_id IS NOT NULL AND acc.is_active = 1
+    ORDER BY a.market_value DESC
+  `).all() as any[];
 
-  // Group root-level accounts by asset_type
-  const accountGroups = new Map<string, AccountWithRate[]>();
-  for (const acc of roots) {
-    const list = accountGroups.get(acc.asset_type) || [];
-    list.push(acc);
-    accountGroups.set(acc.asset_type, list);
+  const bankAssetsByAccount = new Map<number, any[]>();
+  for (const ba of bankAssets) {
+    const list = bankAssetsByAccount.get(ba.account_id) || [];
+    list.push(ba);
+    bankAssetsByAccount.set(ba.account_id, list);
   }
 
-  for (const [assetType, accList] of accountGroups) {
-    if (assetType === 'investment') {
-      // Investment-type accounts: show individually
-      for (const acc of accList) {
-        const bal = totalBalanceWithChildren(acc);
-        result.push({
-          id: acc.id,
-          name: acc.name,
-          asset_type: acc.asset_type,
-          type: acc.type,
-          currency: acc.currency,
-          balance: bal,
-          bank_name: acc.bank_name,
-          broker: null,
-          market_value_cny: bal * acc.rate_to_cny,
-          children: [],
-          is_investment: false,
-        });
-      }
-    } else {
-      // Bank/cash/insurance/custom: group by asset type
-      const groupItem: AssetSummaryItem = {
-        id: -Math.abs(accList[0]?.id || 1), // negative ID for virtual group
-        name: assetType === 'bank' ? '银行账户' :
-              assetType === 'cash' ? '现金' :
-              assetType === 'insurance' ? '保险' :
-              assetType === 'custom' ? '自定义资产' : assetType,
-        asset_type: assetType,
-        type: '',
-        currency: 'CNY',
-        balance: 0,
-        bank_name: null,
-        broker: null,
-        market_value_cny: 0,
+  // Fetch insurance total
+  const insRow = db.prepare(
+    'SELECT COALESCE(SUM(cash_value), 0) as total, COUNT(*) as cnt FROM insurance_policies WHERE is_active = 1'
+  ).get() as any;
+
+  const result: AssetSummaryItem[] = [];
+
+  // ═══ Layer 2: Individual items, not grouped by asset_type ═══
+
+  // 1. e_wallet accounts (WeChat, Alipay)
+  for (const acc of allAccounts) {
+    if (acc.asset_type === 'e_wallet') {
+      result.push({
+        id: acc.id, name: acc.name, asset_type: 'e_wallet', type: acc.type,
+        currency: acc.currency, balance: acc.balance,
+        bank_name: null, broker: null,
+        card_number: null, display_alias: null,
+        market_value_cny: cnyMap.get(acc.id) || 0,
+        children: [], is_investment: false,
+      });
+    }
+  }
+
+  // 2. Cash accounts
+  for (const acc of allAccounts) {
+    if (acc.asset_type === 'cash') {
+      result.push({
+        id: acc.id, name: acc.name, asset_type: 'cash', type: acc.type,
+        currency: acc.currency, balance: acc.balance,
+        bank_name: null, broker: null,
+        card_number: null, display_alias: null,
+        market_value_cny: cnyMap.get(acc.id) || 0,
+        children: [], is_investment: false,
+      });
+    }
+  }
+
+  // 3. Insurance (from insurance_policies table)
+  if (insRow.cnt > 0) {
+    result.push({
+      id: -2000, name: '保险', asset_type: 'insurance', type: '',
+      currency: 'CNY', balance: insRow.total,
+      bank_name: null, broker: null,
+      card_number: null, display_alias: null,
+      market_value_cny: insRow.total,
+      children: [], is_investment: false,
+    });
+  }
+
+  // 4. Bank accounts — grouped by bank_name
+  const bankGroups = new Map<string, (typeof allAccounts)[0][]>();
+  for (const acc of allAccounts) {
+    if (acc.asset_type === 'bank') {
+      const key = acc.bank_name || acc.name;
+      const list = bankGroups.get(key) || [];
+      list.push(acc);
+      bankGroups.set(key, list);
+    }
+  }
+
+  for (const [bankName, accList] of bankGroups) {
+    let groupTotal = 0;
+    const children: AssetSummaryItem[] = [];
+
+    for (const acc of accList) {
+      const fds = fdsByAccount.get(acc.id) || [];
+      const fdTotal = fds.reduce((s: number, fd: any) => s + fd.amount, 0);
+      const bankAssetsList = bankAssetsByAccount.get(acc.id) || [];
+      const bankAssetMktVal = bankAssetsList.reduce((s: number, ba: any) => s + ba.market_value * (ba.rate_to_cny || 1), 0);
+
+      const childItem: AssetSummaryItem = {
+        id: acc.id, name: acc.display_alias || acc.name || `尾号${acc.card_number || '****'}`,
+        asset_type: 'bank', type: acc.type,
+        currency: acc.currency, balance: acc.balance,
+        bank_name: acc.bank_name, broker: null,
+        card_number: acc.card_number,
+        display_alias: acc.display_alias || null,
+        market_value_cny: (cnyMap.get(acc.id) || 0) + bankAssetMktVal,
+        cash_balance: fdTotal,
+        asset_count: bankAssetsList.length + fds.length,
         children: [],
         is_investment: false,
       };
-      for (const acc of accList) {
-        const bal = totalBalanceWithChildren(acc);
-        // Fixed deposits linked to this account — subtract from cash and classify as investment
-        const accFds = fdsByAccount.get(acc.id) || [];
-        const fdTotal = accFds.reduce((s: number, fd: any) => s + fd.amount, 0);
-        const availableBal = bal - fdTotal;
-
-        const childSummary: AssetSummaryItem = {
-          id: acc.id,
-          name: acc.name,
-          asset_type: acc.asset_type,
-          type: acc.type,
-          currency: acc.currency,
-          balance: availableBal,
-          bank_name: acc.bank_name,
-          broker: null,
-          market_value_cny: availableBal * acc.rate_to_cny,
-          children: [],
-          is_investment: false,
-        };
-
-        // Add fixed deposits as investment sub-items under this account
-        for (const fd of accFds) {
-          childSummary.children!.push({
-            id: -fd.id,
-            name: `定期存款 · ${fd.currency} ${fd.amount.toLocaleString()}`,
-            asset_type: 'investment',
-            type: 'fixed_deposit',
-            currency: fd.currency,
-            balance: fd.amount,
-            bank_name: null,
-            broker: null,
-            market_value_cny: fd.amount * acc.rate_to_cny,
-            children: [],
-            is_investment: true,
-          });
-        }
-
-        groupItem.market_value_cny += childSummary.market_value_cny + fdTotal * acc.rate_to_cny;
-        groupItem.balance += bal;
-        groupItem.children!.push(childSummary);
-      }
-      result.push(groupItem);
+      children.push(childItem);
+      groupTotal += childItem.market_value_cny;
     }
+
+    result.push({
+      id: -(children[0]?.id || 1000), name: bankName,
+      asset_type: 'bank', type: 'bank_card',
+      currency: 'CNY', balance: groupTotal,
+      bank_name: bankName, broker: null,
+      card_number: null, display_alias: null,
+      market_value_cny: groupTotal,
+      children,
+      is_investment: false,
+    });
   }
 
-  // Separate linked vs unlinked investment accounts
-  const linkedInv = invAccounts.filter((ia: any) => ia.funding_account_id != null);
-  const unlinkedInv = invAccounts.filter((ia: any) => !ia.funding_account_id);
-
-  // Attach linked investment accounts to their funding bank accounts
-  for (const ia of linkedInv) {
+  // 5. Investment accounts (brokers)
+  for (const ia of invAccounts) {
     const mktCny = (ia.total_market_value || 0) * (ia.rate_to_cny || 1);
-    const childSummary: AssetSummaryItem = {
-      id: ia.id,
-      name: ia.name,
-      asset_type: 'investment',
-      type: 'investment_account',
-      currency: ia.currency,
-      balance: ia.total_market_value || 0,
-      bank_name: null,
-      broker: ia.broker,
-      market_value_cny: mktCny,
-      children: [],
-      is_investment: true,
-    };
-
-    // Find the parent bank account in result groups and attach
-    let found = false;
-    for (const item of result) {
-      if (item.children) {
-        for (const child of item.children) {
-          if (child.id === ia.funding_account_id) {
-            child.children = child.children || [];
-            child.children.push(childSummary);
-            child.market_value_cny += mktCny;
-            child.balance += ia.total_market_value || 0;
-            item.market_value_cny += mktCny;
-            item.balance += ia.total_market_value || 0;
-            found = true;
-            break;
-          }
-        }
-      }
-      if (found) break;
-    }
-
-    // If funding account not found in groups, treat as unlinked
-    if (!found) {
-      unlinkedInv.push(ia);
-    }
+    const cashCny = (ia.cash_balance || 0) * (ia.rate_to_cny || 1);
+    result.push({
+      id: ia.id, name: ia.name, asset_type: 'investment', type: 'investment_account',
+      currency: ia.currency, balance: (ia.total_market_value || 0) + (ia.cash_balance || 0),
+      bank_name: null, broker: ia.broker,
+      card_number: null, display_alias: null,
+      market_value_cny: mktCny + cashCny,
+      cash_balance: ia.cash_balance,
+      asset_count: ia.asset_count,
+      total_profit_loss: ia.total_profit_loss,
+      children: [], is_investment: true,
+    });
   }
 
-  // Create investment group for unlinked investment accounts
-  if (unlinkedInv.length > 0) {
-    const invGroup: AssetSummaryItem = {
-      id: -9999,
-      name: '投资账户',
-      asset_type: 'investment',
-      type: '',
-      currency: 'CNY',
-      balance: 0,
-      bank_name: null,
-      broker: null,
-      market_value_cny: 0,
-      children: [],
-      is_investment: true,
-    };
-    for (const ia of unlinkedInv) {
-      const mktCny = (ia.total_market_value || 0) * (ia.rate_to_cny || 1);
-      const childSummary: AssetSummaryItem = {
-        id: ia.id,
-        name: ia.name,
-        asset_type: 'investment',
-        type: 'investment_account',
-        currency: ia.currency,
-        balance: ia.total_market_value || 0,
-        bank_name: null,
-        broker: ia.broker,
-        market_value_cny: mktCny,
-        children: [],
-        is_investment: true,
-      };
-      invGroup.market_value_cny += mktCny;
-      invGroup.balance += ia.total_market_value || 0;
-      invGroup.children!.push(childSummary);
+  // 6. Custom assets
+  for (const acc of allAccounts) {
+    if (acc.asset_type === 'custom') {
+      result.push({
+        id: acc.id, name: acc.name, asset_type: 'custom', type: acc.type,
+        currency: acc.currency, balance: acc.balance,
+        bank_name: null, broker: null,
+        card_number: null, display_alias: null,
+        market_value_cny: cnyMap.get(acc.id) || 0,
+        children: [], is_investment: false,
+      });
     }
-    result.push(invGroup);
   }
 
   return result;
+}
+
+/** Get all bank-type accounts for funding dropdowns */
+export function listBankAccounts(): AccountRow[] {
+  const db = getDatabase();
+  return db.prepare(
+    "SELECT * FROM accounts WHERE asset_type = 'bank' AND is_active = 1 ORDER BY bank_name, sort_order, id"
+  ).all() as AccountRow[];
 }

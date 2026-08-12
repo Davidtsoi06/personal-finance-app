@@ -160,3 +160,194 @@
   flex: 1;
   min-width: 80px;
 }
+
+/* ── Layer 2 Cards ── */
+.layer2-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.layer2-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+
+.layer2-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.layer2-card--clickable {
+  cursor: pointer;
+}
+
+.layer2-card-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+
+.layer2-card-icon {
+  font-size: 1.75rem;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-secondary, #f8f9fa);
+  border-radius: var(--radius-md);
+}
+
+.layer2-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.layer2-card-name {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layer2-card-meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layer2-card-value {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.layer2-card-actions {
+  padding: var(--spacing-xs) var(--spacing-lg) var(--spacing-sm);
+  border-top: 1px solid var(--color-border-light, #f0f0f0);
+  background: var(--color-bg-secondary, #f8f9fa);
+}
+
+.layer2-card-link {
+  font-size: var(--font-size-xs);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+/* ── Expanded bank children ── */
+.layer2-card-children {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary, #f8f9fa);
+}
+
+.bank-card-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 10px var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border-light, #f0f0f0);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.bank-card-row:last-child {
+  border-bottom: none;
+}
+
+.bank-card-row:hover {
+  background: var(--color-bg-hover, #eef3fa);
+}
+
+.bank-card-row-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+
+.bank-card-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bank-card-row-name {
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bank-card-row-meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bank-card-row-value {
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+/* ── Form helpers ── */
+.form-row {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--spacing-md);
+}
+
+.form-label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.form-input,
+.form-select {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  transition: border-color 0.15s;
+}
+
+.form-input:focus,
+.form-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.2);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}

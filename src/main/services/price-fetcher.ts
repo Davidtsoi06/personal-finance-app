@@ -219,20 +219,51 @@ async function fetchUSStock(symbol: string): Promise<number | null> {
   }
 }
 
-// ─── Fund (天天基金) ─────────────────────────────────────────────
+// ─── Fund (天天基金 → 东方财富备用) ───────────────────────────────
 
-/** Fetch fund NAV from 天天基金 API. Response: jsonpgz({...}) — we extract `dwjz` (单位净值). */
-async function fetchFundPrice(code: string): Promise<number | null> {
+/** Primary: 天天基金 API — 加 Referer 防盗链. Response: jsonpgz({...}) — we extract `dwjz` (单位净值). */
+async function fetchFundPriceTiantian(code: string): Promise<number | null> {
   const url = `https://fundgz.1234567.com.cn/js/${code}.js`;
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: { Referer: 'https://fundf10.eastmoney.com/' },
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const text = await response.text();
+  // Check for empty / error response
+  if (!text || text.length < 20) throw new Error('返回数据为空');
   const jsonMatch = text.match(/jsonpgz\((.+)\)/);
   if (!jsonMatch) throw new Error('返回格式异常：未找到 jsonpgz 回调');
   const data = JSON.parse(jsonMatch[1]);
+  // dwjz = 单位净值 (actual NAV), jzrq = 净值日期
   const nav = parseFloat(data.dwjz);
-  if (isNaN(nav) || nav <= 0) throw new Error(`净值解析失败, dwjz=${data.dwjz}`);
+  if (isNaN(nav) || nav <= 0) throw new Error(`净值解析失败, dwjz=${data.dwjz}, jzrq=${data.jzrq}`);
   return nav;
+}
+
+/** Fallback: 东方财富基金估值 API. Response: jsonpgz({...}) with gz (估值) and dwjz (净值). */
+async function fetchFundPriceEastMoney(code: string): Promise<number | null> {
+  const url = `https://fundgzapi.eastmoney.com/fundgz_api/FundGzApi.ashx?fundcode=${code}&type=lsjz`;
+  const response = await fetch(url, {
+    headers: { Referer: 'https://fund.eastmoney.com/' },
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const text = await response.text();
+  if (!text || text.length < 20) throw new Error('返回数据为空');
+  const jsonMatch = text.match(/jsonpgz\((.+)\)/);
+  if (!jsonMatch) throw new Error('返回格式异常：未找到 jsonpgz 回调');
+  const data = JSON.parse(jsonMatch[1]);
+  // EastMoney returns dwjz and gz — prefer dwjz, fallback to gz
+  const nav = parseFloat(data.dwjz) || parseFloat(data.gz);
+  if (isNaN(nav) || nav <= 0) throw new Error(`净值解析失败, dwjz=${data.dwjz}, gz=${data.gz}`);
+  return nav;
+}
+
+async function fetchFundPrice(code: string): Promise<number | null> {
+  return fetchWithFallback(code, '基金', '天天基金',
+    () => fetchFundPriceTiantian(code),
+    '东方财富',
+    () => fetchFundPriceEastMoney(code),
+  );
 }
 
 // ─── Gold ───────────────────────────────────────────────────────

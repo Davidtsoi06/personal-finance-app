@@ -27,28 +27,30 @@ Electron App
 ├── Main Process (src/main/)
 │   ├── index.ts                   # 主进程入口
 │   │   ├── 创建 BrowserWindow
-│   │   ├── 初始化数据库（migrations v1~v10）
+│   │   ├── 初始化数据库（migrations v1~v12）
 │   │   ├── 注册 IPC handlers
-│   │   ├── 启动定时任务（scheduler）
+│   │   ├── 启动定时任务（scheduler）+ 保费到期提醒
 │   │   └── 设置自动更新（electron-updater）
 │   │
 │   ├── preload.ts                 # Context bridge
 │   │   └── 暴露 electronAPI 到渲染进程
 │   │
-│   ├── ipc/                       # IPC 通信层（5 个文件）
+│   ├── ipc/                       # IPC 通信层（8 个文件）
 │   │   ├── account-ipc.ts         # 账户 + 存取记录 + allAssetsSummary
-│   │   ├── asset-ipc.ts           # 资产 + 交易 + 日结单导入
+│   │   ├── asset-ipc.ts           # 资产 + 交易 + 日结单导入 + 银行产品查询
+│   │   ├── insurance-ipc.ts       # 保单 CRUD + 保费缴纳（v1.5.0 新增）
 │   │   ├── ledger-ipc.ts          # 收支 + 分类
 │   │   ├── report-ipc.ts          # 报表数据
 │   │   ├── settings-ipc.ts        # 投资账户/净值/格式/AI/预算/提醒/人情债/设置/归档
-│   │   └── update-ipc.ts          # 自动更新
+│   │   ├── update-ipc.ts          # 自动更新
+│   │   └── wallet-ipc.ts          # 系统钱包 + 账单导入（v1.5.0 新增）
 │   │
 │   ├── database/
-│   │   ├── index.ts               # 数据库初始化 + WAL 模式 + 迁移执行
-│   │   ├── migrations.ts          # 版本化建表 SQL（v1 ~ v10）
-│   │   └── services/              # 数据服务层（15 个）
-│   │       ├── account-service.ts          # 账户 CRUD + 树形结构 + 统一资产汇总
-│   │       ├── account-transaction-service.ts  # 存取记录 CRUD
+│   │   ├── index.ts               # 数据库初始化 + WAL 模式 + 迁移执行（支持 SQL + JS 迁移）
+│   │   ├── migrations.ts          # 版本化建表 SQL + JS 数据迁移（v1 ~ v12）
+│   │   └── services/              # 数据服务层（17 个）
+│   │       ├── account-service.ts          # 账户 CRUD + 树形结构 + 统一资产汇总（四层架构）
+│   │       ├── account-transaction-service.ts  # 存取记录 CRUD + 钱包账单导入
 │   │       ├── alert-service.ts            # 提醒配置 + 价格检查
 │   │       ├── asset-service.ts            # 资产持仓 CRUD + 价格/盈亏计算
 │   │       ├── bank-format-service.ts      # 银行日结单自定义格式 CRUD
@@ -56,9 +58,10 @@ Electron App
 │   │       ├── category-service.ts          # 收支分类 CRUD
 │   │       ├── currency-service.ts          # 货币 + 汇率转换 + 汇率历史
 │   │       ├── custom-format-service.ts     # 券商日结单自定义格式 CRUD
+│   │       ├── fixed-deposit-service.ts      # 定期存款 CRUD
+│   │       ├── insurance-service.ts         # 保单 CRUD + 保费缴纳 + 到期查询（v1.5.0 新增）
 │   │       ├── investment-account-service.ts # 投资账户 CRUD + 持仓汇总 + 日统计 + 现金余额
-│   │       ├── fixed-deposit-service.ts      # 定期存款 CRUD（v1.4.3 新增）
-│   │       ├── ledger-service.ts            # 收支记账 CRUD + 月度汇总
+│   │       ├── ledger-service.ts            # 收支记账 CRUD + 月度汇总（支持 accountId 过滤）
 │   │       ├── net-worth-service.ts         # 净值记录 + 历史
 │   │       ├── settings-service.ts          # KV 设置（AI/归档/自定义名称）
 │   │       ├── social-obligation-service.ts  # 人情债 CRUD
@@ -78,15 +81,17 @@ Electron App
 ├── Renderer Process (src/renderer/)
 │   ├── index.html                 # HTML 入口
 │   ├── index.tsx                  # React 入口（createRoot）
-│   ├── App.tsx                    # 根组件（10 个页面路由）
+│   ├── App.tsx                    # 根组件（12 个页面路由）
 │   ├── hooks/
 │   │   └── useIpc.ts              # IPC 调用封装（泛型 invoke）
-│   ├── pages/                     # 页面组件（10 个）
+│   ├── pages/                     # 页面组件（12 个）
 │   │   ├── Dashboard.tsx          # 仪表盘（饼图下钻 + 概览 + 资产查询 + 走势 + 预算）
-│   │   ├── Accounts.tsx           # 账户列表（树形展示 + 投资账户关联 + 银行日结单导入）
-│   │   ├── AccountDetail.tsx      # 账户详情 + 存取记录
+│   │   ├── Accounts.tsx           # 资产管理（Layer 2 四层架构卡片 + 银行分组可展开）
+│   │   ├── AccountDetail.tsx      # 账户详情（存取记录 + 定期存款 + 银行理财产品）
+│   │   ├── WalletFlow.tsx         # 钱包流水页（收支记录 + 账单导入，v1.5.0 新增）
+│   │   ├── Insurance.tsx          # 保单管理页（保单 CRUD + 保费缴纳，v1.5.0 新增）
 │   │   ├── Investments.tsx        # 投资账户列表（卡片 + 关联银行 + 当日交易）
-│   │   ├── HoldingsDetail.tsx     # 持仓详情 + 交易历史 + 编辑/删除持仓
+│   │   ├── HoldingsDetail.tsx     # 持仓详情 + 交易历史（SlidePanel 侧边滑出）
 │   │   ├── Bookkeeping.tsx        # 记账页
 │   │   ├── SocialObligations.tsx  # 人情债管理
 │   │   ├── Reports.tsx            # 报表分析
@@ -95,13 +100,14 @@ Electron App
 │   └── components/
 │       ├── Layout.tsx             # 侧边栏 + 内容区布局（动态应用名称）
 │       ├── ErrorBoundary.tsx      # 错误边界
-│       ├── ui/                    # 通用 UI 组件（7 个）
+│       ├── ui/                    # 通用 UI 组件（8 个）
 │       │   ├── Amount.tsx         # 金额显示（含 NetAmount 变体）
 │       │   ├── Badge.tsx          # 标签徽章
 │       │   ├── Button.tsx         # 按钮（primary/secondary/danger/sm）
 │       │   ├── Card.tsx           # 卡片容器
 │       │   ├── Modal.tsx          # 模态对话框
 │       │   ├── ProgressBar.tsx    # 进度条（颜色自适应）
+│       │   ├── SlidePanel.tsx     # 侧边滑出面板（v1.5.0 新增）
 │       │   └── Table.tsx          # 数据表格
 │       ├── cards/                 # 业务卡片组件（5 个）
 │       │   ├── AiConfigCard.tsx   # AI 配置卡片

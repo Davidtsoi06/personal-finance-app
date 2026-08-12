@@ -122,7 +122,7 @@ export function AddAssetForm({ onClose, onSaved, investmentAccountId }: Props) {
             ))}
           </select>
         </div>
-        <div className="form-group" />
+      </div>
       <div className="form-group">
         <label className="form-label">备注</label>
         <input className="form-input" name="notes" placeholder="可选备注" />

@@ -4,6 +4,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Dashboard } from './pages/Dashboard';
 import { Accounts } from './pages/Accounts';
 import { AccountDetail } from './pages/AccountDetail';
+import { WalletFlow } from './pages/WalletFlow';
+import { Insurance } from './pages/Insurance';
 import { Investments } from './pages/Investments';
 import { HoldingsDetail } from './pages/HoldingsDetail';
 import { Bookkeeping } from './pages/Bookkeeping';
@@ -20,6 +22,8 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/accounts/:id" element={<AccountDetail />} />
+        <Route path="/wallet/:type" element={<WalletFlow />} />
+        <Route path="/insurance" element={<Insurance />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/investments/:id" element={<HoldingsDetail />} />
         <Route path="/ai" element={<AIAssistant />} />

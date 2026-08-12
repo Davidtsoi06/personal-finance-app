@@ -146,3 +146,74 @@ export function updateAccountTransaction(id: number, data: {
   tx();
   return getAccountTransaction(id);
 }
+
+// ── Wallet Bill Import (WeChat/Alipay CSV) ──
+
+interface BillRecord {
+  date: string;
+  type: 'income' | 'expense';
+  amount: number;
+  currency?: string;
+  description: string;
+  category?: string;
+}
+
+/** Import wallet bills — writes to both account_transactions AND ledgers (dual-write). */
+export function importWalletBills(accountId: number, records: BillRecord[]): { imported: number; errors: string[] } {
+  const db = getDatabase();
+  let imported = 0;
+  const errors: string[] = [];
+
+  const insertTx = db.prepare(`
+    INSERT INTO account_transactions (account_id, type, amount, currency, date, notes)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertLedger = db.prepare(`
+    INSERT INTO ledgers (type, amount, currency, account_id, date, description, category_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const tx = db.transaction(() => {
+    for (const rec of records) {
+      try {
+        const currency = rec.currency || 'CNY';
+        const amount = Math.abs(Number(rec.amount) || 0);
+        const date = rec.date || new Date().toISOString().slice(0, 10);
+        const txType = rec.type === 'income' ? 'deposit' : 'withdraw';
+
+        if (amount <= 0) { errors.push(`金额无效：${rec.description}`); continue; }
+
+        // 1. Write account_transaction
+        insertTx.run(accountId, txType, amount, currency, date, rec.description);
+
+        // 2. Write ledger (for expense analysis)
+        const ledgerType = rec.type === 'income' ? 'income' : 'expense';
+        // Look up category by name if provided, else use default
+        let categoryId = null;
+        if (rec.category) {
+          const cat = db.prepare("SELECT id FROM categories WHERE name = ? AND type = ? LIMIT 1").get(rec.category, ledgerType) as any;
+          if (cat) categoryId = cat.id;
+        }
+
+        insertLedger.run(ledgerType, amount, currency, accountId, date, rec.description, categoryId);
+
+        imported++;
+      } catch (err: any) {
+        errors.push(`${rec.description || '未知记录'}：${err.message}`);
+      }
+    }
+
+    // Sync account balance
+    const totalRow = db.prepare(
+      'SELECT COALESCE(SUM(balance), 0) as total FROM account_balances WHERE account_id = ?'
+    ).get(accountId) as { total: number };
+    db.prepare("UPDATE accounts SET balance = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(totalRow.total, accountId);
+
+    return imported;
+  });
+
+  tx();
+  return { imported, errors };
+}

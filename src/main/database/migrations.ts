@@ -1,9 +1,18 @@
 /**
  * Database migrations — all CREATE TABLE statements.
  * Each migration has a version number for future incremental updates.
+ * Optional migrate(db) function runs after the SQL for JS-based data migration.
  */
+import type Database from 'better-sqlite3';
 
-export const MIGRATIONS: { version: number; sql: string }[] = [
+export interface Migration {
+  version: number;
+  sql: string;
+  /** Optional JavaScript migration logic (runs after SQL, inside transaction). */
+  migrate?: (db: Database.Database) => void;
+}
+
+export const MIGRATIONS: Migration[] = [
   {
     version: 1,
     sql: `
@@ -362,5 +371,138 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `,
+  },
+  {
+    version: 12,
+    sql: `
+      -- ============================================
+      -- Migration v12: Asset hierarchy restructure
+      -- ============================================
+
+      -- 1. New field: display_alias for bank card nickname
+      ALTER TABLE accounts ADD COLUMN display_alias TEXT;
+
+      -- 2. Insurance policies table (replaces asset_type='insurance' accounts)
+      CREATE TABLE IF NOT EXISTS insurance_policies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        company TEXT,
+        policy_number TEXT,
+        type TEXT CHECK(type IN ('life','health','annuity','critical','accident','other')),
+        annual_premium REAL DEFAULT 0,
+        premium_currency TEXT DEFAULT 'CNY',
+        cash_value REAL DEFAULT 0,
+        cash_value_currency TEXT DEFAULT 'CNY',
+        insured_person TEXT,
+        start_date TEXT,
+        premium_due_month INTEGER,
+        premium_due_day INTEGER,
+        account_id INTEGER REFERENCES accounts(id),
+        notes TEXT,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      -- 3. Premium payment records
+      CREATE TABLE IF NOT EXISTS premium_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        policy_id INTEGER NOT NULL REFERENCES insurance_policies(id),
+        amount REAL NOT NULL,
+        currency TEXT DEFAULT 'CNY',
+        paid_date TEXT NOT NULL,
+        account_id INTEGER REFERENCES accounts(id),
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `,
+    migrate: (db) => {
+      // a) Migrate insurance accounts → insurance_policies
+      const insuranceAccounts = db.prepare(
+        "SELECT * FROM accounts WHERE asset_type = 'insurance' AND is_active = 1"
+      ).all() as any[];
+
+      for (const acc of insuranceAccounts) {
+        db.prepare(`
+          INSERT INTO insurance_policies (name, cash_value, cash_value_currency, start_date, notes, company)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(acc.name, acc.balance || 0, acc.currency, acc.created_at, '从旧版保险账户自动迁移', acc.bank_name || null);
+      }
+
+      // b) Delete insurance accounts + their balances/transactions
+      if (insuranceAccounts.length > 0) {
+        const insIds = insuranceAccounts.map((a: any) => a.id);
+        for (const id of insIds) {
+          db.prepare('DELETE FROM account_balances WHERE account_id = ?').run(id);
+          db.prepare('DELETE FROM account_transactions WHERE account_id = ?').run(id);
+          db.prepare('DELETE FROM fixed_deposits WHERE account_id = ?').run(id);
+        }
+        db.prepare('DELETE FROM accounts WHERE asset_type = ?').run('insurance');
+      }
+
+      // c) Delete credit card accounts (feature removed)
+      const ccIds = db.prepare("SELECT id FROM accounts WHERE type = 'credit_card'").all() as any[];
+      if (ccIds.length > 0) {
+        for (const row of ccIds) {
+          db.prepare('DELETE FROM account_balances WHERE account_id = ?').run(row.id);
+          db.prepare('DELETE FROM account_transactions WHERE account_id = ?').run(row.id);
+          db.prepare('DELETE FROM fixed_deposits WHERE account_id = ?').run(row.id);
+          db.prepare('DELETE FROM ledgers WHERE account_id = ?').run(row.id);
+        }
+        db.prepare("DELETE FROM accounts WHERE type = 'credit_card'").run();
+      }
+
+      // d) Promote child accounts to roots — copy bank_name from parent if missing
+      const children = db.prepare(`
+        SELECT a.id, a.bank_name as a_bank, p.bank_name as p_bank, p.name as p_name
+        FROM accounts a
+        LEFT JOIN accounts p ON a.parent_account_id = p.id
+        WHERE a.parent_account_id IS NOT NULL
+      `).all() as any[];
+
+      for (const child of children) {
+        const bankName = child.a_bank || child.p_bank || child.p_name || null;
+        db.prepare(
+          'UPDATE accounts SET parent_account_id = NULL, bank_name = COALESCE(?, bank_name) WHERE id = ?'
+        ).run(bankName, child.id);
+      }
+
+      // e) Delete empty parent containers (balance=0, no children left, asset_type='bank')
+      db.prepare(`
+        DELETE FROM accounts WHERE id IN (
+          SELECT a.id FROM accounts a
+          WHERE a.asset_type = 'bank'
+            AND a.balance = 0
+            AND a.id NOT IN (SELECT DISTINCT parent_account_id FROM accounts WHERE parent_account_id IS NOT NULL)
+        )
+      `).run();
+
+      // f) Auto-create system wallets: 微信, 支付宝, 现金
+      for (const [name, type, assetType] of [
+        ['微信', 'online_pay', 'e_wallet'],
+        ['支付宝', 'online_pay', 'e_wallet'],
+        ['现金', 'cash', 'cash'],
+      ]) {
+        const exists = db.prepare(
+          "SELECT id FROM accounts WHERE name = ? AND asset_type = ?"
+        ).get(name, assetType);
+        if (!exists) {
+          db.prepare(`
+            INSERT INTO accounts (name, type, asset_type, currency, balance, is_active, sort_order, created_at, updated_at)
+            VALUES (?, ?, ?, 'CNY', 0, 1, 0, datetime('now'), datetime('now'))
+          `).run(name, type, assetType);
+        }
+      }
+
+      // g) Flag: users with empty card_number need to fill in
+      const emptyCards = db.prepare(
+        "SELECT COUNT(*) as cnt FROM accounts WHERE type = 'bank_card' AND (card_number IS NULL OR card_number = '') AND is_active = 1"
+      ).get() as any;
+      if (emptyCards.cnt > 0) {
+        db.prepare(
+          "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('migration.v12.pending_card_numbers', ?, datetime('now'))"
+        ).run(String(emptyCards.cnt));
+      }
+    },
   },
 ];

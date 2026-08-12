@@ -17,20 +17,26 @@ export function recordNetWorth(): NetWorthRow {
   const db = getDatabase();
   const today = new Date().toISOString().slice(0, 10);
 
-  // Calculate totals
-  const cash = db.prepare(
-    "SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE is_active = 1 AND type != 'credit_card'"
-  ).get() as any;
-  // For credit cards, subtract the debt
-  const creditDebt = db.prepare(
-    "SELECT COALESCE(SUM(ABS(balance)), 0) as total FROM accounts WHERE is_active = 1 AND type = 'credit_card' AND balance < 0"
-  ).get() as any;
+  // Calculate cash totals in CNY using account_balances with currency conversion
+  const cashRow = db.prepare(`
+    SELECT COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as total_cny
+    FROM account_balances ab
+    JOIN accounts a ON a.id = ab.account_id AND a.is_active = 1 AND a.type != 'credit_card'
+    LEFT JOIN currencies c ON ab.currency = c.code
+  `).get() as any;
+  // For credit cards, subtract the debt (in CNY)
+  const creditRow = db.prepare(`
+    SELECT COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as total_cny
+    FROM account_balances ab
+    JOIN accounts a ON a.id = ab.account_id AND a.is_active = 1 AND a.type = 'credit_card' AND a.balance < 0
+    LEFT JOIN currencies c ON ab.currency = c.code
+  `).get() as any;
 
   const investments = db.prepare(
     'SELECT COALESCE(SUM(market_value), 0) as total FROM assets'
   ).get() as any;
 
-  const totalCash = cash.total - creditDebt.total;
+  const totalCash = (cashRow?.total_cny || 0) - (creditRow?.total_cny || 0);
   const totalInvestments = investments.total;
   const netWorth = totalCash + totalInvestments;
 
