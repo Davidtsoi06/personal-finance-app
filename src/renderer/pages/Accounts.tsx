@@ -43,6 +43,7 @@ export function Accounts() {
   // Add modal state
   const [showAdd, setShowAdd] = useState(false);
   const [addAssetType, setAddAssetType] = useState('');
+  const [addError, setAddError] = useState('');
   const [bankAccounts, setBankAccounts] = useState<Account[]>([]);
 
   // Edit / delete modal state
@@ -74,22 +75,30 @@ export function Accounts() {
   // ── Add handlers ──
   const handleAddBankCard = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAddError('');
     const fd = new FormData(e.target as HTMLFormElement);
+    const cardNumber = String(fd.get('card_number') || '');
+    // name 兜底：别名 → 银行名 → 尾号XXXX（保证非空，v1.5.9 修复创建失败）
+    const name = String(fd.get('display_alias') || fd.get('bank_name') || ('尾号' + cardNumber.slice(-4))).trim();
     const data: Record<string, unknown> = {
-      name: fd.get('display_alias') || fd.get('name'),
+      name: name || '银行卡', // 极端兜底：全部为空时用通用名
       type: 'bank_card',
       asset_type: 'bank',
       currency: fd.get('currency') || 'CNY',
       balance: parseFloat(fd.get('balance') as string) || 0,
       bank_name: fd.get('bank_name'),
-      card_number: fd.get('card_number'),
+      card_number: cardNumber,
       display_alias: fd.get('display_alias') || null,
     };
     try {
       await invoke('account:create', data);
       setShowAdd(false);
+      setAddAssetType('');
       load();
-    } catch (err) { console.error(err); }
+    } catch (err: any) {
+      console.error(err);
+      setAddError(err?.message || '创建失败，请检查填写内容');
+    }
   };
 
   const handleAddBroker = async (e: React.FormEvent) => {
@@ -105,8 +114,12 @@ export function Accounts() {
     try {
       await invoke('investmentAccount:create', data);
       setShowAdd(false);
+      setAddAssetType('');
       load();
-    } catch (err) { console.error(err); }
+    } catch (err: any) {
+      console.error(err);
+      setAddError(err?.message || '创建失败，请检查填写内容');
+    }
   };
 
   // ── Compute stats ──
@@ -132,7 +145,7 @@ export function Accounts() {
         <p className="page-subtitle">
           统一管理全部资产大类 · 总资产 <Amount value={totalAssets} currency="CNY" colored />
         </p>
-        <Button variant="primary" onClick={() => { setAddAssetType(''); setShowAdd(true); }}>+ 添加资产</Button>
+        <Button variant="primary" onClick={() => { setAddAssetType(''); setAddError(''); setShowAdd(true); }}>+ 添加资产</Button>
       </div>
 
       {/* Stat cards */}
@@ -438,8 +451,8 @@ export function Accounts() {
 
       {/* Action buttons */}
       <div className="layer2-actions" style={{ marginTop: 'var(--spacing-lg)', display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
-        <Button variant="primary" onClick={() => { setAddAssetType('bank'); setShowAdd(true); }}>+ 添加银行卡</Button>
-        <Button variant="secondary" onClick={() => { setAddAssetType('investment'); setShowAdd(true); }}>+ 添加券商账户</Button>
+        <Button variant="primary" onClick={() => { setAddAssetType('bank'); setAddError(''); setShowAdd(true); }}>+ 添加银行卡</Button>
+        <Button variant="secondary" onClick={() => { setAddAssetType('investment'); setAddError(''); setShowAdd(true); }}>+ 添加券商账户</Button>
       </div>
 
       {/* ── Add Asset Modal ── */}
@@ -495,7 +508,11 @@ export function Accounts() {
                 <input className="form-input" name="balance" type="number" step="0.01" defaultValue="0" />
               </div>
             </div>
-            <input type="hidden" name="name" value="" />
+            {addError && (
+              <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)', background: 'var(--color-danger-bg)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-danger)', marginBottom: 'var(--spacing-md)' }}>
+                ❌ {addError}
+              </div>
+            )}
             <div className="form-actions">
               <Button variant="secondary" onClick={() => setAddAssetType('')} type="button">← 返回</Button>
               <Button variant="secondary" onClick={() => { setShowAdd(false); setAddAssetType(''); }} type="button">取消</Button>
@@ -535,6 +552,11 @@ export function Accounts() {
                 ))}
               </select>
             </div>
+            {addError && (
+              <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)', background: 'var(--color-danger-bg)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-danger)', marginBottom: 'var(--spacing-md)' }}>
+                ❌ {addError}
+              </div>
+            )}
             <div className="form-actions">
               <Button variant="secondary" onClick={() => setAddAssetType('')} type="button">← 返回</Button>
               <Button variant="secondary" onClick={() => { setShowAdd(false); setAddAssetType(''); }} type="button">取消</Button>
