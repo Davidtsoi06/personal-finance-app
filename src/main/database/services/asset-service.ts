@@ -56,6 +56,7 @@ export function listAssets(type?: string): AssetRow[] {
 export interface AssetRowWithDeposit extends AssetRow {
   account_name?: string;
   maturity_date?: string;
+  rate_to_cny?: number;
 }
 
 /**
@@ -65,13 +66,19 @@ export interface AssetRowWithDeposit extends AssetRow {
  */
 export function listAllAssets(): AssetRowWithDeposit[] {
   const db = getDatabase();
-  const assets = db.prepare(`SELECT * FROM assets ORDER BY ${ASSET_SORT_SQL}`).all() as AssetRow[];
+  const assets = db.prepare(`
+    SELECT a.*, COALESCE(c.rate_to_base, 1) as rate_to_cny
+    FROM assets a LEFT JOIN currencies c ON a.currency = c.code
+    ORDER BY ${ASSET_SORT_SQL}
+  `).all() as AssetRow[];
 
   const fds = db.prepare(`
     SELECT fd.id, fd.account_id, a.name as account_name, fd.amount, fd.currency,
-           fd.interest_rate, fd.start_date, fd.maturity_date, fd.notes
+           fd.interest_rate, fd.start_date, fd.maturity_date, fd.notes,
+           COALESCE(c.rate_to_base, 1) as rate_to_cny
     FROM fixed_deposits fd
     JOIN accounts a ON fd.account_id = a.id
+    LEFT JOIN currencies c ON fd.currency = c.code
     ORDER BY fd.maturity_date ASC
   `).all() as any[];
 
@@ -96,9 +103,27 @@ export function listAllAssets(): AssetRowWithDeposit[] {
     updated_at: '',
     account_name: fd.account_name,
     maturity_date: fd.maturity_date,
+    rate_to_cny: fd.rate_to_cny,
   }));
 
   return [...assets, ...virtual];
+}
+
+/** 孤儿持仓：既不属于券商也不属于银行账户（删除券商遗留，v1.6.0 提供修复工具） */
+export function listOrphanedAssets(): AssetRow[] {
+  const db = getDatabase();
+  return db.prepare(
+    'SELECT * FROM assets WHERE investment_account_id IS NULL AND account_id IS NULL ORDER BY market_value DESC'
+  ).all() as AssetRow[];
+}
+
+/** 将孤儿持仓转挂到指定券商账户 */
+export function reassignOrphanedAsset(assetId: number, investmentAccountId: number): boolean {
+  const db = getDatabase();
+  const result = db.prepare(
+    'UPDATE assets SET investment_account_id = ? WHERE id = ? AND investment_account_id IS NULL AND account_id IS NULL'
+  ).run(investmentAccountId, assetId);
+  return result.changes > 0;
 }
 
 export function getAsset(id: number): AssetRow | undefined {

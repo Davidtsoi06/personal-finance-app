@@ -194,6 +194,8 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'accountTransaction:delete': z.tuple([id]),
   'trade:record': z.tuple([tradeRecordData]),
   'asset:listAll': z.tuple([]),
+  'asset:listOrphaned': z.tuple([]),
+  'asset:reassignOrphaned': z.tuple([id, id]),
   'asset:create': z.tuple([assetData]),
   'asset:update': z.tuple([id, assetData.partial()]),
   'asset:updatePrice': z.tuple([id, z.coerce.number().positive()]),

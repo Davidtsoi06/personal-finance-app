@@ -59,6 +59,7 @@ interface AssetRow {
   /** 定期存款虚拟行附带的字段（asset:listAll） */
   account_name?: string;
   maturity_date?: string;
+  rate_to_cny?: number;
 }
 
 const ASSET_ICONS: Record<string, string> = {
@@ -68,6 +69,7 @@ const ASSET_ICONS: Record<string, string> = {
   insurance: '🛡️',
   investment: '📈',
   broker_cash: '💸',
+  bank_wealth: '📊',
   custom: '✏️',
 };
 
@@ -78,6 +80,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   insurance: '#E6A23C',
   investment: '#F56C6C',
   broker_cash: '#13C2C2',
+  bank_wealth: '#7C4DFF',
   custom: '#909399',
 };
 
@@ -284,9 +287,13 @@ export function Dashboard() {
       }
     });
 
-  const totalMktValue = filteredAssets.reduce((s, a) => s + a.market_value, 0);
-  const profitCount = filteredAssets.filter(a => a.profit_loss > 0).length;
-  const lossCount = filteredAssets.filter(a => a.profit_loss < 0).length;
+  // 统计口径（v1.6.0）：持仓市值按 CNY 换算合计；定存单独统计（不混入总市值）
+  const holdingAssets = filteredAssets.filter(a => a.type !== 'fixed_deposit');
+  const depositAssets = filteredAssets.filter(a => a.type === 'fixed_deposit');
+  const totalMktValue = holdingAssets.reduce((s, a) => s + a.market_value * (a.rate_to_cny || 1), 0);
+  const totalDepositValue = depositAssets.reduce((s, a) => s + a.market_value * (a.rate_to_cny || 1), 0);
+  const profitCount = holdingAssets.filter(a => a.profit_loss > 0).length;
+  const lossCount = holdingAssets.filter(a => a.profit_loss < 0).length;
   const bestAsset = filteredAssets.reduce((best, a) => (!best || a.profit_loss_pct > best.profit_loss_pct) ? a : best, null as AssetRow | null);
   const worstAsset = filteredAssets.reduce((worst, a) => (!worst || a.profit_loss_pct < worst.profit_loss_pct) ? a : worst, null as AssetRow | null);
 
@@ -412,9 +419,11 @@ export function Dashboard() {
                           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
                             {child.asset_type === 'broker_cash'
                               ? '流动金 ' + (child.balance ?? 0).toLocaleString() + ' ' + child.currency
-                              : child.is_investment
-                                ? '现金 ' + (child.cash_balance ?? 0).toLocaleString() + ' · ' + (child.asset_count ?? 0) + ' 只持仓'
-                                : '定存+理财 ' + (child.asset_count ?? 0) + ' 项'}
+                              : child.asset_type === 'bank_wealth'
+                                ? '盈亏 ' + ((child.total_profit_loss ?? 0) >= 0 ? '+' : '') + (child.total_profit_loss ?? 0).toLocaleString() + ' CNY'
+                                : child.is_investment
+                                  ? (child.cash_balance ?? 0) + ' 现金 · ' + (child.asset_count ?? 0) + ' 只持仓'
+                                  : '定存 ' + (child.asset_count ?? 0) + ' 笔'}
                           </div>
                         </div>
                       </div>
@@ -467,7 +476,8 @@ export function Dashboard() {
           {filteredAssets.length > 0 && (
             <div className="query-stats">
               <span>📊 总计 <strong>{filteredAssets.length}</strong> 个资产</span>
-              <span>💰 总市值 <strong>¥ {totalMktValue.toLocaleString()}</strong></span>
+              <span>💰 持仓市值(CNY) <strong>¥ {totalMktValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+<span>🏦 定期存款(CNY) <strong>¥ {totalDepositValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
               <span style={{ color: 'var(--color-success)' }}>📈 盈利 <strong>{profitCount}</strong> 个</span>
               <span style={{ color: 'var(--color-danger)' }}>📉 亏损 <strong>{lossCount}</strong> 个</span>
               {bestAsset && (

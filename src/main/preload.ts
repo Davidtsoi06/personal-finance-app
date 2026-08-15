@@ -44,6 +44,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'asset:list',
   'asset:listAll',
   'asset:listByAccount',
+  'asset:listOrphaned',
+  'asset:reassignOrphaned',
   'asset:totalMarketValue',
   'asset:update',
   'asset:updatePrice',

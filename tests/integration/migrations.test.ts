@@ -61,6 +61,28 @@ describe('迁移体系（v1 ~ v12）', () => {
     expect(m.sql).not.toContain('ALTER TABLE');
   });
 
+  it('v15 检测孤儿持仓并写入计数', () => {
+    const db = new Database(':memory:');
+    db.exec("CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))");
+    for (const m of MIGRATIONS) {
+      db.exec('BEGIN');
+      db.exec(m.sql);
+      if (m.migrate && m.version !== 13) m.migrate(db);
+      db.prepare('INSERT INTO _migrations (version) VALUES (?)').run(m.version);
+      db.exec('COMMIT');
+    }
+    // 造一只孤儿持仓（无券商、无银行归属）
+    db.prepare("INSERT INTO assets (name, code, type, market, currency, quantity) VALUES ('孤儿股', 'ORPH', 'stock', 'other', 'CNY', 10)").run();
+    const v15 = MIGRATIONS.find((x) => x.version === 15)!;
+    db.exec('BEGIN');
+    db.exec(v15.sql);
+    v15.migrate!(db);
+    db.exec('COMMIT');
+    const row = db.prepare("SELECT value FROM app_settings WHERE key = 'orphan_assets.count'").get() as { value: string };
+    expect(row.value).toBe('1');
+    db.close();
+  });
+
   it('v13 卡号截断 SQL 行为正确', () => {
     const db = freshDb();
     apply(db, 1);

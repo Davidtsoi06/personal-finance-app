@@ -44,6 +44,8 @@ export function Accounts() {
   const [showAdd, setShowAdd] = useState(false);
   const [addAssetType, setAddAssetType] = useState('');
   const [addError, setAddError] = useState('');
+  // 分组内点「添加银行卡」时预填的银行名（可修改，v1.6.0）
+  const [addBankPreset, setAddBankPreset] = useState<string | null>(null);
   const [bankAccounts, setBankAccounts] = useState<Account[]>([]);
 
   // Edit / delete modal state
@@ -310,7 +312,7 @@ export function Accounts() {
                             <div className="bank-card-row-meta">
                               {child.card_number ? `尾号 ${child.card_number.slice(-4)}` : ''}
                               {child.cash_balance && child.cash_balance > 0 ? ` · 定期 ${child.cash_balance.toLocaleString()}` : ''}
-                              {(child.asset_count || 0) > 0 ? ` · 理财 ${child.asset_count} 笔` : ''}
+                              {(child.asset_count || 0) > 0 ? ` · 定存 ${child.asset_count} 笔` : ''}
                             </div>
                           </div>
                           <div className="bank-card-row-value">
@@ -331,6 +333,8 @@ export function Accounts() {
                       <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)' }} onClick={(e) => e.stopPropagation()}>
                         <Button variant="secondary" size="sm" onClick={() => {
                           setAddAssetType('bank');
+                          setAddBankPreset(item.name);
+                          setAddError('');
                           setShowAdd(true);
                         }}>
                           + 添加银行卡
@@ -430,6 +434,52 @@ export function Accounts() {
               );
             }
 
+            // ── Bank wealth (银行理财) card (expandable, v1.6.0 投资类) ──
+            if (assetType === 'bank_wealth') {
+              const isExpanded = expandedBanks.has(item.name);
+              return (
+                <div key="bank-wealth" className="layer2-card">
+                  <div
+                    className="layer2-card-main layer2-card--clickable"
+                    onClick={() => toggleBank(item.name)}
+                  >
+                    <div className="layer2-card-icon">📊</div>
+                    <div className="layer2-card-info">
+                      <div className="layer2-card-name">{item.name}</div>
+                      <div className="layer2-card-meta">
+                        {item.children?.length || 0} 只银行理财持仓（计入投资市值）
+                      </div>
+                    </div>
+                    <div className="layer2-card-value">
+                      <Amount value={item.market_value_cny} currency="CNY" colored={false} />
+                      <span style={{ marginLeft: 8, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                        {isExpanded ? '▼' : '▶'}
+                      </span>
+                    </div>
+                  </div>
+                  {isExpanded && item.children && item.children.length > 0 && (
+                    <div className="layer2-card-children">
+                      {item.children.map((child) => (
+                        <div key={'bw-' + child.id} className="bank-card-row">
+                          <div className="bank-card-row-icon">📊</div>
+                          <div className="bank-card-row-info">
+                            <div className="bank-card-row-name">{child.name}</div>
+                            <div className="bank-card-row-meta">
+                              {child.bank_name ? child.bank_name + ' · ' : ''}
+                              盈亏 {(child.total_profit_loss ?? 0) >= 0 ? '+' : ''}{(child.total_profit_loss ?? 0).toLocaleString()} CNY
+                            </div>
+                          </div>
+                          <div className="bank-card-row-value">
+                            <Amount value={child.market_value_cny} currency="CNY" showSign={false} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             // ── Custom / Fallback ──
             return (
               <div key={`custom-${item.id}`} className="layer2-card">
@@ -451,7 +501,7 @@ export function Accounts() {
 
       {/* Action buttons */}
       <div className="layer2-actions" style={{ marginTop: 'var(--spacing-lg)', display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
-        <Button variant="primary" onClick={() => { setAddAssetType('bank'); setAddError(''); setShowAdd(true); }}>+ 添加银行卡</Button>
+        <Button variant="primary" onClick={() => { setAddAssetType('bank'); setAddBankPreset(null); setAddError(''); setShowAdd(true); }}>+ 添加银行卡</Button>
         <Button variant="secondary" onClick={() => { setAddAssetType('investment'); setAddError(''); setShowAdd(true); }}>+ 添加券商账户</Button>
       </div>
 
@@ -467,7 +517,7 @@ export function Accounts() {
               <div
                 key={opt.value}
                 className="asset-type-card"
-                onClick={() => setAddAssetType(opt.value)}
+                onClick={() => { setAddAssetType(opt.value); if (opt.value !== 'bank') setAddBankPreset(null); }}
               >
                 <div className="asset-type-card-icon">{opt.icon}</div>
                 <div className="asset-type-card-label">{opt.label}</div>
@@ -482,7 +532,16 @@ export function Accounts() {
           <form onSubmit={handleAddBankCard}>
             <div className="form-group">
               <label className="form-label">银行名称 *</label>
-              <input className="form-input" name="bank_name" required placeholder="如：招商银行" />
+              <input
+                key={addBankPreset || 'free'}
+                className="form-input" name="bank_name" required placeholder="如：招商银行"
+                defaultValue={addBankPreset || ''}
+              />
+              {addBankPreset && (
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 4 }}>
+                  已按所属银行「{addBankPreset}」预填，如有需要可修改
+                </div>
+              )}
             </div>
             <div className="form-row">
               <div className="form-group">

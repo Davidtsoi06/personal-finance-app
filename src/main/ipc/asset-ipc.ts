@@ -14,6 +14,10 @@ export function registerAssetIpcHandlers(): void {
   // ── Assets ──
   ipcMain.handle('asset:list', (_e, type?: string) => assetService.listAssets(type));
   handleValidated('asset:listAll', () => assetService.listAllAssets());
+  handleValidated('asset:listOrphaned', () => assetService.listOrphanedAssets());
+  handleValidated('asset:reassignOrphaned', (assetId: number, investmentAccountId: number) =>
+    assetService.reassignOrphanedAsset(assetId, investmentAccountId)
+  );
   ipcMain.handle('asset:get', (_e, id: number) => assetService.getAsset(id));
   handleValidated('asset:create', (data: any) => {
     data.currency = normalizeCurrency(data.currency, 'CNY');

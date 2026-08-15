@@ -183,7 +183,7 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 |----|---------|------|
 | `account` | `account:list`, `account:forceDelete`, `account:allAssetsSummary`, `account:createWithChildren` | 账户 CRUD + 树形 + 强制删除 + 统一资产汇总 |
 | `accountTransaction` | `accountTransaction:list`, `accountTransaction:create`, `accountTransaction:update`, `accountTransaction:delete` | 存取记录（含编辑/删除） |
-| `asset` | `asset:list`, `asset:update`, `asset:totalMarketValue` | 资产持仓 |
+| `asset` | `asset:list`, `asset:update`, `asset:totalMarketValue`, `asset:listAll`, `asset:listOrphaned`（v1.6.0）, `asset:reassignOrphaned`（v1.6.0） | 资产持仓（含定存虚拟行/孤儿修复） |
 | `transaction` | `transaction:list`, `transaction:update`, `transaction:delete`, `transaction:todayList` | 投资交易记录（含编辑/删除，自动回滚持仓） |
 | `trade` | `trade:record`, `trade:parseStatement`, `trade:importParsed`, `trade:importExcel` | 交易操作 + 券商日结单（CSV/Excel） |
 | `bank` | `bank:listFormats`, `bank:parseStatement`, `bank:importParsed`, `bank:importExcel` | 银行日结单导入（CSV/Excel） |

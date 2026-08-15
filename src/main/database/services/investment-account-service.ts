@@ -77,18 +77,29 @@ export function deleteInvestmentAccount(id: number): DeleteResult {
   const existing = getInvestmentAccount(id);
   if (!existing) return { success: false, error: '投资账户不存在' };
 
-  // Check for linked holdings
-  const holdingCount = db.prepare(
-    'SELECT COUNT(*) as count FROM assets WHERE investment_account_id = ?'
-  ).get(id) as { count: number };
+  // 级联删除：持仓/交易/价格历史/现金流一并清理（v1.6.0 起不再产生孤儿持仓）
+  const deleteAll = db.transaction(() => {
+    // 现金流（引用账户与持仓，先删）
+    db.prepare('DELETE FROM investment_cash_flows WHERE investment_account_id = ?').run(id);
 
-  // Unlink assets
-  db.prepare('UPDATE assets SET investment_account_id = NULL WHERE investment_account_id = ?').run(id);
-  const result = db.prepare('DELETE FROM investment_accounts WHERE id = ?').run(id);
-  return {
-    success: result.changes > 0,
-    error: result.changes > 0 ? undefined : '删除失败',
-  };
+    // 持仓相关：交易与价格历史先删（外键引用 assets）
+    const assetIds = db.prepare('SELECT id FROM assets WHERE investment_account_id = ?').all(id) as { id: number }[];
+    for (const a of assetIds) {
+      db.prepare('DELETE FROM transactions WHERE asset_id = ?').run(a.id);
+      db.prepare('DELETE FROM asset_prices WHERE asset_id = ?').run(a.id);
+    }
+    db.prepare('DELETE FROM assets WHERE investment_account_id = ?').run(id);
+
+    const result = db.prepare('DELETE FROM investment_accounts WHERE id = ?').run(id);
+    return result.changes;
+  });
+
+  try {
+    const changes = deleteAll();
+    return { success: changes > 0, error: changes > 0 ? undefined : '删除失败' };
+  } catch (err: any) {
+    return { success: false, error: err.message || '删除失败' };
+  }
 }
 
 /** Get assets belonging to an investment account (sorted: 港股→A股→…, code ASC). */

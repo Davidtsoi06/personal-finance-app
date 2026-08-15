@@ -586,4 +586,21 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 15,
+    sql: [
+      '-- ============================================',
+      '-- Migration v15: 孤儿持仓检测（删除券商遗留的无归属持仓计数，供投资页提示修复）',
+      '-- ============================================',
+      'SELECT 1;',
+    ].join('\n'),
+    migrate: (db) => {
+      const count = db.prepare(
+        'SELECT COUNT(*) as c FROM assets WHERE investment_account_id IS NULL AND account_id IS NULL'
+      ).get() as { c: number };
+      db.prepare(
+        "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('orphan_assets.count', ?, datetime('now'))"
+      ).run(String(count.c));
+    },
+  },
 ];

@@ -7,6 +7,12 @@ import { Table } from '../components/ui/Table';
 import { Amount } from '../components/ui/Amount';
 import { invoke } from '../hooks/useIpc';
 
+interface OrphanAsset {
+  id: number; name: string; code: string; type: string; currency: string;
+  quantity: number; cost_price: number; current_price: number;
+  market_value: number; profit_loss: number; profit_loss_pct: number;
+}
+
 interface InvAccount {
   id: number; name: string; broker: string | null; currency: string;
   account_number: string | null; funding_account_id?: number | null; notes: string | null;
@@ -44,15 +50,21 @@ export function Investments() {
   const [cashType, setCashType] = useState<'add' | 'withdraw'>('add');
   const [cashSaving, setCashSaving] = useState(false);
 
+  // 孤儿持仓（删除券商遗留，v1.6.0 提供转挂/删除）
+  const [orphans, setOrphans] = useState<OrphanAsset[]>([]);
+  const [orphanReassign, setOrphanReassign] = useState<Record<number, string>>({});
+
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
     try {
-      const [list, stats, trades] = await Promise.all([
+      const [list, stats, trades, orphanList] = await Promise.all([
         invoke<InvAccount[]>('investmentAccount:list'),
         invoke<DailyStats>('investmentAccount:dailyStats').catch(() => null),
         invoke<TodayTrade[]>('transaction:todayList').catch(() => []),
+        invoke<OrphanAsset[]>('asset:listOrphaned').catch(() => []),
       ]);
+      setOrphans(orphanList || []);
       setDailyStats(stats);
       setTodayTrades(trades || []);
       const enriched = await Promise.all(
@@ -175,6 +187,54 @@ export function Investments() {
           />
         )}
       </Card>
+
+      {/* 未归属持仓（删除券商遗留，v1.6.0） */}
+      {orphans.length > 0 && (
+        <div style={{ marginTop: 'var(--spacing-lg)' }}>
+          <Card title="⚠️ 未归属持仓（删除券商时遗留）">
+            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-md)' }}>
+              以下持仓不属于任何券商账户，导致资产总览与投资页金额不一致。请转挂到某个券商账户，或删除。
+            </div>
+            {orphans.map((o) => (
+              <div key={o.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--spacing-sm)',
+                padding: 'var(--spacing-sm) var(--spacing-md)',
+                background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--spacing-sm)',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 500 }}>{o.name}</div>
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                    {o.code} · 数量 {o.quantity.toLocaleString()} · 市值 {o.currency} {o.market_value.toLocaleString()}
+                  </div>
+                </div>
+                <select
+                  value={orphanReassign[o.id] || ''}
+                  onChange={(e) => setOrphanReassign((prev) => ({ ...prev, [o.id]: e.target.value }))}
+                  style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)' }}
+                >
+                  <option value="">转挂到…</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>📈 {a.name}</option>
+                  ))}
+                </select>
+                <Button
+                  variant="primary" size="sm"
+                  disabled={!orphanReassign[o.id]}
+                  onClick={async () => {
+                    await invoke('asset:reassignOrphaned', o.id, parseInt(orphanReassign[o.id]));
+                    load();
+                  }}
+                >
+                  转挂
+                </Button>
+                <Button variant="danger" size="sm" onClick={async () => { await invoke('asset:delete', o.id); load(); }}>
+                  🗑 删除
+                </Button>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
 
       {/* Stat cards */}
       <div className="stat-cards">

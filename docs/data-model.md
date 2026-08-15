@@ -299,6 +299,7 @@
 | `ai.apiUrl` | AI API 端点 | `https://api.deepseek.com/v1/chat/completions` |
 | `ai.apiKey` | AI API Key（AES-256-GCM 密文存储，v13 起；仅主进程可读，不随备份导出） | `""` |
 | `ai.includePortfolio` | AI 组合数据共享开关（'1' 开 / '0' 关，默认开，v1.5.5） | `'1'` |
+| `orphan_assets.count` | 无归属持仓数量（迁移 v15 写入，v1.6.0） | `'0'` |
 | `ai.model` | AI 模型名称 | `deepseek-chat` |
 | `app_name` | 自定义应用名称（v1.4.0 新增） | `个人理财投资软件` |
 | `archive.folderPath` | 归档文件夹路径 | `""` |
@@ -408,6 +409,7 @@
 | v12 | + insurance_policies 表, + premium_payments 表, + accounts.display_alias, + JS 迁移函数支持（v1.5.0） |
 | v13 | 安全加固：accounts.card_number 截断为后 4 位；app_settings['ai.apiKey'] 明文加密为 AES-256-GCM（v1.5.4） |
 | v14 | + investment_cash_flows 表（券商现金流水，v1.5.6）；有现金余额的券商账户生成 adjust 期初快照流水 |
+| v15 | 孤儿持仓检测：app_settings['orphan_assets.count'] 写入无归属持仓计数（v1.6.0，供投资页提示转挂/删除） |
 
 ---
 

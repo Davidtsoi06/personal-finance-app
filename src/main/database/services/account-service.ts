@@ -627,9 +627,8 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
 
     for (const acc of accList) {
       const fds = fdsByAccount.get(acc.id) || [];
-      const fdTotal = fds.reduce((s: number, fd: any) => s + fd.amount, 0);
-      const bankAssetsList = bankAssetsByAccount.get(acc.id) || [];
-      const bankAssetMktVal = bankAssetsList.reduce((s: number, ba: any) => s + ba.market_value * (ba.rate_to_cny || 1), 0);
+      // 定存按币种换算 CNY（修复跨币种相加）
+      const fdTotalCny = fds.reduce((s: number, fd: any) => s + fd.amount * (fd.rate_to_cny || 1), 0);
 
       const childItem: AssetSummaryItem = {
         id: acc.id, name: acc.display_alias || acc.name || `尾号${acc.card_number || '****'}`,
@@ -638,9 +637,10 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
         bank_name: acc.bank_name, broker: null,
         card_number: acc.card_number,
         display_alias: acc.display_alias || null,
-        market_value_cny: (cnyMap.get(acc.id) || 0) + bankAssetMktVal,
-        cash_balance: fdTotal,
-        asset_count: bankAssetsList.length + fds.length,
+        // 银行子项 = 余额 + 定存（银行理财已独立为 bank_wealth 投资类，v1.6.0）
+        market_value_cny: (cnyMap.get(acc.id) || 0) + fdTotalCny,
+        cash_balance: fdTotalCny,
+        asset_count: fds.length,
         children: [],
         is_investment: false,
       };
@@ -726,6 +726,42 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
         asset_count: brokerCashChildren.length,
         total_profit_loss: 0,
         children: brokerCashChildren, is_investment: false,
+      });
+    }
+  }
+
+  // 5.6 银行理财（v1.6.0 独立投资类：挂在银行账户下的股票/基金/ETF 计入投资市值）
+  {
+    const wealthChildren: AssetSummaryItem[] = [];
+    let wealthTotal = 0;
+    for (const [accountId, list] of bankAssetsByAccount) {
+      for (const ba of list) {
+        const cny = ba.market_value * (ba.rate_to_cny || 1);
+        wealthTotal += cny;
+        wealthChildren.push({
+          id: ba.id, name: ba.name, asset_type: 'bank_wealth', type: ba.type,
+          currency: ba.currency, balance: ba.market_value,
+          bank_name: ba.bank_name || null, broker: null,
+          card_number: null, display_alias: null,
+          market_value_cny: cny,
+          cash_balance: 0,
+          asset_count: 0,
+          total_profit_loss: ba.profit_loss * (ba.rate_to_cny || 1),
+          children: [], is_investment: true,
+        });
+      }
+    }
+    if (wealthTotal > 0) {
+      result.push({
+        id: -3100, name: '银行理财', asset_type: 'bank_wealth', type: 'bank_wealth',
+        currency: 'CNY', balance: wealthTotal,
+        bank_name: null, broker: null,
+        card_number: null, display_alias: null,
+        market_value_cny: wealthTotal,
+        cash_balance: 0,
+        asset_count: wealthChildren.length,
+        total_profit_loss: wealthChildren.reduce((s: number, c: AssetSummaryItem) => s + (c.total_profit_loss || 0), 0),
+        children: wealthChildren, is_investment: true,
       });
     }
   }

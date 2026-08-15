@@ -2,6 +2,7 @@
  * Net worth history — daily snapshots of total assets.
  */
 import { getDatabase } from '../index';
+import { getAllAssetsSummary } from './account-service';
 
 export interface NetWorthRow {
   id: number;
@@ -17,28 +18,22 @@ export function recordNetWorth(): NetWorthRow {
   const db = getDatabase();
   const today = new Date().toISOString().slice(0, 10);
 
-  // Calculate cash totals in CNY using account_balances with currency conversion
-  const cashRow = db.prepare(`
-    SELECT COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as total_cny
-    FROM account_balances ab
-    JOIN accounts a ON a.id = ab.account_id AND a.is_active = 1 AND a.type != 'credit_card'
-    LEFT JOIN currencies c ON ab.currency = c.code
-  `).get() as any;
-  // For credit cards, subtract the debt (in CNY)
-  const creditRow = db.prepare(`
-    SELECT COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as total_cny
-    FROM account_balances ab
-    JOIN accounts a ON a.id = ab.account_id AND a.is_active = 1 AND a.type = 'credit_card' AND a.balance < 0
-    LEFT JOIN currencies c ON ab.currency = c.code
-  `).get() as any;
-
-  const investments = db.prepare(
-    "SELECT COALESCE(SUM(a.market_value * COALESCE(c.rate_to_base, 1)), 0) as total" +
-    " FROM assets a LEFT JOIN currencies c ON a.currency = c.code"
-  ).get() as any;
-
-  const totalCash = (cashRow?.total_cny || 0) - (creditRow?.total_cny || 0);
-  const totalInvestments = investments.total;
+  // v1.6.0 统一口径：直接使用资产总览（getAllAssetsSummary）的合计，
+  // 保证净值历史与「资产结构」页总资产/现金/投资市值完全一致。
+  const items = getAllAssetsSummary();
+  const sumInvestments = (item: any): number =>
+    (item.is_investment ? item.market_value_cny || 0 : 0) +
+    (item.children || []).reduce((s: number, c: any) => s + sumInvestments(c), 0);
+  let totalInvestments = 0;
+  let totalCash = 0;
+  for (const item of items) {
+    if (item.is_investment) {
+      totalInvestments += item.market_value_cny || 0;
+    } else {
+      // 现金类 = 顶级金额 − 内嵌的投资部分（券商流动金等现金类子项不含投资）
+      totalCash += (item.market_value_cny || 0) - (item.children || []).reduce((s: number, c: any) => s + sumInvestments(c), 0);
+    }
+  }
   const netWorth = totalCash + totalInvestments;
 
   // Upsert today's record
