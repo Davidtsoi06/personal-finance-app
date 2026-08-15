@@ -2,7 +2,9 @@
 
 一款运行在 Windows 电脑上的**个人财产投资管理软件**，以投资管理为核心，统一管理现金、银行卡、股票、基金、黄金、加密货币等全部资产，提供深度财务洞察和智能记账。
 
-**最新版本：v1.4.2**（2026-08-10）
+**最新版本：v1.5.2**（2026-08-15）
+
+📥 下载：[GitHub Releases](https://github.com/Davidtsoi06/personal-finance-app/releases/latest)
 
 ## ✨ 功能概览
 
@@ -14,22 +16,35 @@
 - 净资产走势图（30 天可配置）
 - 月度预算进度卡片（含「剩余每天可用」计算，颜色自适应）
 
-### 💳 账户管理
-- 支持类型：银行、现金、保险、投资、自定义
-- **树形层级结构**：父账户 + 子账户（银行卡/子账户）
-- 多币种余额（`account_balances` 表）
+### 💳 资产管理（v1.5.0 四层架构）
+- **四层架构**：总资产仪表盘 → 扁平大类卡片 → 子账户明细 → 底层资产
+- 银行自动按名称分组，卡片显示别名 + 卡号尾号 4 位
+- 多币种余额（`account_balances` 表，自动 CNY 等值换算）
 - 添加 / 编辑 / 安全删除 / **强制级联删除** 账户
-- 账户详情页（含存取记录编辑/删除、余额变动历史）
-- 投资账户可**关联银行账户**，资产树中作为银行子节点展示
+- 账户详情页（含存取记录编辑/删除、余额变动历史、定期存款、银行理财产品）
+- 投资账户可**关联银行账户**
 - 银行日结单导入（CSV / Excel，自定义格式）
+
+### 📱 电子钱包
+- 微信 / 支付宝 / 现金三个系统钱包自动创建
+- 各钱包独立流水页（余额 / 收入 / 支出统计）
+- CSV 账单批量导入 + 手动记账
+
+### 🛡️ 保险管理
+- 独立保单管理（人寿 / 医疗 / 年金 / 重疾 / 意外 / 其他）
+- 保费缴纳半自动化：一键扣银行款 + 记录流水
+- **到期提醒**：每日 8:57 自动检查，Windows 通知即将到期的保费
 
 ### 📈 投资管理（核心）
 - 资产类型：A股 / 港股 / 美股 / 基金 / ETF / 黄金 / 加密货币 / 定期存款
+- **统一持仓排序**：港股 → A股 → 美股 → ETF → 基金 → 黄金 → 加密货币，组内按代码（v1.5.2）
 - 持仓列表：名称、代码、数量、成本价、当前价、市值、盈亏
 - 买卖交易记录（加权平均成本自动计算）
 - **编辑 / 删除持仓**（全字段可编辑）
 - **编辑 / 删除交易记录**（自动重算持仓成本和盈亏）
 - **价格自动更新**：5 个市场主/备双数据源 + 智能市场检测 + 自动 failover
+- 基金净值：东方财富历史净值 API（主）+ 新浪财经（备）（v1.5.1 修复防盗链失效）
+- **券商现金余额**：账户卡片显示现金 + 一键存入/取出（v1.5.1）
 - 券商日结单导入（CSV / Excel，智能关键词匹配 + 自定义格式编辑）
 - 持仓详情页：交易历史、价格走势
 
@@ -56,10 +71,11 @@
 - 独立页面管理
 
 ### 📉 报表分析
-- 月度收支趋势图
-- 分类消费排行
-- 年度收支统计
+- 月度收支趋势图 / 分类消费排行 / 年度收支统计
 - 持仓表现排行（市值/盈亏排序、总汇总行）
+- **每日交易报表**（v1.5.2）：任选日期查看当日交易 + 买入/卖出/已实现盈亏统计 + 一键导出当日 Excel（汇总 + 明细双 sheet）
+- **每日 16:35 收盘通知**：当日有交易时自动推送 Windows 通知
+- **完整资产汇总导出**（v1.5.2）：一个 Excel 含 7 个 sheet（总览/银行/钱包/券商/持仓/定存/保险，全部 CNY 换算）
 
 ### 📦 数据归档
 - 设定数据保留期限（默认 12 个月，可配置 6/12/18/24/36 个月）
@@ -116,17 +132,19 @@
 │   ├── main/                       # Electron 主进程
 │   │   ├── index.ts                # 主进程入口（窗口创建、启动流程）
 │   │   ├── preload.ts              # 预加载脚本（contextBridge）
-│   │   ├── ipc/                    # IPC 通信处理（5 个文件）
+│   │   ├── ipc/                    # IPC 通信处理（8 个文件）
 │   │   │   ├── account-ipc.ts      # 账户 + 存取记录 + 强制删除
 │   │   │   ├── asset-ipc.ts        # 资产 + 交易 + 日结单导入
+│   │   │   ├── insurance-ipc.ts    # 保单管理
 │   │   │   ├── ledger-ipc.ts       # 收支 + 分类
-│   │   │   ├── report-ipc.ts       # 报表数据
+│   │   │   ├── report-ipc.ts       # 报表数据 + Excel 导出
 │   │   │   ├── settings-ipc.ts     # 设置/格式/AI/预算/提醒/归档/人情债
-│   │   │   └── update-ipc.ts       # 自动更新
+│   │   │   ├── update-ipc.ts       # 自动更新
+│   │   │   └── wallet-ipc.ts       # 电子钱包 + 账单导入
 │   │   ├── database/
 │   │   │   ├── index.ts            # 数据库初始化 + WAL 模式 + 迁移
-│   │   │   ├── migrations.ts       # 建表脚本（v1 ~ v10）
-│   │   │   └── services/           # 数据服务层（15 个）
+│   │   │   ├── migrations.ts       # 建表脚本（v1 ~ v12）
+│   │   │   └── services/           # 数据服务层（17 个）
 │   │   │       ├── account-service.ts
 │   │   │       ├── account-transaction-service.ts
 │   │   │       ├── alert-service.ts
@@ -136,13 +154,15 @@
 │   │   │       ├── category-service.ts
 │   │   │       ├── currency-service.ts
 │   │   │       ├── custom-format-service.ts
+│   │   │       ├── fixed-deposit-service.ts
+│   │   │       ├── insurance-service.ts
 │   │   │       ├── investment-account-service.ts
 │   │   │       ├── ledger-service.ts
 │   │   │       ├── net-worth-service.ts
 │   │   │       ├── settings-service.ts
 │   │   │       ├── social-obligation-service.ts
 │   │   │       └── transaction-service.ts
-│   │   └── services/               # 后台服务（9 个）
+│   │   └── services/               # 后台服务（10 个）
 │   │       ├── ai-service.ts       # AI 对话（DeepSeek，含流式 SSE）
 │   │       ├── archive-service.ts  # 数据归档（Excel 报表 + 清理）
 │   │       ├── bank-statement-parser.ts  # 银行日结单解析
@@ -150,35 +170,40 @@
 │   │       ├── exchange-rate-fetcher.ts  # 汇率抓取
 │   │       ├── portfolio-context.ts      # AI 上下文数据收集
 │   │       ├── price-fetcher.ts    # 价格抓取（主/备双源 + failover）
-│   │       ├── scheduler.ts        # 定时任务（价格/汇率/AI 日摘要）
+│   │       ├── report-export-service.ts  # 报表数据构建（每日交易 + 资产快照）
+│   │       ├── scheduler.ts        # 定时任务（价格/汇率/AI 日摘要/交易通知）
 │   │       └── statement-parser.ts # 券商日结单解析
 │   ├── renderer/                   # React 渲染进程
 │   │   ├── index.html
 │   │   ├── index.tsx               # React 入口
-│   │   ├── App.tsx                 # 路由配置（10 个页面）
+│   │   ├── App.tsx                 # 路由配置（12 个页面）
 │   │   ├── hooks/
 │   │   │   └── useIpc.ts           # IPC 调用封装 hook
-│   │   ├── pages/                  # 页面组件（10 个）
+│   │   ├── pages/                  # 页面组件（12 个）
 │   │   │   ├── Dashboard.tsx       # 仪表盘（饼图下钻 + 资产查询）
-│   │   │   ├── Accounts.tsx        # 账户列表（树形 + 子账户 + 强制删除）
-│   │   │   ├── AccountDetail.tsx   # 账户详情（存取记录编辑/删除）
-│   │   │   ├── Investments.tsx     # 投资账户列表（关联银行 + 今日交易）
+│   │   │   ├── Accounts.tsx        # 资产管理（四层架构卡片 + 银行分组）
+│   │   │   ├── AccountDetail.tsx   # 账户详情（存取记录 + 定存 + 银行理财）
+│   │   │   ├── Investments.tsx     # 投资账户列表（关联银行 + 今日交易 + 现金余额）
 │   │   │   ├── HoldingsDetail.tsx  # 持仓详情（交易编辑/删除 + 持仓编辑）
+│   │   │   ├── WalletFlow.tsx      # 钱包流水（余额/收支/账单导入）
+│   │   │   ├── Insurance.tsx       # 保单管理（CRUD + 缴费）
 │   │   │   ├── Bookkeeping.tsx     # 记账
 │   │   │   ├── SocialObligations.tsx  # 人情债
-│   │   │   ├── Reports.tsx         # 报表分析
+│   │   │   ├── Reports.tsx         # 报表分析（每日交易报表 + 导出）
 │   │   │   ├── AIAssistant.tsx     # AI 助手
 │   │   │   └── Settings.tsx        # 设置
 │   │   └── components/
 │   │       ├── Layout.tsx          # 侧边栏布局（动态应用名称）
 │   │       ├── ErrorBoundary.tsx   # 错误边界
-│   │       ├── ui/                 # 通用 UI 组件（7 个）
+│   │       ├── DailyTradesReport.tsx # 每日交易报表卡片（v1.5.2）
+│   │       ├── ui/                 # 通用 UI 组件（8 个）
 │   │       │   ├── Amount.tsx      # 金额显示（含 NetAmount 变体）
 │   │       │   ├── Badge.tsx
 │   │       │   ├── Button.tsx
 │   │       │   ├── Card.tsx
 │   │       │   ├── Modal.tsx
 │   │       │   ├── ProgressBar.tsx # 进度条（颜色自适应）
+│   │       │   ├── SlidePanel.tsx  # 侧边滑出面板
 │   │       │   └── Table.tsx
 │   │       ├── cards/              # 业务卡片组件（5 个）
 │   │       │   ├── AiConfigCard.tsx
@@ -224,6 +249,9 @@ npm run build
 
 # 打包 Windows 安装包
 npm run release:local
+
+# 一键发布：创建 GitHub Release 并上传安装包（需已 git push + 打 tag）
+node scripts/upload-release.js
 ```
 
 ### 环境要求
@@ -252,7 +280,7 @@ npm run release:local
 - **引擎**：SQLite 3（better-sqlite3，同步 API）
 - **模式**：WAL（Write-Ahead Logging）
 - **位置**：`%APPDATA%/personal-finance/finance.db`
-- **迁移**：版本号递增（v1 ~ v10），含 16 张业务表
+- **迁移**：版本号递增（v1 ~ v12），含 19 张业务表
 - **表结构**：详见 [docs/data-model.md](docs/data-model.md)
 
 ---
@@ -265,7 +293,7 @@ npm run release:local
 | A 股 | 新浪 `hq.sinajs.cn`（sh/sz） | 腾讯 `qt.gtimg.cn` | 每 30 分钟 |
 | 港股 | 新浪 `hq.sinajs.cn`（hk） | 腾讯 `qt.gtimg.cn` | 每 30 分钟 |
 | 美股 | Yahoo Finance v8 | 新浪 `gb_` 前缀 | 每 30 分钟 |
-| 基金 | 天天基金 | — | 每 30 分钟 |
+| 基金 | 东方财富历史净值 API | 新浪财经 `f_` 前缀 | 每 30 分钟 |
 | 黄金 | 新浪 `hf_XAU` | Gold-API | 每 30 分钟 |
 | 加密货币 | CoinGecko | Binance 公开 API | 每 30 分钟 |
 | AI 对话 | DeepSeek API | — | 按需 |
