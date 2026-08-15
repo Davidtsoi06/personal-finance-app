@@ -1,6 +1,8 @@
 /**
  * Fixed deposit service — term deposits linked to bank accounts.
- * Creating/editing/deleting a fixed deposit adjusts the parent bank account balance.
+ * v1.6.0：资金交互改为询问式——
+ *   deduct_mode='deduct'：创建时从 deduct_account_id 扣款，删除恢复，编辑按差额调整；
+ *   deduct_mode='record_only'：单纯记录，永不触碰任何账户余额。
  */
 import { getDatabase } from '../index';
 import { updateAccountBalance } from './account-service';
@@ -14,6 +16,8 @@ export interface FixedDepositRow {
   start_date: string;
   maturity_date: string;
   notes: string | null;
+  deduct_mode: string;
+  deduct_account_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -30,7 +34,11 @@ export function getFixedDeposit(id: number): FixedDepositRow | undefined {
   return db.prepare('SELECT * FROM fixed_deposits WHERE id = ?').get(id) as FixedDepositRow | undefined;
 }
 
-/** Create a fixed deposit and deduct the amount from the linked bank account. */
+/**
+ * Create a fixed deposit.
+ * deductMode='deduct'：从 deductAccountId（默认 account_id）扣款；
+ * deductMode='record_only'：只落记录，不动任何余额。
+ */
 export function createFixedDeposit(data: {
   account_id: number;
   amount: number;
@@ -39,16 +47,21 @@ export function createFixedDeposit(data: {
   start_date: string;
   maturity_date: string;
   notes?: string;
+  deductMode?: 'deduct' | 'record_only';
+  deductAccountId?: number | null;
 }): FixedDepositRow {
   const db = getDatabase();
   const currency = data.currency || 'CNY';
   const amount = data.amount;
   const rate = data.interest_rate || 0;
+  const deductMode = data.deductMode || 'deduct';
+  // 落库的扣款账户：扣款型 = 指定账户（默认归属账户）；纯记录型 = NULL
+  const deductAccountIdValue = deductMode === 'deduct' ? (data.deductAccountId ?? data.account_id) : null;
 
   const tx = db.transaction(() => {
     const stmt = db.prepare(`
-      INSERT INTO fixed_deposits (account_id, amount, currency, interest_rate, start_date, maturity_date, notes)
-      VALUES (@account_id, @amount, @currency, @interest_rate, @start_date, @maturity_date, @notes)
+      INSERT INTO fixed_deposits (account_id, amount, currency, interest_rate, start_date, maturity_date, notes, deduct_mode, deduct_account_id)
+      VALUES (@account_id, @amount, @currency, @interest_rate, @start_date, @maturity_date, @notes, @deduct_mode, @deduct_account_id)
     `);
     const result = stmt.run({
       account_id: data.account_id,
@@ -58,12 +71,17 @@ export function createFixedDeposit(data: {
       start_date: data.start_date,
       maturity_date: data.maturity_date,
       notes: data.notes || null,
+      deduct_mode: deductMode,
+      deduct_account_id: deductAccountIdValue,
     });
 
-    // Deduct from bank account balance
-    db.prepare("UPDATE accounts SET balance = balance - ?, updated_at = datetime('now') WHERE id = ?")
-      .run(amount, data.account_id);
-    updateAccountBalance(data.account_id, currency, -amount);
+    // 扣款型：从指定账户扣减（accounts.balance + account_balances）
+    if (deductMode === 'deduct') {
+      const deductAccount = data.deductAccountId ?? data.account_id;
+      db.prepare("UPDATE accounts SET balance = balance - ?, updated_at = datetime('now') WHERE id = ?")
+        .run(amount, deductAccount);
+      updateAccountBalance(deductAccount, currency, -amount);
+    }
 
     return result.lastInsertRowid as number;
   });
@@ -72,7 +90,7 @@ export function createFixedDeposit(data: {
   return getFixedDeposit(newId) as FixedDepositRow;
 }
 
-/** Update a fixed deposit, adjusting bank balance for amount changes. */
+/** Update a fixed deposit. 扣款型：金额变化按差额调整扣款账户；纯记录型：只改记录。 */
 export function updateFixedDeposit(id: number, data: {
   amount?: number;
   currency?: string;
@@ -93,17 +111,19 @@ export function updateFixedDeposit(id: number, data: {
   const newNotes = data.notes !== undefined ? data.notes : existing.notes;
 
   const tx = db.transaction(() => {
-    // If amount changed, adjust bank balance
-    const amountDelta = existing.amount - newAmount;
-    if (amountDelta !== 0) {
-      db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
-        .run(amountDelta, existing.account_id);
-      // If currency also changed, we need to reverse old and apply new
-      if (newCurrency !== existing.currency) {
-        updateAccountBalance(existing.account_id, existing.currency, existing.amount);
-        updateAccountBalance(existing.account_id, newCurrency, -newAmount);
-      } else {
-        updateAccountBalance(existing.account_id, existing.currency, amountDelta);
+    // 仅扣款型定存调整余额
+    if (existing.deduct_mode === 'deduct') {
+      const deductAccount = existing.deduct_account_id ?? existing.account_id;
+      const amountDelta = existing.amount - newAmount;
+      if (amountDelta !== 0) {
+        db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
+          .run(amountDelta, deductAccount);
+        if (newCurrency !== existing.currency) {
+          updateAccountBalance(deductAccount, existing.currency, existing.amount);
+          updateAccountBalance(deductAccount, newCurrency, -newAmount);
+        } else {
+          updateAccountBalance(deductAccount, existing.currency, amountDelta);
+        }
       }
     }
 
@@ -117,17 +137,19 @@ export function updateFixedDeposit(id: number, data: {
   return getFixedDeposit(id);
 }
 
-/** Delete a fixed deposit and restore the amount to the linked bank account. */
+/** Delete a fixed deposit. 扣款型恢复金额到扣款账户；纯记录型只删记录。 */
 export function deleteFixedDeposit(id: number): boolean {
   const db = getDatabase();
   const existing = getFixedDeposit(id);
   if (!existing) return false;
 
   const tx = db.transaction(() => {
-    // Restore bank balance
-    db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
-      .run(existing.amount, existing.account_id);
-    updateAccountBalance(existing.account_id, existing.currency, existing.amount);
+    if (existing.deduct_mode === 'deduct') {
+      const deductAccount = existing.deduct_account_id ?? existing.account_id;
+      db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
+        .run(existing.amount, deductAccount);
+      updateAccountBalance(deductAccount, existing.currency, existing.amount);
+    }
 
     const result = db.prepare('DELETE FROM fixed_deposits WHERE id = ?').run(id);
     return result.changes > 0;

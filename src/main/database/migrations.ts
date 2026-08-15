@@ -603,4 +603,22 @@ export const MIGRATIONS: Migration[] = [
       ).run(String(count.c));
     },
   },
+  {
+    version: 16,
+    sql: [
+      "-- ============================================",
+      "-- Migration v16: 定期存款资金交互改为询问式",
+      "-- deduct_mode: deduct（从账户扣款）/ record_only（单纯记录，不动余额）",
+      "-- deduct_account_id: 实际资金变动的账户（可为空）",
+      "-- ============================================",
+      "ALTER TABLE fixed_deposits ADD COLUMN deduct_mode TEXT NOT NULL DEFAULT 'deduct' CHECK(deduct_mode IN ('deduct','record_only'));",
+      "ALTER TABLE fixed_deposits ADD COLUMN deduct_account_id INTEGER;",
+    ].join("\n"),
+    migrate: (db) => {
+      // 存量定存都是「自动扣款」创建：deduct_account_id 回填为归属账户
+      db.prepare(
+        "UPDATE fixed_deposits SET deduct_account_id = account_id WHERE deduct_mode = 'deduct' AND deduct_account_id IS NULL"
+      ).run();
+    },
+  },
 ];

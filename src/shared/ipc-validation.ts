@@ -111,6 +111,8 @@ const fixedDepositData = z.object({
   start_date: z.string().min(1),
   maturity_date: z.string().min(1),
   notes: z.string().nullish(),
+  deductMode: z.enum(['deduct', 'record_only']).optional(),
+  deductAccountId: id.nullish(),
 }).passthrough();
 
 const insurancePolicyData = z.object({

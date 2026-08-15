@@ -315,7 +315,9 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER PK | 主键 |
-| account_id | INTEGER FK | 关联银行账户 |
+| account_id | INTEGER FK | 关联银行账户（归属银行，决定显示位置） |
+| deduct_mode | TEXT | deduct 已扣款 / record_only 纯记录（v16 新增，存量='deduct'） |
+| deduct_account_id | INTEGER FK | 实际资金变动的账户（v16 新增，扣款型必填；纯记录型 NULL） |
 | amount | REAL | 存款金额（本金） |
 | currency | TEXT | 币种 |
 | interest_rate | REAL | 年利率（%） |
@@ -410,6 +412,7 @@
 | v13 | 安全加固：accounts.card_number 截断为后 4 位；app_settings['ai.apiKey'] 明文加密为 AES-256-GCM（v1.5.4） |
 | v14 | + investment_cash_flows 表（券商现金流水，v1.5.6）；有现金余额的券商账户生成 adjust 期初快照流水 |
 | v15 | 孤儿持仓检测：app_settings['orphan_assets.count'] 写入无归属持仓计数（v1.6.0，供投资页提示转挂/删除） |
+| v16 | + fixed_deposits.deduct_mode（deduct/record_only）与 deduct_account_id（资金交互询问式，存量回填，v1.6.0） |
 
 ---
 
