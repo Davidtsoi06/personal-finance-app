@@ -518,4 +518,72 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 13,
+    sql: `
+      -- ============================================
+      -- Migration v13: 安全加固（JS 迁移完成实际数据转换）
+      -- 1) accounts.card_number 截断为仅后 4 位
+      -- 2) app_settings['ai.apiKey'] 明文 → AES-256-GCM 密文
+      -- ============================================
+      SELECT 1;
+    `,
+    migrate: (db) => {
+      // a) 卡号仅保留后 4 位（去除空格/连字符后截断）
+      db.exec(`
+        UPDATE accounts
+        SET card_number = substr(replace(replace(card_number, ' ', ''), '-', ''), -4)
+        WHERE card_number IS NOT NULL
+          AND length(replace(replace(card_number, ' ', ''), '-', '')) > 4
+      `);
+
+      // b) AI Key 明文升级为密文（已有 v1: 前缀的跳过）
+      const { encryptText } = require('../services/crypto-util');
+      const row = db.prepare(
+        "SELECT value FROM app_settings WHERE key = 'ai.apiKey'"
+      ).get() as { value: string } | undefined;
+      if (row && row.value && !row.value.startsWith('v1:')) {
+        db.prepare(
+          "UPDATE app_settings SET value = ?, updated_at = datetime('now') WHERE key = 'ai.apiKey'"
+        ).run(encryptText(row.value));
+      }
+    },
+  },
+  {
+    version: 14,
+    sql: [
+      "-- ============================================",
+      "-- Migration v14: 券商现金流水（现金余额改为流水派生）",
+      "-- amount 带符号：deposit/sell/dividend 为正，withdraw/buy 为负，adjust 为差额",
+      "-- ============================================",
+      "CREATE TABLE IF NOT EXISTS investment_cash_flows (",
+      "  id INTEGER PRIMARY KEY AUTOINCREMENT,",
+      "  investment_account_id INTEGER NOT NULL REFERENCES investment_accounts(id),",
+      "  type TEXT NOT NULL CHECK(type IN ('deposit','withdraw','buy','sell','dividend','adjust')),",
+      "  amount REAL NOT NULL DEFAULT 0,",
+      "  asset_id INTEGER REFERENCES assets(id),",
+      "  transaction_id INTEGER REFERENCES transactions(id),",
+      "  currency TEXT NOT NULL DEFAULT 'CNY',",
+      "  date TEXT NOT NULL DEFAULT (date('now')),",
+      "  notes TEXT,",
+      "  balance_after REAL,",
+      "  created_at TEXT NOT NULL DEFAULT (datetime('now'))",
+      ");",
+      "CREATE INDEX IF NOT EXISTS idx_cash_flows_account ON investment_cash_flows(investment_account_id, date);",
+    ].join("\n"),
+    migrate: (db) => {
+      // 期初快照：为每个有现金余额的券商账户插入一条 adjust 流水（保留现有数值，历史从今天起记录）
+      const rows = db.prepare(
+        'SELECT id, cash_balance, currency FROM investment_accounts WHERE cash_balance != 0'
+      ).all() as any[];
+      const insert = db.prepare([
+        "INSERT INTO investment_cash_flows",
+        "(investment_account_id, type, amount, currency, date, notes, balance_after)",
+        "VALUES (?, 'adjust', ?, ?, date('now'), ?, ?)",
+      ].join(" "));
+      for (const r of rows) {
+        insert.run(r.id, r.cash_balance, r.currency || 'CNY', '迁移前余额快照（现金流水功能上线）', r.cash_balance);
+      }
+    },
+  },
 ];

@@ -90,9 +90,10 @@ export function WalletFlow() {
       type: ledgerType,
     };
     fd.forEach((v, k) => { data[k] = v; });
-    data.amount = parseFloat(data.amount as string) || 0;
-    data.category_id = parseInt(data.category_id as string) || 0;
-    if (data.amount <= 0) { setSaving(false); return; }
+    const amount = parseFloat(String(fd.get('amount') ?? '0')) || 0;
+    data.amount = amount;
+    data.category_id = parseInt(String(fd.get('category_id') ?? '0')) || 0;
+    if (amount <= 0) { setSaving(false); return; }
     try {
       await invoke('ledger:create', data);
       setShowForm(false);
@@ -109,8 +110,9 @@ export function WalletFlow() {
     const fd = new FormData(e.target as HTMLFormElement);
     const data: Record<string, unknown> = {};
     fd.forEach((v, k) => { data[k] = v; });
-    data.amount = parseFloat(data.amount as string) || 0;
-    if (data.amount <= 0) { setSaving(false); return; }
+    const amount = parseFloat(String(fd.get('amount') ?? '0')) || 0;
+    data.amount = amount;
+    if (amount <= 0) { setSaving(false); return; }
     try {
       await invoke('ledger:update', editing.id, data);
       setEditing(null);

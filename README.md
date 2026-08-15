@@ -2,7 +2,7 @@
 
 一款运行在 Windows 电脑上的**个人财产投资管理软件**，以投资管理为核心，统一管理现金、银行卡、股票、基金、黄金、加密货币等全部资产，提供深度财务洞察和智能记账。
 
-**最新版本：v1.5.2**（2026-08-15）
+**最新版本：v1.5.6**（2026-08-15）
 
 📥 下载：[GitHub Releases](https://github.com/Davidtsoi06/personal-finance-app/releases/latest)
 
@@ -18,7 +18,7 @@
 
 ### 💳 资产管理（v1.5.0 四层架构）
 - **四层架构**：总资产仪表盘 → 扁平大类卡片 → 子账户明细 → 底层资产
-- 银行自动按名称分组，卡片显示别名 + 卡号尾号 4 位
+- 银行自动按名称分组，卡片显示别名 + 卡号尾号 4 位（完整卡号不落库，仅存尾号）
 - 多币种余额（`account_balances` 表，自动 CNY 等值换算）
 - 添加 / 编辑 / 安全删除 / **强制级联删除** 账户
 - 账户详情页（含存取记录编辑/删除、余额变动历史、定期存款、银行理财产品）
@@ -53,7 +53,7 @@
 - 自动读取用户全部持仓、账户、交易数据作为上下文
 - 支持流式响应，Markdown 渲染
 - 快捷提问：分析组合、风险评估、优化建议、投资报告、消费分析
-- API Key 仅存本地主进程，永不暴露给渲染进程
+- API Key 仅存本地主进程（AES-256-GCM 加密存储），永不暴露给渲染进程，不随备份导出
 
 ### 📝 记账
 - 收入 / 支出记录，支持多账户、多分类
@@ -76,6 +76,7 @@
 - **每日交易报表**（v1.5.2）：任选日期查看当日交易 + 买入/卖出/已实现盈亏统计 + 一键导出当日 Excel（汇总 + 明细双 sheet）
 - **每日 16:35 收盘通知**：当日有交易时自动推送 Windows 通知
 - **完整资产汇总导出**（v1.5.2）：一个 Excel 含 7 个 sheet（总览/银行/钱包/券商/持仓/定存/保险，全部 CNY 换算）
+- **年度已实现盈亏**（v1.5.5）：任选年份查看已实现收益（重放法，含成本基数/净额/明细表）
 
 ### 📦 数据归档
 - 设定数据保留期限（默认 12 个月，可配置 6/12/18/24/36 个月）
@@ -84,8 +85,8 @@
 - 文件名：`投资统计_YYYY-MM.xlsx`
 
 ### 📤 数据备份
-- 一键导出全部 16 张表到一个 Excel 文件
-- 一键恢复（含预览确认 + 事务保护）
+- 一键导出全部 21 张业务表到一个 Excel 文件（AI Key 除外）
+- 一键恢复（含预览确认 + 事务保护 + 跳过行报告）
 - 适合换设备或重装系统时迁移数据
 
 ### 💰 预算管理
@@ -110,17 +111,18 @@
 
 | 层面 | 技术 | 版本 |
 |------|------|------|
-| 桌面框架 | Electron | 40.x |
+| 桌面框架 | Electron | 41.x |
 | 前端框架 | React | 19.x |
 | 类型系统 | TypeScript | 7.x（严格模式） |
 | 构建工具 | Vite + tsc | 8.x |
 | 数据库 | better-sqlite3 | 13.x（WAL 模式） |
 | 图表 | ECharts | 6.x |
-| Excel 处理 | xlsx | 0.18.x |
+| Excel 处理 | xlsx | 0.20.x（SheetJS 官方源） |
 | HTTP 请求 | Node.js 原生 `fetch` | — |
 | 自动更新 | electron-updater | 6.x |
 | 路由 | react-router-dom | 7.x |
 | UI 组件 | 自研（无第三方 UI 库） | — |
+| 测试 | Vitest + Playwright（Electron E2E） | 38 个单元/集成用例 |
 
 ---
 
@@ -132,7 +134,7 @@
 │   ├── main/                       # Electron 主进程
 │   │   ├── index.ts                # 主进程入口（窗口创建、启动流程）
 │   │   ├── preload.ts              # 预加载脚本（contextBridge）
-│   │   ├── ipc/                    # IPC 通信处理（8 个文件）
+│   │   ├── ipc/                    # IPC 通信处理（9 个文件，含 index.ts 注册器）
 │   │   │   ├── account-ipc.ts      # 账户 + 存取记录 + 强制删除
 │   │   │   ├── asset-ipc.ts        # 资产 + 交易 + 日结单导入
 │   │   │   ├── insurance-ipc.ts    # 保单管理
@@ -143,7 +145,7 @@
 │   │   │   └── wallet-ipc.ts       # 电子钱包 + 账单导入
 │   │   ├── database/
 │   │   │   ├── index.ts            # 数据库初始化 + WAL 模式 + 迁移
-│   │   │   ├── migrations.ts       # 建表脚本（v1 ~ v12）
+│   │   │   ├── migrations.ts       # 建表脚本（v1 ~ v13）
 │   │   │   └── services/           # 数据服务层（17 个）
 │   │   │       ├── account-service.ts
 │   │   │       ├── account-transaction-service.ts
@@ -162,10 +164,12 @@
 │   │   │       ├── settings-service.ts
 │   │   │       ├── social-obligation-service.ts
 │   │   │       └── transaction-service.ts
-│   │   └── services/               # 后台服务（10 个）
+│   │   └── services/               # 后台服务（12 个）
 │   │       ├── ai-service.ts       # AI 对话（DeepSeek，含流式 SSE）
+│   │       ├── crypto-util.ts / crypto-core.ts  # 敏感数据加密（AES-256-GCM）
 │   │       ├── archive-service.ts  # 数据归档（Excel 报表 + 清理）
 │   │       ├── bank-statement-parser.ts  # 银行日结单解析
+│   │       ├── crypto-util.ts      # 敏感数据加密（AES-256-GCM）
 │   │       ├── data-normalizer.ts  # 数据标准化（日期/币种/代码）
 │   │       ├── exchange-rate-fetcher.ts  # 汇率抓取
 │   │       ├── portfolio-context.ts      # AI 上下文数据收集
@@ -205,12 +209,18 @@
 │   │       │   ├── ProgressBar.tsx # 进度条（颜色自适应）
 │   │       │   ├── SlidePanel.tsx  # 侧边滑出面板
 │   │       │   └── Table.tsx
-│   │       ├── cards/              # 业务卡片组件（5 个）
+│   │       ├── account/            # 账户详情区块（4 个）
+│   │       ├── holdings/            # 持仓详情区块（5 个）
+│   │       ├── cards/              # 业务卡片组件（9 个）
 │   │       │   ├── AiConfigCard.tsx
 │   │       │   ├── AlertConfigCard.tsx
 │   │       │   ├── ArchiveCard.tsx
+│   │       │   ├── BankFormatCard.tsx
+│   │       │   ├── BrokerFormatCard.tsx
 │   │       │   ├── BudgetCard.tsx
-│   │       │   └── DataBackupCard.tsx
+│   │       │   ├── DangerZoneCard.tsx
+│   │       │   ├── DataBackupCard.tsx
+│   │       │   └── UpdateCard.tsx
 │   │       ├── charts/             # 图表组件（1 个）
 │   │       │   └── NetWorthTrendChart.tsx
 │   │       └── forms/              # 表单组件（4 个）
@@ -219,9 +229,11 @@
 │   │           ├── AddLedgerForm.tsx
 │   │           └── TradeForm.tsx
 │   └── shared/                     # 共享代码
-│       └── constants/
-│           ├── labels.ts           # 类型/市场/分类中文映射
-│           └── chart-colors.ts     # 图表颜色常量
+│       ├── constants/
+│       │   ├── labels.ts           # 类型/市场/分类中文映射
+│       │   └── chart-colors.ts     # 图表颜色常量
+│       └── utils/                  # 纯函数层（金额/投资/市场/卡号/Markdown）
+├── tests/                           # 测试（单元/集成/E2E）
 ├── docs/                           # 项目文档（6 个）
 │   ├── requirements.md             # 需求文档
 │   ├── tech-spec.md                # 技术规范
@@ -249,6 +261,12 @@ npm run build
 
 # 打包 Windows 安装包
 npm run release:local
+
+# 测试：单元 + 集成（vitest）
+npm test
+
+# 测试：E2E 冒烟（Playwright + Electron，使用临时数据目录）
+npm run test:e2e
 
 # 一键发布：创建 GitHub Release 并上传安装包（需已 git push + 打 tag）
 node scripts/upload-release.js

@@ -49,6 +49,8 @@
 1. 每次只做一个模块，完成并验证后再进入下一个
 2. 所有修改前先阅读相关标准文档
 3. 所有组件使用设计令牌中的颜色/间距/字体变量，禁止硬编码
+4. 修改涉及金额计算/数据转换/解析逻辑时，必须在 `tests/` 下补充或更新测试；提交前运行 `npm test` 与 `npx tsc -p tsconfig.main.json --noEmit`、`npx tsc -p tsconfig.json --noEmit`（vite 构建不做类型检查）
+5. 新增可变操作（写库）IPC 频道时，必须在 `src/shared/ipc-validation.ts` 定义 zod schema 并用 `handleValidated` 注册（`npm run check:ipc` 会检查未接入的 schema）
 
 ### ⚠️ 文档同步更新（必须执行）
 
@@ -78,9 +80,12 @@
 - [ ] 开发会话结束？→ 更新 `dev-logs/YYYY-MM-DD.md`
 
 ### 安全要求
-- 数据库文件必须加密存储
-- 敏感配置通过环境变量注入
-- 导出数据时不包含完整密码/密钥
+- 敏感字段加密存储：AI API Key 使用 AES-256-GCM 加密（密钥与数据库分离）；银行卡号仅存后 4 位，完整卡号不落库
+- 整库加密（SQLCipher）列入后续迭代计划
+- 敏感配置（如引入第三方数据源密钥）通过环境变量注入
+- 导出数据时不包含完整密码/密钥（备份导出排除 AI Key）
+- preload 仅放行白名单内的 IPC 频道；新增频道必须同步 `src/main/preload.ts` 白名单与 `src/shared/types/ipc.ts` 类型联合（运行 `npm run check:ipc` 校验三处一致）
+- AI/外部内容渲染前必须先 HTML 转义
 
 ### 兼容性
 - 目标系统：Windows 10/11

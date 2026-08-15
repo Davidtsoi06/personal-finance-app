@@ -266,6 +266,72 @@
 
 ---
 
+## 第 19 阶段：v1.5.4 ✅ 数据完整性与安全加固
+
+- [x] **备份/恢复补全**：`data:exportAll`/`data:confirmImport` 覆盖全部 21 张业务表（补多币种余额/定期存款/银行自定义格式/保单/保费/应用设置；AI Key 不随备份导出）
+- [x] **导入安全**：仅接受数据库真实列名（防 SQL 注入），跳过行数计入结果返回并在 UI 提示
+- [x] **一键清空修复**：`data:clearAll` 表清单补全并按外键依赖排序（此前有定存/保单时清空会因外键约束失败）
+- [x] **卡号保护**：服务层 `normalizeCardNumber` 仅存后 4 位 + 迁移 v13 清洗存量数据，完整卡号不落库
+- [x] **AI Key 加密**：新增 `crypto-util.ts`（AES-256-GCM，密钥存 `userData/secret.key`），`app_settings['ai.apiKey']` 密文存储
+- [x] **IPC 白名单**：preload 仅放行已注册的 138 个频道；注册缺失的 `app:ping` handler
+- [x] **AI 渲染安全**：`renderMarkdown` 先整体 HTML 转义再转换，杜绝模型输出 HTML 注入
+- [x] **依赖安全**：electron 40→41.10.3（修复 sandbox iframe 漏洞）、xlsx 0.18.5→0.20.3（SheetJS 官方源，修复原型污染/ReDoS）
+- [x] **dev 真 HMR**：`ELECTRON_DEV=1` 时窗口加载 Vite dev server（此前 dev 模式实际加载的是构建产物）；`npm start` 不再隐式构建
+- [x] 构建验证：`npm run build`（vite + tsc）零错误；better-sqlite3 已按 Electron 41 ABI 重新编译
+
+---
+
+## 第 20 阶段：v1.5.5 ✅ 工程化与可靠性基础
+
+- [x] **测试体系**：Vitest 单元 + 集成测试 38 个用例全绿（金额舍入/加权平均成本/市场检测/卡号/Markdown 防 XSS/AES-GCM/迁移 v1~v13 内存库验证）；Playwright + Electron E2E 冒烟 spec（`tests/e2e/app.spec.ts`，PF_USER_DATA_DIR 独立数据目录）
+- [x] **共享纯函数层**：`src/shared/utils/`（money/investment/market/card/markdown）+ `src/main/services/crypto-core.ts`，asset-service / transaction-service / price-fetcher / account-service / AIAssistant / currency-service 全部改用
+- [x] **金额统一舍入**：金额出口四舍五入到分，均价保留全精度（修复买卖冲销漂移，测试锁定行为）
+- [x] **单实例锁**：双开自动聚焦已有窗口
+- [x] **迁移前自动备份 + 启动完整性检查**：`userData/backups/` 保留最近 5 份；`PRAGMA integrity_check` 失败中止启动
+- [x] **市场检测增强**：支持 .SH/.SZ/.HK/.US 后缀
+- [x] **类型检查纳入验证**：渲染进程 6 处存量类型错误修复（Badge primary、WalletFlow amount 等）
+- [x] **设计令牌合规**：Badge 全部改用令牌（新增 5 个状态徽章令牌）；侧边栏版本号修正 v1.5.4
+- [x] **CI**：`.github/workflows/ci.yml`（windows-latest：构建 + npm test）
+- [ ] 本机执行 `npm run test:e2e` 与打包发布验证（沙箱环境无法启动 GUI）
+
+---
+
+## 第 21 阶段：v1.5.5 维护性改造 🔄（进行中）
+
+- [x] **IPC 频道类型安全**：`src/shared/types/ipc.ts` 提供 `IpcChannel` 联合类型，渲染进程全部 `invoke()` 调用点编译期校验（vite-env.d.ts 改 `declare global` 保持全局声明）；删除死代码 `useData.ts`
+- [x] **白名单自动校验**：`scripts/check-ipc-whitelist.js` 校验主进程注册 ↔ preload 白名单 ↔ 类型联合三处一致，挂入 `npm test`（新增 `check:ipc` 脚本）
+- [x] **密钥文件 ACL 收紧**：`secret.key` 经 icacls 限制为仅当前用户可读写（crypto-util，非致命失败）
+- [x] 拆分超长文件（三批全部完成）：Settings 947→284、AccountDetail 895→211、HoldingsDetail 878→112，共抽出 13 个区块组件（cards×4 / account×4 / holdings×5）
+- [x] IPC 入参运行时校验（zod）：54 个可变频道接入 handleValidated + 10 个单元测试 + 校验脚本升级为四处一致检查
+
+---
+
+## 第 22 阶段：v1.5.5 安全收尾 🔄（进行中）
+
+- [x] **AI 隐私开关**：设置页可关闭「组合数据共享」；关闭后组合上下文与 AI 日摘要仅返回隐私提示，不发送持仓/账户/交易数据（`ai.includePortfolio`，默认开启）
+- [x] **修复掩码 Key 覆盖 bug**：保存配置时未修改的掩码 Key 不再覆盖已存 Key（saveAiConfig 空值保持语义 + 前端传空串）
+- [ ] 整库 SQLCipher 加密（远期，需要密码交互与原生模块替换，单独评估）
+
+---
+
+## 第 23 阶段：v1.5.5 性能与报表 🔄（进行中）
+
+- [x] **路由级代码分割**：12 个页面 React.lazy 分包，首屏只加载当前路由（修复 1.5MB 单包告警）
+- [x] **年度已实现盈亏报表**：`report:realizedPnl`（重放法纯函数 `computeRealizedPnl` + 5 个单元测试）+ `RealizedPnlCard`（年份选择/汇总/明细表）
+- [x] 启动流程优化（第一批）：窗口优先显示（余额重算/净资产记录移入后台 setTimeout 0）+ `PRAGMA quick_check` 快速完整性检查（失败才跑完整检查）；主进程打印「窗口可见」与「启动完成」两个耗时节点
+- [ ] 本机实测启动耗时并记录基线（`[Main] ✓ 启动完成（窗口可见），总耗时 XXms`）
+
+---
+
+## 第 24 阶段：v1.5.6 现金流水与资产概览 ✅
+
+- [x] **资产查询纳入定期存款**：新增 `asset:listAll`（assets + fixed_deposits 虚拟行），Dashboard 查询面板覆盖定存搜索/筛选/排序
+- [x] **券商现金流水数据层**：迁移 v14 `investment_cash_flows` + 期初快照；cash_balance 改为流水派生；trade:record / 日结单导入（含整体事务化）/ 交易创建·编辑·删除 / 存入·取出 全链路记账；`investmentAccount:cashFlows` + `investmentAccount:adjustCash` 频道；4 个集成测试（快照/派生/同步冲销/无关联持仓）
+- [x] **现金流水 UI**：持仓详情页 `CashFlowCard`（余额显示[负数红色+警示徽章] + 流水表[类型/关联股票/带符号金额/变动后余额] + 余额校正弹窗）
+- [x] **资产概览重构**：`getAllAssetsSummary` 银行组内嵌关联券商子项（funding_account_id 关联），未关联券商保留独立顶级项；概览面板银行分组可展开（子账户 + 关联券商行：现金/持仓数）；四大统计卡递归汇总防重复计算
+
+---
+
 ## 后续迭代路线图
 
 | 优先级 | 功能 | 工作量估计 |

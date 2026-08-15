@@ -2,7 +2,7 @@
 
 ## 概览
 
-共 19 张业务表 + 1 张迁移元数据表（`_migrations`），通过版本号递增的 migration 脚本管理（当前最新：v12）。
+共 22 张业务表 + 1 张迁移元数据表（`_migrations`），通过版本号递增的 migration 脚本管理（当前最新：v14）。
 
 ---
 
@@ -19,7 +19,7 @@
 | currency | TEXT | 币种：CNY / HKD / USD / EUR / JPY / GBP |
 | balance | REAL | 当前余额（多币种汇总值） |
 | bank_name | TEXT | 银行名称（银行卡时） |
-| card_number | TEXT | 卡号后 4 位（加密存） |
+| card_number | TEXT | 卡号尾号后 4 位（v13 起仅存尾号，完整卡号不落库） |
 | display_alias | TEXT | 卡片显示别名（v12 新增） |
 | parent_account_id | INTEGER FK | 父账户 ID，支持树形结构（v7 新增） |
 | is_active | INTEGER | 是否启用 0/1 |
@@ -297,7 +297,8 @@
 |-----|------|--------|
 | `ai.provider` | AI 提供商 | `deepseek` |
 | `ai.apiUrl` | AI API 端点 | `https://api.deepseek.com/v1/chat/completions` |
-| `ai.apiKey` | AI API Key（仅主进程可读） | `""` |
+| `ai.apiKey` | AI API Key（AES-256-GCM 密文存储，v13 起；仅主进程可读，不随备份导出） | `""` |
+| `ai.includePortfolio` | AI 组合数据共享开关（'1' 开 / '0' 关，默认开，v1.5.5） | `'1'` |
 | `ai.model` | AI 模型名称 | `deepseek-chat` |
 | `app_name` | 自定义应用名称（v1.4.0 新增） | `个人理财投资软件` |
 | `archive.folderPath` | 归档文件夹路径 | `""` |
@@ -369,6 +370,26 @@
 
 ---
 
+## 22. investment_cash_flows — 券商现金流水表（v14 新增）
+
+券商账户的现金变动流水，**现金余额（`investment_accounts.cash_balance`）= Σ(amount) 派生**。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| investment_account_id | INTEGER FK | 关联券商账户 |
+| type | TEXT | deposit 存入 / withdraw 取出 / buy 买入 / sell 卖出 / dividend 分红 / adjust 校正 |
+| amount | REAL | 带符号：deposit/sell/dividend 为正；withdraw/buy 为负；adjust 为差额 |
+| asset_id | INTEGER FK | 关联持仓（买入/卖出/分红时） |
+| transaction_id | INTEGER FK | 关联交易记录（买卖时） |
+| currency | TEXT | 币种 |
+| date | TEXT | 日期 |
+| notes | TEXT | 备注 |
+| balance_after | REAL | 变动后余额快照（重算时自动维护） |
+| created_at | TEXT | 创建时间 |
+
+---
+
 ## 迁移历史
 
 | 版本 | 变更内容 |
@@ -385,6 +406,8 @@
 | v10 | + funding_account_id（投资账户 ↔ 银行账户关联，v1.4.0） |
 | v11 | + cash_balance（投资账户闲置现金）, + account_transactions.investment_account_id, + fixed_deposits 表（v1.4.3） |
 | v12 | + insurance_policies 表, + premium_payments 表, + accounts.display_alias, + JS 迁移函数支持（v1.5.0） |
+| v13 | 安全加固：accounts.card_number 截断为后 4 位；app_settings['ai.apiKey'] 明文加密为 AES-256-GCM（v1.5.4） |
+| v14 | + investment_cash_flows 表（券商现金流水，v1.5.6）；有现金余额的券商账户生成 adjust 期初快照流水 |
 
 ---
 
@@ -409,11 +432,15 @@
 accounts ──┬── account_balances（多币种余额）
            ├── account_transactions（存取记录）
            ├── ledgers（收支记账）
+           ├── fixed_deposits（定期存款）
+           ├── insurance_policies（保单扣款账户）
+           │     └── premium_payments（保费缴纳）
            └── investment_accounts（via funding_account_id）
                     │
                     ├── assets（持仓）
                     │     └── asset_prices（价格历史）
-                    └── transactions（交易记录）
+                    ├── transactions（交易记录）
+                    └── investment_cash_flows（现金流水，v14）
 
 categories ──→ ledgers
 

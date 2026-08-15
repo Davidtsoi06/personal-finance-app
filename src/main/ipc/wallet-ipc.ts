@@ -4,13 +4,14 @@
 import { ipcMain } from 'electron';
 import * as atService from '../database/services/account-transaction-service';
 import * as accountService from '../database/services/account-service';
+import { handleValidated } from './validation';
 
 export function registerWalletIpcHandlers(): void {
   // Get system wallets
   ipcMain.handle('wallet:getSystemWallets', () => accountService.getSystemWallets());
 
   // Import bills (WeChat/Alipay CSV)
-  ipcMain.handle('wallet:importBills', (_e, accountId: number, records: any[]) =>
+  handleValidated('wallet:importBills', (accountId: number, records: any[]) =>
     atService.importWalletBills(accountId, records)
   );
 

@@ -3,6 +3,7 @@
  * Used for AI configuration and other user preferences.
  */
 import { getDatabase } from '../index';
+import { decryptText, encryptText } from '../../services/crypto-util';
 
 // ── Types ──
 
@@ -11,6 +12,8 @@ export interface AiConfig {
   apiUrl: string;
   apiKey: string;
   model: string;
+  /** 是否允许 AI 读取组合数据（持仓/账户/交易）；默认 true */
+  includePortfolio?: boolean;
 }
 
 export interface AiConfigPublic {
@@ -18,6 +21,7 @@ export interface AiConfigPublic {
   apiUrl: string;
   model: string;
   hasApiKey: boolean; // true if a key is stored (key itself never returned)
+  includePortfolio: boolean; // 是否允许 AI 读取组合数据
 }
 
 // ── Provider presets ──
@@ -56,6 +60,27 @@ export function getAllSettings(): Record<string, string> {
 
 // ── AI config helpers ──
 
+/**
+ * 读取 AI Key：密文解密返回明文；旧版明文值就地升级为密文；解密失败视为未配置。
+ */
+function getAiKey(): string {
+  const raw = getSetting('ai.apiKey') || '';
+  if (!raw) return '';
+  const decrypted = decryptText(raw);
+  if (decrypted !== null) return decrypted;
+  // 兼容旧版明文存储（迁移 v13 之前的数据库）
+  if (!raw.startsWith('v1:')) {
+    setSetting('ai.apiKey', encryptText(raw));
+    return raw;
+  }
+  return ''; // 密钥文件丢失/损坏 → 视为未配置，用户重新填写
+}
+
+/** 是否允许 AI 读取组合数据（默认开启）。 */
+export function isPortfolioSharingEnabled(): boolean {
+  return getSetting('ai.includePortfolio') !== '0';
+}
+
 /** Get full AI config including API key (main-process only, never exposed to renderer). */
 export function getAiConfig(): AiConfig {
   const provider = getSetting('ai.provider') || DEFAULT_PROVIDER;
@@ -63,8 +88,9 @@ export function getAiConfig(): AiConfig {
   return {
     provider,
     apiUrl: getSetting('ai.apiUrl') || preset.apiUrl,
-    apiKey: getSetting('ai.apiKey') || '',
+    apiKey: getAiKey(),
     model: getSetting('ai.model') || preset.model,
+    includePortfolio: isPortfolioSharingEnabled(),
   };
 }
 
@@ -77,15 +103,22 @@ export function getAiConfigPublic(): AiConfigPublic {
     apiUrl: full.apiUrl || preset.apiUrl,
     model: full.model || preset.model,
     hasApiKey: (full.apiKey || '').length > 0,
+    includePortfolio: full.includePortfolio !== false,
   };
 }
 
-/** Save AI config from renderer. */
+/** Save AI config from renderer. API Key 加密后落库（明文不进数据库）。 */
 export function saveAiConfig(config: AiConfig): void {
   setSetting('ai.provider', config.provider || DEFAULT_PROVIDER);
   setSetting('ai.apiUrl', config.apiUrl || '');
-  setSetting('ai.apiKey', config.apiKey || '');
+  // 仅当传入非空 Key 时更新（空值表示"保持现有 Key"，修复掩码保存误清空 Key 的 bug）
+  if (config.apiKey) {
+    setSetting('ai.apiKey', encryptText(config.apiKey));
+  }
   setSetting('ai.model', config.model || '');
+  if (config.includePortfolio !== undefined) {
+    setSetting('ai.includePortfolio', config.includePortfolio ? '1' : '0');
+  }
 }
 
 // ── Daily Investment Summary ──

@@ -3,6 +3,7 @@
  * Supports parent-child hierarchy and multi-currency balances (v7).
  */
 import { getDatabase } from '../index';
+import { normalizeCardNumber } from '../../../shared/utils/card';
 
 export interface AccountRow {
   id: number;
@@ -129,7 +130,7 @@ export function createAccount(data: {
     currency,
     balance,
     bank_name: data.bank_name || null,
-    card_number: data.card_number || null,
+    card_number: normalizeCardNumber(data.card_number),
     parent_account_id: data.parent_account_id || null,
     sort_order: data.sort_order || 0,
   });
@@ -153,6 +154,7 @@ export function updateAccount(id: number, data: Partial<AccountRow> & {
   if (!existing) return undefined;
 
   const merged = { ...existing, ...data, id, updated_at: new Date().toISOString() };
+  merged.card_number = normalizeCardNumber(merged.card_number);
   db.prepare(`
     UPDATE accounts SET name=?, type=?, asset_type=?, currency=?, balance=?, bank_name=?, card_number=?,
       parent_account_id=?, is_active=?, sort_order=?, updated_at=?
@@ -617,6 +619,26 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
       };
       children.push(childItem);
       groupTotal += childItem.market_value_cny;
+
+      // ── 关联券商内嵌（funding_account_id 指向本银行账户）──
+      for (const ia of invAccounts) {
+        if ((ia as any)._consumed || ia.funding_account_id !== acc.id) continue;
+        (ia as any)._consumed = true;
+        const mktCny = (ia.total_market_value || 0) * (ia.rate_to_cny || 1);
+        const cashCny = (ia.cash_balance || 0) * (ia.rate_to_cny || 1);
+        children.push({
+          id: ia.id, name: ia.name, asset_type: 'investment', type: 'investment_account',
+          currency: ia.currency, balance: (ia.total_market_value || 0) + (ia.cash_balance || 0),
+          bank_name: null, broker: ia.broker,
+          card_number: null, display_alias: null,
+          market_value_cny: mktCny + cashCny,
+          cash_balance: ia.cash_balance,
+          asset_count: ia.asset_count,
+          total_profit_loss: ia.total_profit_loss,
+          children: [], is_investment: true,
+        });
+        groupTotal += mktCny + cashCny;
+      }
     }
 
     result.push({
@@ -631,8 +653,9 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     });
   }
 
-  // 5. Investment accounts (brokers)
+  // 5. Investment accounts (brokers) — 仅未关联银行的券商保留为独立顶级项
   for (const ia of invAccounts) {
+    if ((ia as any)._consumed) continue;
     const mktCny = (ia.total_market_value || 0) * (ia.rate_to_cny || 1);
     const cashCny = (ia.cash_balance || 0) * (ia.rate_to_cny || 1);
     result.push({

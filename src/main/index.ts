@@ -11,6 +11,26 @@ import { getAppName } from './database/services/settings-service';
 import { recalculateAllAccountBalances } from './database/services/account-service';
 
 let mainWindow: electron.BrowserWindow | null = null;
+const startTime = Date.now();
+
+// ── 测试/便携模式：允许通过环境变量覆盖用户数据目录（Playwright E2E 等）──
+if (process.env.PF_USER_DATA_DIR) {
+  electron.app.setPath('userData', process.env.PF_USER_DATA_DIR);
+}
+
+// ── 单实例锁：防止双开导致重复调度/双写数据库 ──
+const gotSingleInstanceLock = electron.app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  // 已有实例在运行，直接退出；第一个实例会收到 second-instance 事件并聚焦窗口
+  electron.app.quit();
+} else {
+  electron.app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 // ── Global error handlers (prevent silent crash) ──
 process.on('uncaughtException', (err) => {
@@ -38,12 +58,16 @@ function createWindow() {
     },
   });
 
-  // Load built files if available, otherwise try Vite dev server
+  // 开发模式（ELECTRON_DEV=1，见 npm run dev）优先加载 Vite dev server（真 HMR）；
+  // 生产模式加载构建产物；两者皆无时回退到 dev server。
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
   const builtHtml = path.join(__dirname, '../../renderer/index.html');
-  if (fs.existsSync(builtHtml)) {
+  if (process.env.ELECTRON_DEV === '1') {
+    mainWindow.loadURL(devServerUrl);
+  } else if (fs.existsSync(builtHtml)) {
     mainWindow.loadFile(builtHtml);
   } else {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL(devServerUrl);
   }
 
   mainWindow.on('closed', () => {
@@ -58,34 +82,38 @@ electron.app.whenReady().then(() => {
     initDatabase();
     console.log('[Main] 步骤 1/6: ✓ 数据库就绪');
 
-    console.log('[Main] 步骤 2/6: 重算账户余额 CNY 等值...');
-    try {
-      const balanceResult = recalculateAllAccountBalances();
-      console.log(`[Main] 步骤 2/6: ✓ ${balanceResult.updated} 账户已更新`);
-    } catch (err: any) {
-      console.error(`[Main] 步骤 2/6: ⚠ 余额重算失败（非致命，继续启动）: ${err.message}`);
-    }
-
-    console.log('[Main] 步骤 3/6: 注册 IPC 处理器...');
+    console.log('[Main] 步骤 2/5: 注册 IPC 处理器...');
     registerIpcHandlers();
-    console.log('[Main] 步骤 3/6: ✓ IPC 就绪');
+    console.log('[Main] 步骤 2/5: ✓ IPC 就绪');
 
-    console.log('[Main] 步骤 4/6: 初始化自动更新...');
+    console.log('[Main] 步骤 3/5: 初始化自动更新...');
     initAutoUpdater();
-    console.log('[Main] 步骤 4/6: ✓ 自动更新就绪');
+    console.log('[Main] 步骤 3/5: ✓ 自动更新就绪');
 
-    console.log('[Main] 步骤 5/6: 启动定时调度器 + 记录净资产...');
+    console.log('[Main] 步骤 4/5: 启动定时调度器...');
     startScheduler();
-    try {
-      recordNetWorth();
-      console.log('[Main] 步骤 5/6: ✓ 净资产已记录');
-    } catch (err: any) {
-      console.error(`[Main] 步骤 5/6: ⚠ 净资产记录失败（非致命）: ${err.message}`);
-    }
+    console.log('[Main] 步骤 4/5: ✓ 调度器就绪');
 
-    console.log('[Main] 步骤 6/6: 创建主窗口...');
+    console.log('[Main] 步骤 5/5: 创建主窗口...');
     createWindow();
-    console.log('[Main] 步骤 6/6: ✓ 主窗口已创建');
+    console.log('[Main] 步骤 5/5: ✓ 主窗口已创建');
+    console.log(`[Main] ✓ 启动完成（窗口可见），总耗时 ${Date.now() - startTime}ms`);
+
+    // ── 窗口创建后的后台一致性任务（不阻塞首屏）──
+    setTimeout(() => {
+      try {
+        const balanceResult = recalculateAllAccountBalances();
+        console.log(`[Main] 后台: ✓ 余额重算完成（${balanceResult.updated} 账户）`);
+      } catch (err: any) {
+        console.error(`[Main] 后台: ⚠ 余额重算失败（非致命）: ${err.message}`);
+      }
+      try {
+        recordNetWorth();
+        console.log('[Main] 后台: ✓ 净资产已记录');
+      } catch (err: any) {
+        console.error(`[Main] 后台: ⚠ 净资产记录失败（非致命）: ${err.message}`);
+      }
+    }, 0);
   } catch (err: any) {
     console.error('[Main] ❌ 启动失败:', err);
     electron.dialog.showErrorBox(

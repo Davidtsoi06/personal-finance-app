@@ -6,16 +6,21 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { invoke } from '../../hooks/useIpc';
 
+const KEY_MASK = '••••••••••••••••';
+
 export function AiConfigCard() {
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [includePortfolio, setIncludePortfolio] = useState(true);
+  const [privacySaving, setPrivacySaving] = useState(false);
 
   useEffect(() => {
     // Check if key is already configured
-    invoke<{ hasApiKey: boolean }>('settings:getAiConfig').then((c) => {
-      if (c?.hasApiKey) setApiKey('••••••••••••••••');
+    invoke<{ hasApiKey: boolean; includePortfolio?: boolean }>('settings:getAiConfig').then((c) => {
+      if (c?.hasApiKey) setApiKey(KEY_MASK);
+      if (c && c.includePortfolio !== undefined) setIncludePortfolio(c.includePortfolio);
     });
   }, []);
 
@@ -25,11 +30,13 @@ export function AiConfigCard() {
       await invoke('settings:saveAiConfig', {
         provider: 'deepseek',
         apiUrl: 'https://api.deepseek.com/v1/chat/completions',
-        apiKey,
+        // 掩码未修改时传空串，表示保持现有 Key（空值不会覆盖已存 Key）
+        apiKey: apiKey === KEY_MASK ? '' : apiKey,
         model: 'deepseek-chat',
       });
       setStatus('✅ 配置已保存');
-    } catch (err: any) { setStatus(`❌ 保存失败：${err.message}`); }
+      if (apiKey && apiKey !== KEY_MASK) setApiKey(KEY_MASK);
+    } catch (err: any) { setStatus('❌ 保存失败：' + err.message); }
     setSaving(false);
   };
 
@@ -42,9 +49,27 @@ export function AiConfigCard() {
         apiKey,
         model: 'deepseek-chat',
       });
-      setStatus(r.ok ? '✅ 连接成功！AI 助手可以正常使用' : `❌ 连接失败：${r.error}`);
-    } catch (err: any) { setStatus(`❌ 测试失败：${err.message}`); }
+      setStatus(r.ok ? '✅ 连接成功！AI 助手可以正常使用' : '❌ 连接失败：' + r.error);
+    } catch (err: any) { setStatus('❌ 测试失败：' + err.message); }
     setTesting(false);
+  };
+
+  const handleTogglePrivacy = async (next: boolean) => {
+    setIncludePortfolio(next);
+    setPrivacySaving(true);
+    try {
+      await invoke('settings:saveAiConfig', {
+        provider: 'deepseek',
+        apiUrl: 'https://api.deepseek.com/v1/chat/completions',
+        apiKey: '',
+        model: 'deepseek-chat',
+        includePortfolio: next,
+      });
+    } catch (err: any) {
+      setStatus('❌ 保存失败：' + err.message);
+      setIncludePortfolio(!next); // 回滚
+    }
+    setPrivacySaving(false);
   };
 
   return (
@@ -64,6 +89,21 @@ export function AiConfigCard() {
         />
         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 4 }}>
           注册即送 $5 额度，个人使用足够数月 · <a href="#" onClick={(e) => { e.preventDefault(); window.open('https://platform.deepseek.com/api_keys', '_blank'); }} style={{ color: 'var(--color-primary-500)' }}>获取免费 API Key →</a>
+        </div>
+      </div>
+
+      <div className="form-group" style={{ marginBottom: 'var(--spacing-md)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 'var(--font-size-sm)' }}>
+          <input
+            type="checkbox"
+            checked={includePortfolio}
+            disabled={privacySaving}
+            onChange={(e) => handleTogglePrivacy(e.target.checked)}
+          />
+          允许 AI 读取我的持仓、账户与交易数据（用于组合分析与日报）
+        </label>
+        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 4 }}>
+          开启后，提问时会把你的资产数据发送给 DeepSeek 用于分析；关闭后 AI 仅基于通用理财知识回答。
         </div>
       </div>
 

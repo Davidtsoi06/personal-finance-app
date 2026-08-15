@@ -7,6 +7,7 @@ import { invoke } from '../hooks/useIpc';
 import { NetWorthTrendChart } from '../components/charts/NetWorthTrendChart';
 import { ASSET_TYPE_LABELS } from '@shared/constants/labels';
 import { DailyTradesReport } from '../components/DailyTradesReport';
+import { RealizedPnlCard } from '../components/cards/RealizedPnlCard';
 import { CHART_PALETTE, INCOME_EXPENSE_COLORS, CATEGORY_GRADIENT } from '@shared/constants/chart-colors';
 import './Dashboard.css';
 
@@ -365,6 +366,9 @@ export function Reports() {
       <div style={{ marginTop: 'var(--spacing-lg)' }}>
         <DailyTradesReport />
       </div>
+
+      {/* Row 3.6: Annual realized P&L */}
+      <RealizedPnlCard />
 
       {/* Row 4: Excel Export */}
       <div style={{ marginTop: 'var(--spacing-lg)' }}>

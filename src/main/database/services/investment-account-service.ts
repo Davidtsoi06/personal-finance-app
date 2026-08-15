@@ -2,6 +2,7 @@
  * Investment account service — brokerage accounts that hold assets.
  */
 import { getDatabase } from '../index';
+import { recordCashFlow } from './investment-cash-flow-service';
 import type { TransactionRow } from './transaction-service';
 import { ASSET_SORT_SQL } from './asset-service';
 
@@ -156,18 +157,22 @@ export function getAccountSummary(id: number) {
   };
 }
 
-/** Add cash to an investment account (e.g., from bank transfer). */
+/** 存入现金（记 deposit 流水，余额由流水派生）。 */
 export function addCashBalance(investmentAccountId: number, amount: number): void {
   const db = getDatabase();
-  db.prepare(
-    "UPDATE investment_accounts SET cash_balance = cash_balance + ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(amount, investmentAccountId);
+  const acc = db.prepare('SELECT currency FROM investment_accounts WHERE id = ?').get(investmentAccountId) as any;
+  recordCashFlow({
+    investmentAccountId, type: 'deposit', amount,
+    currency: acc?.currency || 'CNY', notes: '存入现金',
+  });
 }
 
-/** Withdraw cash from an investment account. */
+/** 取出现金（记 withdraw 流水；允许余额为负以暴露差异，对账界面红色提示）。 */
 export function withdrawCashBalance(investmentAccountId: number, amount: number): void {
   const db = getDatabase();
-  db.prepare(
-    "UPDATE investment_accounts SET cash_balance = MAX(0, cash_balance - ?), updated_at = datetime('now') WHERE id = ?"
-  ).run(amount, investmentAccountId);
+  const acc = db.prepare('SELECT currency FROM investment_accounts WHERE id = ?').get(investmentAccountId) as any;
+  recordCashFlow({
+    investmentAccountId, type: 'withdraw', amount: -amount,
+    currency: acc?.currency || 'CNY', notes: '取出现金',
+  });
 }

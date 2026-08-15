@@ -3,6 +3,9 @@
  */
 import { getDatabase } from '../index';
 import { updateCurrentPrice } from './asset-service';
+import { addPosition, removePosition } from '../../../shared/utils/investment';
+import { roundMoney } from '../../../shared/utils/money';
+import { syncFlowForTransactionInDb, removeFlowsForTransactionInDb } from './cash-flow-core';
 
 export interface TransactionRow {
   id: number;
@@ -47,28 +50,37 @@ export function createTransaction(data: {
 }): TransactionRow {
   const db = getDatabase();
   const fee = data.fee || 0;
-  const totalAmount = data.quantity * data.price + fee;
+  const totalAmount = roundMoney(data.quantity * data.price + fee);
 
-  const stmt = db.prepare(`
-    INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
-    VALUES (@asset_id, @type, @quantity, @price, @fee, @total_amount, @currency, @date, @notes)
-  `);
-  const result = stmt.run({
-    asset_id: data.asset_id,
-    type: data.type,
-    quantity: data.quantity,
-    price: data.price,
-    fee,
-    total_amount: totalAmount,
-    currency: data.currency || 'CNY',
-    date: data.date || new Date().toISOString().slice(0, 10),
-    notes: data.notes || null,
+  const run = db.transaction(() => {
+    const stmt = db.prepare(`
+      INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
+      VALUES (@asset_id, @type, @quantity, @price, @fee, @total_amount, @currency, @date, @notes)
+    `);
+    const result = stmt.run({
+      asset_id: data.asset_id,
+      type: data.type,
+      quantity: data.quantity,
+      price: data.price,
+      fee,
+      total_amount: totalAmount,
+      currency: data.currency || 'CNY',
+      date: data.date || new Date().toISOString().slice(0, 10),
+      notes: data.notes || null,
+    });
+
+    // 现金流同步（买入扣现金 / 卖出回笼现金）
+    const txRow = getTransaction(result.lastInsertRowid as number) as TransactionRow;
+    const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(data.asset_id) as any;
+    if (asset) syncFlowForTransactionInDb(db, txRow, asset);
+
+    // Update the asset's current price after a transaction
+    updateCurrentPrice(data.asset_id, data.price);
+
+    return result.lastInsertRowid as number;
   });
 
-  // Update the asset's current price after a transaction
-  updateCurrentPrice(data.asset_id, data.price);
-
-  return getTransaction(result.lastInsertRowid as number) as TransactionRow;
+  return getTransaction(run()) as TransactionRow;
 }
 
 export function deleteTransaction(id: number): boolean {
@@ -76,11 +88,18 @@ export function deleteTransaction(id: number): boolean {
   const tx = getTransaction(id);
   if (!tx) return false;
 
-  // Reverse asset adjustments
-  reverseAssetAdjustment(tx);
+  const run = db.transaction(() => {
+    // Reverse asset adjustments
+    reverseAssetAdjustment(tx);
 
-  const result = db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
-  return result.changes > 0;
+    // 删除关联现金流并重算余额（须先于交易删除，外键引用）
+    removeFlowsForTransactionInDb(db, tx.id);
+
+    const result = db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
+    return result.changes > 0;
+  });
+
+  return run();
 }
 
 /** Update a transaction, reversing old asset effects and applying new ones. */
@@ -113,6 +132,11 @@ export function updateTransaction(id: number, data: {
 
     // 4. Update current price
     updateCurrentPrice(existing.asset_id, newPrice);
+
+    // 5. 现金流同步（删除旧流水 + 按最终状态重建）
+    const updatedTx = getTransaction(id) as TransactionRow;
+    const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(existing.asset_id) as any;
+    if (asset) syncFlowForTransactionInDb(db, updatedTx, asset);
   });
 
   tx();
@@ -125,19 +149,17 @@ function reverseAssetAdjustment(tx: TransactionRow): void {
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(tx.asset_id) as any;
   if (!asset) return;
 
+  const state = { quantity: asset.quantity, totalCost: asset.total_cost, costPrice: asset.cost_price };
+  let next;
   if (tx.type === 'buy') {
-    const newQty = Math.max(0, asset.quantity - tx.quantity);
-    const newTotalCost = Math.max(0, asset.total_cost - tx.total_amount);
-    const newAvgCost = newQty > 0 ? newTotalCost / newQty : 0;
-    db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
-      .run(newQty, newTotalCost, newAvgCost, tx.asset_id);
+    next = removePosition(state, tx.quantity, tx.total_amount);
   } else if (tx.type === 'sell') {
-    const newQty = asset.quantity + tx.quantity;
-    const newTotalCost = asset.total_cost + tx.total_amount;
-    const newAvgCost = newQty > 0 ? newTotalCost / newQty : 0;
-    db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
-      .run(newQty, newTotalCost, newAvgCost, tx.asset_id);
+    next = addPosition(state, tx.quantity, tx.total_amount);
+  } else {
+    return;
   }
+  db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
+    .run(next.quantity, next.totalCost, next.costPrice, tx.asset_id);
 
   // Recalculate derived fields
   updateCurrentPrice(tx.asset_id, asset.current_price || 0);
@@ -149,20 +171,18 @@ function applyAssetAdjustment(assetId: number, type: string, quantity: number, p
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(assetId) as any;
   if (!asset) return;
 
+  const state = { quantity: asset.quantity, totalCost: asset.total_cost, costPrice: asset.cost_price };
+  let next;
   if (type === 'buy') {
-    const newQty = asset.quantity + quantity;
-    const newTotalCost = asset.total_cost + quantity * price + fee;
-    const newAvgCost = newQty > 0 ? newTotalCost / newQty : 0;
-    db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
-      .run(newQty, newTotalCost, newAvgCost, assetId);
+    next = addPosition(state, quantity, roundMoney(quantity * price + fee));
   } else if (type === 'sell') {
-    const newQty = Math.max(0, asset.quantity - quantity);
     const costBasis = asset.cost_price > 0 ? asset.cost_price * quantity : quantity * price;
-    const newTotalCost = Math.max(0, asset.total_cost - costBasis);
-    const newAvgCost = newQty > 0 ? newTotalCost / newQty : 0;
-    db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
-      .run(newQty, newTotalCost, newAvgCost, assetId);
+    next = removePosition(state, quantity, costBasis);
+  } else {
+    return;
   }
+  db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
+    .run(next.quantity, next.totalCost, next.costPrice, assetId);
 }
 
 /** Get all today's transactions with asset names. */

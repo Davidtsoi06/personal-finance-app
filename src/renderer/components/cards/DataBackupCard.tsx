@@ -44,9 +44,10 @@ export function DataBackupCard() {
   const handleConfirm = async () => {
     setConfirming(true);
     try {
-      const r = await invoke<{ success: boolean; totalImported?: number; error?: string }>('data:confirmImport', filePath);
+      const r = await invoke<{ success: boolean; totalImported?: number; totalSkipped?: number; error?: string }>('data:confirmImport', filePath);
       if (r.success) {
-        setStatus(`✅ 导入成功！共恢复 ${r.totalImported} 条数据。建议重启应用以刷新所有页面。`);
+        const skippedNote = r.totalSkipped && r.totalSkipped > 0 ? `（${r.totalSkipped} 行数据不合法已跳过）` : '';
+        setStatus(`✅ 导入成功！共恢复 ${r.totalImported} 条数据${skippedNote}。建议重启应用以刷新所有页面。`);
       } else {
         setStatus(`❌ 导入失败：${r.error}`);
       }
@@ -60,8 +61,8 @@ export function DataBackupCard() {
     <>
       <Card title="📤 数据备份">
         <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-md)' }}>
-          将全部数据（账户、持仓、交易、记账等 14 张表）导出为一个 Excel 文件。
-          换设备或重装系统后，可通过导入功能一键恢复所有数据。
+          将全部数据（账户、多币种余额、定存、持仓、交易、记账、保单等 21 张表）导出为一个 Excel 文件。
+          换设备或重装系统后，可通过导入功能一键恢复所有数据。AI API Key 不随备份导出，恢复后需重新配置。
         </div>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
           <Button variant="primary" onClick={handleExport} disabled={exporting}>

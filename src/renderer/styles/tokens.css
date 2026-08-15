@@ -18,6 +18,13 @@
   --color-warning: #FAAD14;
   --color-info: #1890FF;
 
+  /* ── 状态徽章（浅色背景 + 深色文字） ── */
+  --color-success-bg: #F6FFED;
+  --color-danger-bg: #FFF2F0;
+  --color-info-bg: #E6F7FF;
+  --color-warning-bg: #FFFBE6;
+  --color-warning-text: #8C6D00;
+
   /* ── 中性色 ── */
   --color-bg: #F5F7FA;
   --color-surface: #FFFFFF;

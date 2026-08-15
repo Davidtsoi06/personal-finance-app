@@ -3,6 +3,7 @@
  * budgets, alerts, app settings, AI chat, data export/import, and archive.
  */
 import { ipcMain } from 'electron';
+import { handleValidated } from './validation';
 import { getDatabase } from '../database';
 import * as iaService from '../database/services/investment-account-service';
 import * as nwService from '../database/services/net-worth-service';
@@ -15,20 +16,29 @@ export function registerSettingsIpcHandlers(): void {
   // ── Investment Accounts ──
   ipcMain.handle('investmentAccount:list', () => iaService.listInvestmentAccounts());
   ipcMain.handle('investmentAccount:get', (_e, id: number) => iaService.getInvestmentAccount(id));
-  ipcMain.handle('investmentAccount:create', (_e, data: any) => iaService.createInvestmentAccount(data));
-  ipcMain.handle('investmentAccount:update', (_e, id: number, data: any) => iaService.updateInvestmentAccount(id, data));
-  ipcMain.handle('investmentAccount:delete', (_e, id: number) => iaService.deleteInvestmentAccount(id));
+  handleValidated('investmentAccount:create', (data: any) => iaService.createInvestmentAccount(data));
+  handleValidated('investmentAccount:update', (id: number, data: any) => iaService.updateInvestmentAccount(id, data));
+  handleValidated('investmentAccount:delete', (id: number) => iaService.deleteInvestmentAccount(id));
   ipcMain.handle('investmentAccount:holdings', (_e, id: number) => iaService.getAccountHoldings(id));
   ipcMain.handle('investmentAccount:summary', (_e, id: number) => iaService.getAccountSummary(id));
   ipcMain.handle('investmentAccount:dailyStats', () => iaService.getDailyTradeStats());
-  ipcMain.handle('investmentAccount:addCash', (_e, id: number, amount: number) => {
+  handleValidated('investmentAccount:addCash', (id: number, amount: number) => {
     iaService.addCashBalance(id, amount);
     return { success: true };
   });
-  ipcMain.handle('investmentAccount:withdrawCash', (_e, id: number, amount: number) => {
+  handleValidated('investmentAccount:withdrawCash', (id: number, amount: number) => {
     iaService.withdrawCashBalance(id, amount);
     return { success: true };
   });
+  // 现金流水（v1.5.6）
+  const cashFlowService = require('../database/services/investment-cash-flow-service');
+  handleValidated('investmentAccount:cashFlows', (id: number, limit?: number) =>
+    cashFlowService.listCashFlows(id, limit || 200)
+  );
+  handleValidated('investmentAccount:adjustCash', (id: number, targetBalance: number, notes?: string) => ({
+    success: true,
+    balance: cashFlowService.adjustCashBalance(id, targetBalance, notes),
+  }));
   ipcMain.handle('investmentAccount:allSummary', () => {
     const accounts = iaService.listInvestmentAccounts();
     return accounts.map(acc => ({
@@ -46,34 +56,34 @@ export function registerSettingsIpcHandlers(): void {
   ipcMain.handle('fixedDeposit:listByAccount', (_e, accountId: number) =>
     fdService.listByAccount(accountId)
   );
-  ipcMain.handle('fixedDeposit:create', (_e, data: any) =>
+  handleValidated('fixedDeposit:create', (data: any) =>
     fdService.createFixedDeposit(data)
   );
-  ipcMain.handle('fixedDeposit:update', (_e, id: number, data: any) =>
+  handleValidated('fixedDeposit:update', (id: number, data: any) =>
     fdService.updateFixedDeposit(id, data)
   );
-  ipcMain.handle('fixedDeposit:delete', (_e, id: number) =>
+  handleValidated('fixedDeposit:delete', (id: number) =>
     fdService.deleteFixedDeposit(id)
   );
 
   // ── Custom Statement Formats ──
   ipcMain.handle('customFormat:list', () => cfService.listCustomFormats());
-  ipcMain.handle('customFormat:create', (_e, data: any) => cfService.createCustomFormat(data));
-  ipcMain.handle('customFormat:update', (_e, id: number, data: any) => cfService.updateCustomFormat(id, data));
-  ipcMain.handle('customFormat:delete', (_e, id: number) => cfService.deleteCustomFormat(id));
+  handleValidated('customFormat:create', (data: any) => cfService.createCustomFormat(data));
+  handleValidated('customFormat:update', (id: number, data: any) => cfService.updateCustomFormat(id, data));
+  handleValidated('customFormat:delete', (id: number) => cfService.deleteCustomFormat(id));
 
   // ── Bank Statement Formats ──
   ipcMain.handle('bankFormat:list', () => bfService.listBankFormats());
-  ipcMain.handle('bankFormat:create', (_e, data: any) => bfService.createBankFormat(data));
-  ipcMain.handle('bankFormat:update', (_e, id: number, data: any) => bfService.updateBankFormat(id, data));
-  ipcMain.handle('bankFormat:delete', (_e, id: number) => bfService.deleteBankFormat(id));
+  handleValidated('bankFormat:create', (data: any) => bfService.createBankFormat(data));
+  handleValidated('bankFormat:update', (id: number, data: any) => bfService.updateBankFormat(id, data));
+  handleValidated('bankFormat:delete', (id: number) => bfService.deleteBankFormat(id));
 
   // ── Bank Statement Import ──
   ipcMain.handle('bank:listFormats', () => bankParser.getBankFormats());
   ipcMain.handle('bank:parseStatement', (_e, csvText: string, formatName?: string) => {
     return bankParser.parseBankStatement(csvText, formatName);
   });
-  ipcMain.handle('bank:importParsed', (_e, records: any[], accountId: number) => {
+  handleValidated('bank:importParsed', (records: any[], accountId: number) => {
     const db = getDatabase();
     let imported = 0;
     const errors: string[] = [];
@@ -194,7 +204,7 @@ export function registerSettingsIpcHandlers(): void {
   ipcMain.handle('currency:list', () => currencyService.listCurrencies());
   ipcMain.handle('currency:getBase', () => currencyService.getBaseCurrency());
   ipcMain.handle('currency:get', (_e, code: string) => currencyService.getCurrency(code));
-  ipcMain.handle('currency:updateRate', (_e, code: string, rate: number) => currencyService.updateRate(code, rate));
+  handleValidated('currency:updateRate', (code: string, rate: number) => currencyService.updateRate(code, rate));
   ipcMain.handle('currency:rateHistory', (_e, code: string, limit?: number) => currencyService.getRateHistory(code, limit));
   ipcMain.handle('currency:convert', (_e, amount: number, from: string, to: string) =>
     currencyService.convertAmount(amount, from, to)
@@ -216,9 +226,9 @@ export function registerSettingsIpcHandlers(): void {
   const budgetService = require('../database/services/budget-service');
   ipcMain.handle('budget:list', (_e, month?: string) => budgetService.listBudgets(month));
   ipcMain.handle('budget:get', (_e, id: number) => budgetService.getBudget(id));
-  ipcMain.handle('budget:create', (_e, data: any) => budgetService.createBudget(data));
-  ipcMain.handle('budget:update', (_e, id: number, data: any) => budgetService.updateBudget(id, data));
-  ipcMain.handle('budget:delete', (_e, id: number) => budgetService.deleteBudget(id));
+  handleValidated('budget:create', (data: any) => budgetService.createBudget(data));
+  handleValidated('budget:update', (id: number, data: any) => budgetService.updateBudget(id, data));
+  handleValidated('budget:delete', (id: number) => budgetService.deleteBudget(id));
   ipcMain.handle('budget:status', (_e, month: string) => budgetService.getBudgetStatus(month));
 
   // ── Alerts ──
@@ -229,14 +239,14 @@ export function registerSettingsIpcHandlers(): void {
   // ── Social Obligations ──
   const socialObligationService = require('../database/services/social-obligation-service');
   ipcMain.handle('socialObligation:list', (_e, type?: string) => socialObligationService.listObligations(type));
-  ipcMain.handle('socialObligation:create', (_e, data: any) => socialObligationService.createObligation(data));
-  ipcMain.handle('socialObligation:update', (_e, id: number, data: any) => socialObligationService.updateObligation(id, data));
-  ipcMain.handle('socialObligation:delete', (_e, id: number) => socialObligationService.deleteObligation(id));
+  handleValidated('socialObligation:create', (data: any) => socialObligationService.createObligation(data));
+  handleValidated('socialObligation:update', (id: number, data: any) => socialObligationService.updateObligation(id, data));
+  handleValidated('socialObligation:delete', (id: number) => socialObligationService.deleteObligation(id));
 
   // ── App Settings ──
   const settingsService = require('../database/services/settings-service');
   ipcMain.handle('settings:getAiConfig', () => settingsService.getAiConfigPublic());
-  ipcMain.handle('settings:saveAiConfig', (_e, config: any) => {
+  handleValidated('settings:saveAiConfig', (config: any) => {
     settingsService.saveAiConfig(config);
     return { success: true };
   });
@@ -244,7 +254,7 @@ export function registerSettingsIpcHandlers(): void {
     return settingsService.testAiConnection(config);
   });
   ipcMain.handle('settings:getAppName', () => settingsService.getAppName());
-  ipcMain.handle('settings:setAppName', (_e, name: string) => {
+  handleValidated('settings:setAppName', (name: string) => {
     settingsService.setAppName(name);
     // Dynamically update window title
     const { BrowserWindow } = require('electron');
@@ -315,6 +325,8 @@ export function registerSettingsIpcHandlers(): void {
         { sheet: '资产持仓', sql: 'SELECT * FROM assets ORDER BY id' },
         { sheet: '投资交易', sql: 'SELECT * FROM transactions ORDER BY date DESC, id DESC' },
         { sheet: '存取记录', sql: 'SELECT * FROM account_transactions ORDER BY date DESC, id DESC' },
+        { sheet: '多币种余额', sql: 'SELECT * FROM account_balances ORDER BY account_id, currency' },
+        { sheet: '定期存款', sql: 'SELECT * FROM fixed_deposits ORDER BY id' },
         { sheet: '收支记账', sql: 'SELECT * FROM ledgers ORDER BY date DESC, id DESC' },
         { sheet: '收支分类', sql: 'SELECT * FROM categories ORDER BY id' },
         { sheet: '货币汇率', sql: 'SELECT * FROM currencies ORDER BY id' },
@@ -324,12 +336,20 @@ export function registerSettingsIpcHandlers(): void {
         { sheet: '预算', sql: 'SELECT * FROM budgets ORDER BY month DESC' },
         { sheet: '提醒配置', sql: 'SELECT * FROM alert_config ORDER BY id' },
         { sheet: '自定义格式', sql: 'SELECT * FROM custom_statement_formats ORDER BY id' },
+        { sheet: '银行自定义格式', sql: 'SELECT * FROM custom_bank_formats ORDER BY id' },
         { sheet: '人情债', sql: 'SELECT * FROM social_obligations ORDER BY created_at DESC' },
+        { sheet: '保单', sql: 'SELECT * FROM insurance_policies ORDER BY id' },
+        { sheet: '保费缴纳', sql: 'SELECT * FROM premium_payments ORDER BY paid_date DESC, id DESC' },
+        { sheet: '应用设置', sql: 'SELECT * FROM app_settings ORDER BY key' },
       ];
 
       const workbook = xlsx.utils.book_new();
       for (const t of tables) {
-        const rows = db.prepare(t.sql).all() as any[];
+        let rows = db.prepare(t.sql).all() as any[];
+        // 敏感配置（AI API Key）不随备份导出，恢复后需在设置中重新配置
+        if (t.sheet === '应用设置') {
+          rows = rows.filter((r: any) => r.key !== 'ai.apiKey');
+        }
         if (rows.length > 0) {
           const ws = xlsx.utils.json_to_sheet(rows);
           xlsx.utils.book_append_sheet(workbook, ws, t.sheet);
@@ -378,7 +398,7 @@ export function registerSettingsIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('data:confirmImport', async (_e, filePath: string) => {
+  handleValidated('data:confirmImport', async (filePath: string) => {
     const xlsx = require('xlsx') as typeof import('xlsx');
     const db = getDatabase();
     const fs = require('fs');
@@ -393,14 +413,19 @@ export function registerSettingsIpcHandlers(): void {
         '收支分类': 'categories', '货币汇率': 'currencies', '汇率历史': 'exchange_rates',
         '价格历史': 'asset_prices', '净值历史': 'net_worth_history', '预算': 'budgets',
         '提醒配置': 'alert_config', '自定义格式': 'custom_statement_formats',
-        '人情债': 'social_obligations',
+        '银行自定义格式': 'custom_bank_formats', '人情债': 'social_obligations',
+        '多币种余额': 'account_balances', '定期存款': 'fixed_deposits',
+        '保单': 'insurance_policies', '保费缴纳': 'premium_payments',
+        '应用设置': 'app_settings',
       };
 
+      // 按外键依赖排序：被引用表先导入（删除时反向执行）
       const importOrder = [
-        '货币汇率', '收支分类', '账户', '投资账户', '自定义格式',
+        '货币汇率', '收支分类', '账户', '多币种余额', '定期存款', '投资账户',
+        '自定义格式', '银行自定义格式',
         '资产持仓', '投资交易', '存取记录', '收支记账',
         '汇率历史', '价格历史', '净值历史', '预算', '提醒配置',
-        '人情债',
+        '人情债', '保单', '保费缴纳', '应用设置',
       ];
 
       const transaction = db.transaction(() => {
@@ -413,6 +438,7 @@ export function registerSettingsIpcHandlers(): void {
         }
 
         let totalImported = 0;
+        let totalSkipped = 0;
         for (const sheet of importOrder) {
           const table = sheetToTable[sheet];
           if (!table || !workbook.SheetNames.includes(sheet)) continue;
@@ -421,21 +447,30 @@ export function registerSettingsIpcHandlers(): void {
           const rows = xlsx.utils.sheet_to_json(ws) as any[];
           if (rows.length === 0) continue;
 
-          const keys = Object.keys(rows[0]);
+          // 只允许数据库中真实存在的列名（防 SQL 注入 + 兼容列名差异）
+          const tableCols = new Set(
+            (db.prepare(`PRAGMA table_info(${table})`).all() as any[]).map((c: any) => c.name)
+          );
+          const keys = Object.keys(rows[0]).filter((k) => tableCols.has(k));
+          if (keys.length === 0) continue;
+
           const placeholders = keys.map(() => '?').join(', ');
-          const cols = keys.join(', ');
+          const cols = keys.map((k) => `"${k}"`).join(', ');
           const insert = db.prepare(`INSERT INTO ${table} (${cols}) VALUES (${placeholders})`);
 
           for (const row of rows) {
-            try { insert.run(...keys.map(k => row[k])); totalImported++; }
-            catch { /* skip individual row errors */ }
+            try { insert.run(...keys.map((k) => row[k])); totalImported++; }
+            catch { totalSkipped++; }
           }
         }
-        return totalImported;
+        return { totalImported, totalSkipped };
       });
 
-      const total = transaction();
-      return { success: true, totalImported: total };
+      const { totalImported, totalSkipped } = transaction();
+      if (totalSkipped > 0) {
+        console.warn(`[data:confirmImport] ${totalSkipped} 行因数据不合法被跳过`);
+      }
+      return { success: true, totalImported, totalSkipped };
     } catch (err: any) {
       return { success: false, error: `导入失败：${err.message}` };
     }
@@ -444,7 +479,7 @@ export function registerSettingsIpcHandlers(): void {
   // ── Data Archive ──
   const archiveService = require('../services/archive-service');
   ipcMain.handle('archive:getPendingMonths', () => archiveService.getPendingMonths());
-  ipcMain.handle('archive:execute', (_e, months: string[]) => archiveService.executeArchive(months));
+  handleValidated('archive:execute', (months: string[]) => archiveService.executeArchive(months));
   ipcMain.handle('archive:getSettings', () => archiveService.getArchiveSettings());
   ipcMain.handle('archive:setFolder', async () => {
     const { dialog } = require('electron') as typeof import('electron');
@@ -466,19 +501,25 @@ export function registerSettingsIpcHandlers(): void {
   // ── One-click Data Clear ──
   ipcMain.handle('data:clearAll', () => {
     const db = getDatabase();
-    // Delete in dependency order to respect foreign keys
+    // 按外键依赖顺序删除：子表在前、父表在后。
+    // 保留系统数据：currencies / categories / alert_config / app_settings（应用设置与默认分类）。
     const tables = [
-      'asset_prices',
-      'transactions',
-      'account_transactions',
-      'ledgers',
-      'assets',
-      'net_worth_history',
-      'budgets',
+      'asset_prices',          // → assets
+      'transactions',          // → assets
+      'account_transactions',  // → accounts / investment_accounts
+      'ledgers',               // → accounts / categories
+      'fixed_deposits',        // → accounts
+      'premium_payments',      // → insurance_policies / accounts
+      'insurance_policies',    // → accounts
+      'account_balances',      // → accounts
+      'assets',                // → accounts / investment_accounts
       'social_obligations',
-      'account_balances',
+      'budgets',
+      'net_worth_history',
+      'investment_accounts',   // → accounts (funding_account_id)
       'accounts',
-      'investment_accounts',
+      'custom_statement_formats',
+      'custom_bank_formats',
     ];
     let totalDeleted = 0;
     const txn = db.transaction(() => {

@@ -2,6 +2,7 @@
  * Database initialization and connection management.
  */
 import path = require('path');
+import fs = require('fs');
 import { app } from 'electron';
 import Database from 'better-sqlite3';
 import { MIGRATIONS } from './migrations';
@@ -19,11 +20,24 @@ export function initDatabase(): Database.Database {
   if (db) return db;
 
   const dbPath = getDbPath();
+  const dbExists = fs.existsSync(dbPath);
   db = new Database(dbPath);
 
   // Enable WAL mode for better performance
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+
+  // 完整性检查（仅对已存在的数据库；新建库必然完整）
+  // 策略：先跑轻量的 quick_check（成本低）；失败再用完整 integrity_check 取详细错误。
+  if (dbExists) {
+    const quick = db.pragma('quick_check') as { quick_check: string }[];
+    const quickOk = quick.length === 1 && quick[0].quick_check === 'ok';
+    if (!quickOk) {
+      const integrity = db.pragma('integrity_check') as { integrity_check: string }[];
+      const detail = integrity.map((r) => r.integrity_check).join('; ').slice(0, 300);
+      throw new Error(`数据库完整性检查失败：${detail}。请从 ${path.join(app.getPath('userData'), 'backups')} 目录的备份恢复数据。`);
+    }
+  }
 
   // Run all migrations
   runMigrations(db);
@@ -50,6 +64,32 @@ function runMigrations(database: Database.Database): void {
       .all()
       .map((row: any) => row.version)
   );
+
+  // 有待执行的迁移时，先自动备份数据库文件（保留最近 5 份，供迁移失败时恢复）
+  const pending = MIGRATIONS.filter((m) => !applied.has(m.version));
+  if (pending.length > 0) {
+    try {
+      database.pragma('wal_checkpoint(TRUNCATE)');
+      const backupsDir = path.join(app.getPath('userData'), 'backups');
+      fs.mkdirSync(backupsDir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      fs.copyFileSync(
+        getDbPath(),
+        path.join(backupsDir, `finance-pre-migration-v${pending[0].version}-${stamp}.db`)
+      );
+      const backups = fs
+        .readdirSync(backupsDir)
+        .filter((f) => f.startsWith('finance-pre-migration'))
+        .sort();
+      while (backups.length > 5) {
+        const oldest = backups.shift();
+        if (oldest) fs.unlinkSync(path.join(backupsDir, oldest));
+      }
+      console.log(`[DB] 迁移前自动备份完成（目标版本 v${pending[0].version}，保留最近 5 份）`);
+    } catch (err) {
+      console.warn('[DB] 迁移前自动备份失败（继续迁移）:', err);
+    }
+  }
 
   for (const migration of MIGRATIONS) {
     if (!applied.has(migration.version)) {

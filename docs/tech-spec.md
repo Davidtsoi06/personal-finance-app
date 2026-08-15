@@ -27,7 +27,7 @@ Electron App
 ├── Main Process (src/main/)
 │   ├── index.ts                   # 主进程入口
 │   │   ├── 创建 BrowserWindow
-│   │   ├── 初始化数据库（migrations v1~v12）
+│   │   ├── 初始化数据库（migrations v1~v13）
 │   │   ├── 注册 IPC handlers
 │   │   ├── 启动定时任务（scheduler）+ 保费到期提醒
 │   │   └── 设置自动更新（electron-updater）
@@ -67,10 +67,12 @@ Electron App
 │   │       ├── social-obligation-service.ts  # 人情债 CRUD
 │   │       └── transaction-service.ts       # 交易记录 CRUD + 当日查询
 │   │
-│   └── services/                  # 后台服务层（10 个）
+│   └── services/                  # 后台服务层（12 个）
 │       ├── ai-service.ts          # AI 对话（构建 prompt + 调用 API + 流式 SSE）
 │       ├── archive-service.ts     # 数据归档（生成月度 Excel + 清理旧数据）
 │       ├── bank-statement-parser.ts  # 银行日结单解析（CSV/Excel + 智能格式匹配）
+│       ├── crypto-core.ts         # AES-256-GCM 纯函数核心（无 electron 依赖）
+│       ├── crypto-util.ts         # 敏感数据加密密钥管理（v1.5.4 新增）
 │       ├── data-normalizer.ts     # 数据标准化（日期/币种/代码/字符串）
 │       ├── exchange-rate-fetcher.ts  # 汇率数据抓取
 │       ├── portfolio-context.ts   # 组合上下文收集（格式化为 Markdown）
@@ -86,7 +88,7 @@ Electron App
 │   ├── hooks/
 │   │   └── useIpc.ts              # IPC 调用封装（泛型 invoke）
 │   ├── pages/                     # 页面组件（12 个）
-│   │   ├── Dashboard.tsx          # 仪表盘（饼图下钻 + 概览 + 资产查询 + 走势 + 预算）
+│   │   ├── Dashboard.tsx          # 仪表盘（饼图下钻 + 概览可展开分组[银行内嵌关联券商] + 资产查询 + 走势 + 预算）
 │   │   ├── Accounts.tsx           # 资产管理（Layer 2 四层架构卡片 + 银行分组可展开）
 │   │   ├── AccountDetail.tsx      # 账户详情（存取记录 + 定期存款 + 银行理财产品）
 │   │   ├── WalletFlow.tsx         # 钱包流水页（收支记录 + 账单导入，v1.5.0 新增）
@@ -111,12 +113,29 @@ Electron App
 │       │   ├── ProgressBar.tsx    # 进度条（颜色自适应）
 │       │   ├── SlidePanel.tsx     # 侧边滑出面板（v1.5.0 新增）
 │       │   └── Table.tsx          # 数据表格
-│       ├── cards/                 # 业务卡片组件（5 个）
+│       ├── account/               # 账户详情区块组件（3 个，v1.5.5 自 AccountDetail 拆分）
+│       │   ├── AccountTransactionsSection.tsx # 存取记录（列表+弹窗）
+│       │   ├── AccountTxFormModal.tsx        # 存入/取出表单弹窗
+│       │   ├── BankStatementImportModal.tsx  # 银行日结单导入
+│       │   └── FixedDepositsSection.tsx      # 定期存款区块
+│       ├── holdings/               # 持仓详情区块组件（6 个，v1.5.5 拆分 + v1.5.6 CashFlowCard）
+│       │   ├── HoldingsTableCard.tsx          # 持仓表 + 编辑/删除弹窗
+│       │   ├── TradesTableCard.tsx            # 交易表 + 编辑/删除弹窗
+│       │   ├── TradeHistoryModal.tsx          # 单股交易历史弹窗
+│       │   ├── PriceModal.tsx                 # 手动改价弹窗
+│       │   ├── BrokerStatementImportModal.tsx # 券商日结单导入
+│       │   └── CashFlowCard.tsx                # 现金流水 + 余额校正（v1.5.6）
+│       ├── cards/                 # 业务卡片组件（10 个）
 │       │   ├── AiConfigCard.tsx   # AI 配置卡片
 │       │   ├── AlertConfigCard.tsx # 提醒配置卡片
 │       │   ├── ArchiveCard.tsx    # 数据归档管理卡片
+│       │   ├── BankFormatCard.tsx # 银行日结单格式卡片（v1.5.5 自 Settings 拆分）
+│       │   ├── BrokerFormatCard.tsx # 券商日结单格式卡片（v1.5.5 自 Settings 拆分）
 │       │   ├── BudgetCard.tsx     # 月度预算进度卡片
-│       │   └── DataBackupCard.tsx # 数据备份恢复卡片
+│       │   ├── RealizedPnlCard.tsx # 年度已实现盈亏卡片（v1.5.5）
+│       │   ├── DangerZoneCard.tsx # 危险操作卡片（v1.5.5 自 Settings 拆分）
+│       │   ├── DataBackupCard.tsx # 数据备份恢复卡片
+│       │   └── UpdateCard.tsx     # 版本更新卡片（v1.5.5 自 Settings 拆分）
 │       ├── charts/                # 图表组件（1 个）
 │       │   └── NetWorthTrendChart.tsx  # 净资产走势图
 │       └── forms/                 # 表单组件（4 个）
@@ -126,9 +145,15 @@ Electron App
 │           └── TradeForm.tsx
 │
 └── Shared (src/shared/)
-    └── constants/
-        ├── labels.ts              # 类型/市场/分类中文映射
-        └── chart-colors.ts        # 图表颜色常量
+    ├── constants/
+    │   ├── labels.ts              # 类型/市场/分类中文映射
+    │   └── chart-colors.ts        # 图表颜色常量
+    └── utils/                     # 纯函数工具（可单元测试，v1.5.5 新增）
+        ├── money.ts               # 金额舍入（roundMoney/roundPct）
+        ├── investment.ts          # 加权平均成本/盈亏纯函数
+        ├── market.ts              # 股票代码智能市场检测
+        ├── card.ts                # 卡号仅存后 4 位
+        └── markdown.ts            # AI 回复安全渲染（先转义后转换）
 ```
 
 ---
@@ -166,12 +191,12 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 | `ledger` | `ledger:list`, `ledger:create`, `ledger:monthlySummary` | 收支记账 |
 | `category` | `category:list`, `category:create` | 收支分类 |
 | `currency` | `currency:list`, `currency:convert`, `currency:rateHistory` | 货币汇率 |
-| `investmentAccount` | `investmentAccount:list`, `investmentAccount:summary`, `investmentAccount:dailyStats`, `investmentAccount:addCash`, `investmentAccount:withdrawCash` | 投资账户 + 现金余额管理（v1.4.3） |
+| `investmentAccount` | `investmentAccount:list`, `investmentAccount:summary`, `investmentAccount:dailyStats`, `investmentAccount:addCash`, `investmentAccount:withdrawCash`, `investmentAccount:cashFlows`（v1.5.6）, `investmentAccount:adjustCash`（v1.5.6） | 投资账户 + 现金余额管理（v1.4.3，v1.5.6 起流水派生） |
 | `fixedDeposit` | `fixedDeposit:listByAccount`, `fixedDeposit:create`, `fixedDeposit:update`, `fixedDeposit:delete` | 定期存款 CRUD（v1.4.3 新增） |
 | `netWorth` | `netWorth:history`, `netWorth:record` | 净值历史 |
-| `report` | `report:monthlyTrend`, `report:categoryBreakdown`, `report:assetPerformance`, `report:dailyTrades`（v1.5.2） | 报表数据 |
+| `report` | `report:monthlyTrend`, `report:categoryBreakdown`, `report:assetPerformance`, `report:dailyTrades`（v1.5.2）, `report:realizedPnl`（v1.5.5） | 报表数据 |
 | `export` | `export:toExcel`, `export:dailyTrades`（v1.5.2） | Excel 导出 |
-| `data` | `data:exportAll`, `data:importAll`, `data:refreshPrices` | 数据备份/刷新 |
+| `data` | `data:exportAll`, `data:importAll`, `data:confirmImport`, `data:clearAll`, `data:refreshPrices`, `data:refreshRates`, `data:refreshAll` | 数据备份/恢复/清空/刷新 |
 | `budget` | `budget:list`, `budget:status` | 预算管理 |
 | `alert` | `alert:listConfig`, `alert:updateConfig` | 提醒配置 |
 | `socialObligation` | `socialObligation:list`, `socialObligation:create` | 人情债管理 |
@@ -181,6 +206,19 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 | `customFormat` | `customFormat:list`, `customFormat:create`, `customFormat:update`, `customFormat:delete` | 券商日结单自定义格式 |
 | `update` | `update:check`, `update:download`, `update:getVersion` | 自动更新 |
 | `app` | `app:ping` | 应用状态 |
+
+### 频道类型安全与一致性校验（v1.5.5）
+
+- 频道名称的**单一事实来源**是主进程注册；`src/shared/types/ipc.ts` 提供 `IpcChannel` 类型联合，渲染进程 `invoke()` 的 channel 参数受**编译期校验**（频道名拼错直接在 tsc 报错）
+- `scripts/check-ipc-whitelist.js` 校验「主进程注册（ipcMain.handle + handleValidated） ↔ preload 白名单 ↔ 类型联合 ↔ zod schema 接入」四处一致，挂入 `npm test`（也可单独 `npm run check:ipc`）
+- 新增 IPC 频道流程：先在主进程注册 → 运行 `npm run check:ipc` 查看不一致 → 同步 preload 白名单、`ipc.ts` 类型联合与校验 schema
+
+### IPC 入参运行时校验（zod，v1.5.5）
+
+- **边界防护**：渲染进程传错类型/缺字段/非法枚举时在 IPC 边界直接拒绝（报错含具体字段与原因），防止脏数据落库
+- **实现**：`src/shared/ipc-validation.ts` 定义 54 个可变操作的参数元组 schema（对象一律 `.passthrough()` 向前兼容；数字字段 `z.coerce` 兼容表单字符串）；`src/main/ipc/validation.ts` 提供 `handleValidated(channel, handler)` 包装器
+- **覆盖范围**：全部 `:create` / `:update` / `:delete` 及 addCash/withdrawCash、trade:record、日结单导入、清空/归档等 54 个频道
+- **测试**：`tests/unit/validation.test.ts` 10 个用例（合法通过/字符串转数字/负数与 NaN 拒绝/非法枚举/缺字段/日期格式/超长字段）
 
 ### 流式通信
 
@@ -210,9 +248,10 @@ AI 对话支持 SSE 流式响应，通过 Electron 的 `event.sender.send()` 推
 | 写入模式 | WAL（Write-Ahead Logging） |
 | 外键 | `PRAGMA foreign_keys = ON` |
 | 存储位置 | `%APPDATA%/personal-finance/finance.db` |
-| 迁移方式 | 版本号递增（v1~v10），`meta` 表记录当前版本 |
+| 迁移方式 | 版本号递增（v1~v14），`_migrations` 表记录当前版本 |
+| 金额精度 | REAL 存储；所有计算出口经 `roundMoney`（`src/shared/utils/money.ts`）统一四舍五入到分；均价等中间比例值保留全精度 |
 
-### 表清单（16 张）
+### 表清单（22 张）
 
 | 表名 | 说明 | 迁移版本 |
 |------|------|---------|
@@ -234,6 +273,10 @@ AI 对话支持 SSE 流式响应，通过 Electron 的 `event.sender.send()` 推
 | `budgets` | 月度预算 | v5 |
 | `alert_config` | 提醒配置 | v5 |
 | `app_settings` | 应用设置（KV） | v5 |
+| `fixed_deposits` | 定期存款 | v11 |
+| `insurance_policies` | 保单 | v12 |
+| `premium_payments` | 保费缴纳记录 | v12 |
+| `investment_cash_flows` | 券商现金流水 | v14 |
 
 完整字段定义见 [data-model.md](data-model.md)。
 
@@ -244,10 +287,19 @@ AI 对话支持 SSE 流式响应，通过 Electron 的 `event.sender.send()` 推
 | 措施 | 实现 |
 |------|------|
 | **Context Isolation** | `contextIsolation: true`，渲染进程不暴露 Node.js API |
-| **API Key 保护** | AI API Key 仅存主进程 `app_settings` 表，`getAiConfigPublic()` 只返回 `hasApiKey` 布尔值，Key 明文永不到达渲染进程 |
+| **API Key 保护** | AI API Key 仅存主进程 `app_settings` 表（AES-256-GCM 密文，密钥存 `userData/secret.key`，与数据库分离），`getAiConfigPublic()` 只返回 `hasApiKey` 布尔值，Key 明文永不到达渲染进程，且不随备份导出 |
+| **卡号保护** | 银行卡号仅存后 4 位（服务层 `normalizeCardNumber` 截断 + 迁移 v13 清洗存量数据），完整卡号不落库 |
+| **IPC 白名单** | preload 仅放行主进程已注册的 138 个频道（含 `app:ping`），未授权频道调用直接拒绝 |
+| **AI 渲染安全** | AI 回复先整体 HTML 转义再做 Markdown 转换，模型输出中的原始 HTML 不会进入 DOM（防 XSS） |
+| **单实例运行** | `app.requestSingleInstanceLock()`：双开时第二个实例直接退出并聚焦已有窗口，防止双进程写库/重复调度 |
+| **迁移前自动备份** | 有待执行迁移时自动把数据库复制到 `userData/backups/`（WAL checkpoint 后），仅保留最近 5 份 |
+| **完整性检查** | 启动时先执行轻量的 `PRAGMA quick_check`（主结构扫描），失败再用完整 `integrity_check` 取详细错误并中止启动、提示从备份恢复 |
+| **密钥文件权限** | Windows 下 `secret.key` 通过 `icacls` 收紧为仅当前用户可读写（移除继承，v1.5.5） |
+| **AI 隐私开关** | 设置页可关闭「组合数据共享」（`ai.includePortfolio`），关闭后 `gatherPortfolioContext`/日摘要仅返回隐私提示，不发送持仓/账户/交易数据 |
+| **AI 隐私开关** | 设置页可关闭「组合数据共享」（`ai.includePortfolio`），关闭后 `gatherPortfolioContext`/日摘要仅返回隐私提示，不发送持仓/账户/交易数据 |
 | **无云端依赖** | 全部数据存本地 SQLite，无后端服务器，无数据外泄 |
 | **事务保护** | 数据导入使用 `db.transaction()`，失败自动回滚 |
-| **数据库加密** | 后续可选 SQLCipher 扩展 |
+| **数据库加密** | 敏感字段已加密（AI Key，AES-256-GCM）；整库 SQLCipher 加密列为后续可选 |
 
 ---
 
@@ -265,7 +317,7 @@ AI 对话支持 SSE 流式响应，通过 Electron 的 `event.sender.send()` 推
 | AI 对话 | DeepSeek API | — | 按需 |
 | 自动更新 | GitHub Releases | — | 启动时检查 |
 
-智能市场检测：`price-fetcher.ts` 内置 `detectMarket()` 函数，根据代码格式自动判断市场（6 位纯数字→A 股，1-5 位数字→港股，字母→美股），保持对 `asset.market` 字段的向后兼容。
+智能市场检测：`detectMarket()`（`src/shared/utils/market.ts`）根据代码格式自动判断市场（6 位纯数字→A 股，1-5 位数字→港股，1-5 位字母→美股，支持 `.SH`/`.SZ`/`.HK`/`.US` 等交易所后缀），保持对 `asset.market` 字段的向后兼容。
 
 ---
 
@@ -304,6 +356,8 @@ Scheduler（`src/main/services/scheduler.ts`）管理所有后台定时任务：
 ```bash
 npm run dev
 # → concurrently 启动 Vite dev server + tsc main + Electron
+# Electron 以 ELECTRON_DEV=1 启动，窗口加载 http://localhost:5173（真 HMR）
+# 生产运行（加载 dist/renderer）：npm run build && npm start
 ```
 
 ### 生产构建
@@ -319,6 +373,22 @@ npm run build
 npm run release:local
 # → electron-builder 打包为 Windows .exe（NSIS 安装程序）
 ```
+
+### 测试
+
+```bash
+npm test                # 单元 + 集成测试（vitest，48 个用例）
+npm run test:unit       # 仅单元测试（共享纯函数：金额/成本/市场/卡号/Markdown/加密）
+npm run test:integration # 仅集成测试（迁移体系，真实 SQLite 内存库）
+npm run test:e2e        # E2E（Playwright + Electron：构建后启动真实应用冒烟测试）
+```
+
+测试目录：`tests/unit/`、`tests/integration/`、`tests/e2e/`。CI（GitHub Actions）执行 `npm run build` + `npm test`。E2E 通过环境变量 `PF_USER_DATA_DIR` 使用独立临时数据目录，不触碰真实用户数据。
+
+### 性能
+
+- **路由级代码分割**：12 个页面经 `React.lazy` + `Suspense` 按路由分包（v1.5.5），首屏只加载当前路由对应的 chunk
+- **启动耗时统计**：主进程启动流程打印总耗时（`[Main] ✓ 启动完成，总耗时 XXms`），作为后续优化基线
 
 ---
 

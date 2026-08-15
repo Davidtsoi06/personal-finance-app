@@ -10,8 +10,38 @@ import {
   getDailyTrades, buildAssetSummarySheets,
   transformRows, getExportHeaders,
 } from '../services/report-export-service';
+import { computeRealizedPnl } from '../../shared/utils/investment';
+import { roundMoney } from '../../shared/utils/money';
+import { handleValidated } from './validation';
 
 export function registerReportIpcHandlers(): void {
+  // ── 年度已实现盈亏（重放法：按持仓重放买卖，卖出时以当时加权平均成本为基数）──
+  handleValidated('report:realizedPnl', (year: number) => {
+    const db = getDatabase();
+    const rows = db.prepare(
+      "SELECT t.id, t.asset_id as assetId, a.code, a.name, a.currency," +
+      " t.type, t.quantity, t.price, t.fee, t.total_amount as totalAmount, t.date" +
+      " FROM transactions t" +
+      " JOIN assets a ON t.asset_id = a.id" +
+      " WHERE strftime('%Y', t.date) = ?" +
+      " AND t.type IN ('buy', 'sell')" +
+      " ORDER BY t.date ASC, t.id ASC"
+    ).all(String(year)) as any[];
+
+    const { total, byAsset } = computeRealizedPnl(rows);
+    const sells = rows.filter((r: any) => r.type === 'sell');
+    const buys = rows.filter((r: any) => r.type === 'buy');
+    return {
+      year,
+      total,
+      byAsset,
+      sellCount: sells.length,
+      buyCount: buys.length,
+      sellAmount: roundMoney(sells.reduce((s: number, r: any) => s + r.totalAmount, 0)),
+      buyAmount: roundMoney(buys.reduce((s: number, r: any) => s + r.totalAmount, 0)),
+    };
+  });
+
   // ── Reports / Analytics ──
   ipcMain.handle('report:monthlyTrend', (_e, months: number = 12) => {
     const db = getDatabase();

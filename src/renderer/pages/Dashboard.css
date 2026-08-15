@@ -66,6 +66,20 @@
   color: var(--color-text-secondary);
 }
 
+/* 银行组展开后的子项（账户 / 关联券商） */
+.overview-subitem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0 6px var(--spacing-lg);
+  border-left: 2px solid var(--color-border);
+  margin-left: 5px;
+}
+
+.overview-subitem + .overview-subitem {
+  border-top: none;
+}
+
 /* ── Asset Query & Analysis ── */
 .filter-toolbar {
   display: flex;

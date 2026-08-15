@@ -3,9 +3,19 @@
  * as structured Markdown text for injection into the AI system prompt.
  */
 import { getDatabase } from '../database/index';
+import { isPortfolioSharingEnabled } from '../database/services/settings-service';
+
+/** 用户关闭组合数据共享时返回的占位说明。 */
+const PRIVACY_NOTICE = '（用户已在设置中关闭「组合数据共享」：请勿引用具体持仓、账户或交易数据，仅基于通用理财知识回答。）';
+
+/** 组合数据共享是否开启；关闭时上下文只包含隐私提示。 */
+export function shouldIncludePortfolio(): boolean {
+  return isPortfolioSharingEnabled();
+}
 
 /** Generate a focused context for daily AI investment summary. */
 export function generateDailySummaryContext(date: string): string {
+  if (!isPortfolioSharingEnabled()) return PRIVACY_NOTICE;
   const db = getDatabase();
   const parts: string[] = [];
 
@@ -117,6 +127,7 @@ export function generateDailySummaryContext(date: string): string {
 }
 
 export function gatherPortfolioContext(): string {
+  if (!isPortfolioSharingEnabled()) return PRIVACY_NOTICE;
   const db = getDatabase();
   const parts: string[] = [];
 

@@ -2,6 +2,7 @@
  * Asset service — CRUD operations for assets table.
  */
 import { getDatabase } from '../index';
+import { computeAssetValuation } from '../../../shared/utils/investment';
 
 export interface AssetRow {
   id: number;
@@ -50,6 +51,55 @@ export function listAssets(type?: string): AssetRow[] {
   return db.prepare(`SELECT * FROM assets ORDER BY ${ASSET_SORT_SQL}`).all() as AssetRow[];
 }
 
+/** 定存虚拟资产行（并入资产查询面板用） */
+export interface AssetRowWithDeposit extends AssetRow {
+  account_name?: string;
+  maturity_date?: string;
+}
+
+/**
+ * 全部资产（含定期存款虚拟行）——供资产查询/筛选/排序面板使用。
+ * 定期存款存于 fixed_deposits 表，此处转换为 type='fixed_deposit' 的虚拟资产行
+ * （市值=本金，盈亏=0，代码 FD），使搜索与类型筛选能覆盖定存。
+ */
+export function listAllAssets(): AssetRowWithDeposit[] {
+  const db = getDatabase();
+  const assets = db.prepare(`SELECT * FROM assets ORDER BY ${ASSET_SORT_SQL}`).all() as AssetRow[];
+
+  const fds = db.prepare(`
+    SELECT fd.id, fd.account_id, a.name as account_name, fd.amount, fd.currency,
+           fd.interest_rate, fd.start_date, fd.maturity_date, fd.notes
+    FROM fixed_deposits fd
+    JOIN accounts a ON fd.account_id = a.id
+    ORDER BY fd.maturity_date ASC
+  `).all() as any[];
+
+  const virtual: AssetRowWithDeposit[] = fds.map((fd: any) => ({
+    id: fd.id,
+    name: `${fd.account_name} · 定期存款${fd.interest_rate ? ` (${fd.interest_rate}%)` : ''}`,
+    code: 'FD',
+    type: 'fixed_deposit',
+    market: 'other',
+    currency: fd.currency,
+    quantity: 1,
+    cost_price: fd.amount,
+    current_price: fd.amount,
+    market_value: fd.amount,
+    total_cost: fd.amount,
+    profit_loss: 0,
+    profit_loss_pct: 0,
+    account_id: fd.account_id,
+    investment_account_id: null,
+    notes: fd.notes || `${fd.start_date} ~ ${fd.maturity_date}`,
+    created_at: '',
+    updated_at: '',
+    account_name: fd.account_name,
+    maturity_date: fd.maturity_date,
+  }));
+
+  return [...assets, ...virtual];
+}
+
 export function getAsset(id: number): AssetRow | undefined {
   const db = getDatabase();
   return db.prepare('SELECT * FROM assets WHERE id = ?').get(id) as AssetRow | undefined;
@@ -69,11 +119,9 @@ export function createAsset(data: {
   notes?: string;
 }): AssetRow {
   const db = getDatabase();
-  const totalCost = data.quantity * data.cost_price;
   const currentPrice = data.current_price || data.cost_price;
-  const marketValue = data.quantity * currentPrice;
-  const profitLoss = marketValue - totalCost;
-  const profitLossPct = totalCost > 0 ? (profitLoss / totalCost) * 100 : 0;
+  const { marketValue, totalCost, profitLoss, profitLossPct } =
+    computeAssetValuation(data.quantity, data.cost_price, currentPrice);
 
   const stmt = db.prepare(`
     INSERT INTO assets (name, code, type, market, currency, quantity, cost_price, current_price, market_value, total_cost, profit_loss, profit_loss_pct, account_id, investment_account_id, notes)
@@ -107,11 +155,12 @@ export function updateAsset(id: number, data: Partial<AssetRow>): AssetRow | und
   const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
 
   // Recalculate if quantity or price changed
-  if (data.quantity !== undefined || data.current_price !== undefined) {
-    merged.market_value = merged.quantity * merged.current_price;
-    merged.total_cost = merged.quantity * merged.cost_price;
-    merged.profit_loss = merged.market_value - merged.total_cost;
-    merged.profit_loss_pct = merged.total_cost > 0 ? (merged.profit_loss / merged.total_cost) * 100 : 0;
+  if (data.quantity !== undefined || data.current_price !== undefined || data.cost_price !== undefined) {
+    const v = computeAssetValuation(merged.quantity, merged.cost_price, merged.current_price);
+    merged.market_value = v.marketValue;
+    merged.total_cost = v.totalCost;
+    merged.profit_loss = v.profitLoss;
+    merged.profit_loss_pct = v.profitLossPct;
   }
 
   db.prepare(`
@@ -155,14 +204,12 @@ export function updateCurrentPrice(id: number, price: number): void {
   const asset = getAsset(id);
   if (!asset) return;
 
-  const marketValue = asset.quantity * price;
-  const profitLoss = marketValue - asset.total_cost;
-  const profitLossPct = asset.total_cost > 0 ? (profitLoss / asset.total_cost) * 100 : 0;
+  const v = computeAssetValuation(asset.quantity, asset.cost_price, price);
 
   db.prepare(`
     UPDATE assets SET current_price=?, market_value=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
     WHERE id=?
-  `).run(price, marketValue, profitLoss, profitLossPct, id);
+  `).run(price, v.marketValue, v.profitLoss, v.profitLossPct, id);
 
   // Record price history
   db.prepare('INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date(\'now\'))').run(id, price);

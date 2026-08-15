@@ -14,38 +14,9 @@
  */
 import { getDatabase } from '../database';
 import { updateCurrentPrice } from '../database/services/asset-service';
+import { detectMarket } from '../../shared/utils/market';
 
 const TAG = '[PriceFetcher]';
-
-// ─── Market Detection ───────────────────────────────────────────
-
-/**
- * Smart market detection from stock code pattern.
- * Falls back to the explicit market field when code pattern is ambiguous.
- */
-function detectMarket(code: string, explicitMarket?: string): string {
-  // If market is already explicitly set and non-ambiguous, use it
-  if (explicitMarket && explicitMarket !== 'other') return explicitMarket;
-
-  const cleaned = code.trim().replace(/[^A-Za-z0-9]/g, '');
-
-  // 6-digit numeric → A-stock
-  if (/^\d{6}$/.test(cleaned)) {
-    return cleaned.startsWith('6') ? 'a_stock' : 'a_stock';
-  }
-
-  // 1-5 digit numeric → HK stock
-  if (/^\d{1,5}$/.test(cleaned)) {
-    return 'hk_stock';
-  }
-
-  // 1-5 letters → US stock
-  if (/^[A-Za-z]{1,5}$/.test(cleaned)) {
-    return 'us_stock';
-  }
-
-  return explicitMarket || 'other';
-}
 
 // ─── Generic Fallback Wrapper ───────────────────────────────────
 

@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { invoke } from '../hooks/useIpc';
 import { Button } from '../components/ui/Button';
+import { renderMarkdown } from '@shared/utils/markdown';
 import './AIAssistant.css';
 
 interface Message {
@@ -33,40 +34,6 @@ const QUICK_PROMPTS = [
 
 let msgCounter = 0;
 function nextId() { return `msg_${++msgCounter}_${Date.now()}`; }
-
-/** Simple markdown-to-HTML for AI responses (bold, italic, headings, lists, code, tables). */
-function renderMarkdown(text: string): string {
-  // code blocks first
-  let out = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  // inline code
-  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
-  // bold
-  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // italic
-  out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  // headings
-  out = out.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  out = out.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  out = out.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-  // tables — simple pipe table handling
-  out = out.replace(/\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)*)/g, (_, header, body) => {
-    const hCells = header.split('|').filter((c: string) => c.trim()).map((c: string) => `<th>${c.trim()}</th>`).join('');
-    const rows = body.trim().split('\n').map((row: string) => {
-      const cells = row.split('|').filter((c: string) => c.trim()).map((c: string) => `<td>${c.trim()}</td>`).join('');
-      return `<tr>${cells}</tr>`;
-    }).join('');
-    return `<table><thead><tr>${hCells}</tr></thead><tbody>${rows}</tbody></table>`;
-  });
-  // unordered lists
-  out = out.replace(/^- (.+)$/gm, '<li>$1</li>');
-  out = out.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-  // numbered lists
-  out = out.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  // line breaks
-  out = out.replace(/\n\n/g, '<br/><br/>');
-  out = out.replace(/\n/g, '<br/>');
-  return out;
-}
 
 export function AIAssistant() {
   const [config, setConfig] = useState<AiConfigPublic | null>(null);

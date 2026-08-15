@@ -412,7 +412,7 @@ export function Accounts() {
               </div>
               <div className="form-group">
                 <label className="form-label">卡号 *</label>
-                <input className="form-input" name="card_number" required placeholder="完整卡号" />
+                <input className="form-input" name="card_number" required placeholder="完整卡号（仅保存后 4 位）" />
               </div>
             </div>
             <div className="form-row">

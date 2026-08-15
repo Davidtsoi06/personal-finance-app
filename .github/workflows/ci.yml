@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # postinstall 会执行 @electron/rebuild 编译 better-sqlite3（windows-latest 自带 MSVC）
+      - run: npm ci
+
+      - name: 构建（vite + tsc）
+        run: npm run build
+
+      - name: 单元 + 集成测试（vitest）
+        run: npm test
+
+      # E2E（Playwright + Electron）在本地 Windows 环境运行：
+      #   npm run test:e2e

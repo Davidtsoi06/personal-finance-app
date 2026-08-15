@@ -2,6 +2,7 @@
  * Currency service — CRUD for currencies and exchange rates.
  */
 import { getDatabase } from '../index';
+import { roundMoney } from '../../../shared/utils/money';
 
 export interface CurrencyRow {
   id: number;
@@ -53,7 +54,7 @@ export function convertAmount(amount: number, from: string, to: string): number 
   const toCurrency = getCurrency(to);
   if (!fromCurrency || !toCurrency) return amount;
 
-  // Convert to base first, then to target
+  // Convert to base first, then to target（出口统一四舍五入到分）
   const baseAmount = amount * fromCurrency.rate_to_base;
-  return baseAmount / toCurrency.rate_to_base;
+  return roundMoney(baseAmount / toCurrency.rate_to_base);
 }

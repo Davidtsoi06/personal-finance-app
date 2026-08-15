@@ -30,6 +30,11 @@ interface AssetSummaryItem {
   market_value_cny: number;
   children: AssetSummaryItem[];
   is_investment: boolean;
+  /** 银行子项：定存合计；券商子项：现金余额（v1.5.6 概览重构） */
+  cash_balance?: number;
+  /** 银行子项：定存+理财数量；券商子项：持仓数 */
+  asset_count?: number;
+  total_profit_loss?: number;
 }
 
 interface AssetRow {
@@ -49,6 +54,9 @@ interface AssetRow {
   account_id: number | null;
   investment_account_id?: number | null;
   notes: string | null;
+  /** 定期存款虚拟行附带的字段（asset:listAll） */
+  account_name?: string;
+  maturity_date?: string;
 }
 
 const ASSET_ICONS: Record<string, string> = {
@@ -75,6 +83,10 @@ export function Dashboard() {
   const [nwHistory, setNwHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [drillCategory, setDrillCategory] = useState<AssetSummaryItem | null>(null);
+  const [expandedOverview, setExpandedOverview] = useState<number[]>([]);
+  const toggleExpand = (id: number) => {
+    setExpandedOverview((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
 
   // Asset query filters
   const [allAssets, setAllAssets] = useState<AssetRow[]>([]);
@@ -90,20 +102,24 @@ export function Dashboard() {
       const [summaryData, nwData, assetsData] = await Promise.all([
         invoke<AssetSummaryItem[]>('account:allAssetsSummary'),
         invoke<any[]>('netWorth:history', 30),
-        invoke<AssetRow[]>('asset:list').catch(() => []),
+        invoke<AssetRow[]>('asset:listAll').catch(() => []),
       ]);
       const now = new Date();
       const monthlySummary = await invoke<{ income: number; expense: number }>(
         'ledger:monthlySummary', now.getFullYear(), now.getMonth() + 1
       );
 
+      // 投资市值递归汇总：银行组已内嵌关联券商，需从银行总额中扣除内嵌投资部分，避免重复计算
+      const sumInvestments = (item: AssetSummaryItem): number =>
+        (item.is_investment ? item.market_value_cny || 0 : 0) +
+        (item.children || []).reduce((s, c) => s + sumInvestments(c), 0);
       let totalBank = 0;
       let totalInvestment = 0;
       for (const item of (summaryData || [])) {
         if (item.is_investment) {
           totalInvestment += item.market_value_cny || 0;
         } else {
-          totalBank += item.market_value_cny || 0;
+          totalBank += (item.market_value_cny || 0) - (item.children || []).reduce((s, c) => s + sumInvestments(c), 0);
         }
       }
 
@@ -327,32 +343,68 @@ export function Dashboard() {
         <Card title="💎 资产概览">
           {assetSummary.length > 0 ? (
             <div className="overview-stats">
-              {assetSummary.map(item => (
-                <div
-                  key={item.id}
-                  className="overview-item"
-                  style={{ cursor: (item.children?.length || 0) > 0 ? 'pointer' : 'default' }}
-                  onClick={() => {
-                    if ((item.children?.length || 0) > 0) setDrillCategory(item);
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span
-                      style={{
-                        display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%',
-                        background: CATEGORY_COLORS[item.asset_type] || '#909399',
+              {assetSummary.map(item => {
+                const expandable = (item.children?.length || 0) > 0;
+                const expanded = expandable && expandedOverview.includes(item.id);
+                return (
+                  <div key={item.id}>
+                    <div
+                      className="overview-item"
+                      style={{ cursor: expandable ? 'pointer' : 'default' }}
+                      onClick={() => {
+                        if (expandable) {
+                          setDrillCategory(item);
+                          toggleExpand(item.id);
+                        }
                       }}
-                    />
-                    <span className="overview-label">
-                      {ASSET_ICONS[item.asset_type] || ''} {item.name}
-                    </span>
-                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-                      {item.children?.length || 0} 个
-                    </span>
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          style={{
+                            display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%',
+                            background: CATEGORY_COLORS[item.asset_type] || '#909399',
+                          }}
+                        />
+                        <span className="overview-label">
+                          {ASSET_ICONS[item.asset_type] || ''} {item.name}
+                        </span>
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                          {expandable ? item.children.length + ' 个子项' : ''}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <NetAmount value={item.market_value_cny} currency="CNY" />
+                        {expandable && (
+                          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                            {expanded ? '▲' : '▼'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {expanded && (item.children || []).map(child => (
+                      <div key={child.id} className="overview-subitem">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: 'var(--font-size-sm)' }}>
+                            {child.is_investment ? '📈' : '💳'}
+                          </span>
+                          <span className="overview-label">
+                            {child.name}
+                            {child.broker ? '（' + child.broker + '）' : ''}
+                          </span>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <NetAmount value={child.market_value_cny} currency="CNY" />
+                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                            {child.is_investment
+                              ? '现金 ' + (child.cash_balance ?? 0).toLocaleString() + ' · ' + (child.asset_count ?? 0) + ' 只持仓'
+                              : '定存+理财 ' + (child.asset_count ?? 0) + ' 项'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <NetAmount value={item.market_value_cny} currency="CNY" />
-                </div>
-              ))}
+                );
+              })}
               <div className="overview-item overview-item--total">
                 <span className="overview-label">💎 总资产</span>
                 <NetAmount value={s?.netWorth || 0} currency="CNY" />

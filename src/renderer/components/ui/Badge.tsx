@@ -5,16 +5,17 @@
 
 interface BadgeProps {
   label: string;
-  color?: 'success' | 'danger' | 'info' | 'warning' | 'default';
+  color?: 'primary' | 'success' | 'danger' | 'info' | 'warning' | 'default';
   size?: 'sm' | 'md';
 }
 
 const COLOR_MAP: Record<string, { bg: string; text: string }> = {
-  success: { bg: '#F6FFED', text: 'var(--color-success)' },
-  danger: { bg: '#FFF2F0', text: 'var(--color-danger)' },
-  info: { bg: '#E6F7FF', text: 'var(--color-primary-500)' },
-  warning: { bg: '#FFFBE6', text: '#8C6D00' },
-  default: { bg: 'var(--color-bg-secondary)', text: 'var(--color-text-secondary)' },
+  primary: { bg: 'var(--color-primary-100)', text: 'var(--color-primary-700)' },
+  success: { bg: 'var(--color-success-bg)', text: 'var(--color-success)' },
+  danger: { bg: 'var(--color-danger-bg)', text: 'var(--color-danger)' },
+  info: { bg: 'var(--color-info-bg)', text: 'var(--color-primary-500)' },
+  warning: { bg: 'var(--color-warning-bg)', text: 'var(--color-warning-text)' },
+  default: { bg: 'var(--color-bg)', text: 'var(--color-text-secondary)' },
 };
 
 export function Badge({ label, color = 'default', size = 'sm' }: BadgeProps) {
