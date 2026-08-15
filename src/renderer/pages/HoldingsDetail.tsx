@@ -18,6 +18,7 @@ export function HoldingsDetail() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [accountName, setAccountName] = useState('');
+  const [cnyTotals, setCnyTotals] = useState<{ marketValueCny: number; profitLossCny: number }>({ marketValueCny: 0, profitLossCny: 0 });
   const [loading, setLoading] = useState(true);
   const [showTrade, setShowTrade] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -28,14 +29,21 @@ export function HoldingsDetail() {
 
   const load = useCallback(async () => {
     try {
-      const [acc, hList, tList] = await Promise.all([
+      const [acc, hList, tList, sum] = await Promise.all([
         invoke<any>('investmentAccount:get', accountId),
         invoke<Holding[]>('investmentAccount:holdings', accountId),
         invoke<TradeRecord[]>('transaction:listByAccount', accountId),
+        invoke<any>('investmentAccount:summary', accountId).catch(() => null),
       ]);
       setAccountName(acc?.name || '投资账户');
       setHoldings(hList || []);
       setTrades(tList || []);
+      if (sum) {
+        setCnyTotals({
+          marketValueCny: sum.totalMarketValueCny ?? sum.totalMarketValue ?? 0,
+          profitLossCny: sum.totalProfitLossCny ?? sum.totalProfitLoss ?? 0,
+        });
+      }
       // Keep open modals referencing fresh data after reload
       setSelectedHolding(prev => (prev ? (hList || []).find(h => h.id === prev.id) || null : null));
       setLoading(false);
@@ -44,8 +52,9 @@ export function HoldingsDetail() {
 
   useEffect(() => { load(); }, [load]);
 
-  const totalMV = holdings.reduce((s, h) => s + h.market_value, 0);
-  const totalPL = holdings.reduce((s, h) => s + h.profit_loss, 0);
+  // 跨币种总市值/总盈亏统一使用后端 CNY 口径（v1.5.6 修正混币汇总）
+  const totalMV = cnyTotals.marketValueCny;
+  const totalPL = cnyTotals.profitLossCny;
 
   if (loading) return <div className="page-loading">加载中...</div>;
 

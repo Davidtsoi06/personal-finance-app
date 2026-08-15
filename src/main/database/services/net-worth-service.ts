@@ -33,7 +33,8 @@ export function recordNetWorth(): NetWorthRow {
   `).get() as any;
 
   const investments = db.prepare(
-    'SELECT COALESCE(SUM(market_value), 0) as total FROM assets'
+    "SELECT COALESCE(SUM(a.market_value * COALESCE(c.rate_to_base, 1)), 0) as total" +
+    " FROM assets a LEFT JOIN currencies c ON a.currency = c.code"
   ).get() as any;
 
   const totalCash = (cashRow?.total_cny || 0) - (creditRow?.total_cny || 0);

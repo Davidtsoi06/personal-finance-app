@@ -2,7 +2,7 @@
 
 一款运行在 Windows 电脑上的**个人财产投资管理软件**，以投资管理为核心，统一管理现金、银行卡、股票、基金、黄金、加密货币等全部资产，提供深度财务洞察和智能记账。
 
-**最新版本：v1.5.6**（2026-08-15）
+**最新版本：v1.5.7**（2026-08-15）
 
 📥 下载：[GitHub Releases](https://github.com/Davidtsoi06/personal-finance-app/releases/latest)
 

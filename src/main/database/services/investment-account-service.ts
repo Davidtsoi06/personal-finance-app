@@ -115,16 +115,17 @@ export function getDailyTradeStats(): {
   ).get(today) as { count: number };
 
   const sells = db.prepare(`
-    SELECT t.*, a.cost_price
+    SELECT t.*, a.cost_price, COALESCE(c.rate_to_base, 1) as rate_to_cny
     FROM transactions t
     JOIN assets a ON t.asset_id = a.id
+    LEFT JOIN currencies c ON a.currency = c.code
     WHERE t.type = 'sell' AND t.date = ?
-  `).all(today) as (TransactionRow & { cost_price: number })[];
+  `).all(today) as (TransactionRow & { cost_price: number; rate_to_cny: number })[];
 
-  // Realized P&L: total_amount (sell value minus fee) - (cost_price × quantity)
+  // Realized P&L（CNY 口径）：(卖出净额 − 成本基数) × 持仓币种汇率
   let realizedPnl = 0;
   for (const s of sells) {
-    realizedPnl += s.total_amount - s.cost_price * s.quantity;
+    realizedPnl += (s.total_amount - s.cost_price * s.quantity) * s.rate_to_cny;
   }
 
   return {
@@ -138,15 +139,26 @@ export function getDailyTradeStats(): {
 /** Get summary stats for an investment account (holdings + cash). */
 export function getAccountSummary(id: number) {
   const db = getDatabase();
+  // 市值/盈亏按持仓币种换算 CNY（修正混币口径）；现金按账户币种换算
   const row = db.prepare(`
     SELECT
       COUNT(*) as asset_count,
-      COALESCE(SUM(market_value), 0) as total_market_value,
-      COALESCE(SUM(profit_loss), 0) as total_profit_loss,
-      (SELECT cash_balance FROM investment_accounts WHERE id = ?) as cash_balance
-    FROM assets WHERE investment_account_id = ?
-  `).get(id, id) as any;
+      COALESCE(SUM(a.market_value), 0) as total_market_value,
+      COALESCE(SUM(a.profit_loss), 0) as total_profit_loss,
+      COALESCE(SUM(a.market_value * COALESCE(c.rate_to_base, 1)), 0) as total_market_value_cny,
+      COALESCE(SUM(a.profit_loss * COALESCE(c.rate_to_base, 1)), 0) as total_profit_loss_cny,
+      (SELECT cash_balance FROM investment_accounts WHERE id = ?) as cash_balance,
+      (SELECT COALESCE(c2.rate_to_base, 1) FROM investment_accounts ia
+         LEFT JOIN currencies c2 ON ia.currency = c2.code WHERE ia.id = ?) as account_rate
+    FROM assets a
+    LEFT JOIN currencies c ON a.currency = c.code
+    WHERE a.investment_account_id = ?
+  `).get(id, id, id) as any;
   const cashBalance = row?.cash_balance || 0;
+  const accountRate = row?.account_rate || 1;
+  const marketValueCny = row?.total_market_value_cny || 0;
+  const profitLossCny = row?.total_profit_loss_cny || 0;
+  const cashBalanceCny = cashBalance * accountRate;
   return {
     assetCount: row?.asset_count || 0,
     totalMarketValue: row?.total_market_value || 0,
@@ -154,6 +166,11 @@ export function getAccountSummary(id: number) {
     cashBalance,
     /** Holdings market value + cash balance — the real total. */
     totalValue: (row?.total_market_value || 0) + cashBalance,
+    /** CNY 口径（v1.5.6，跨币种汇总统一用这组字段） */
+    totalMarketValueCny: marketValueCny,
+    totalProfitLossCny: profitLossCny,
+    cashBalanceCny,
+    totalValueCny: marketValueCny + cashBalanceCny,
   };
 }
 

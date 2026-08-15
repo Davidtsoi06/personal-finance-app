@@ -323,6 +323,12 @@
 
 ---
 
+## 第 25 阶段：v1.5.7 账户删除恢复 + 跨币种金额统一 ✅
+
+- [x] **账户删除入口恢复**：AccountEditModal（编辑 + 安全删除提示 + 强制删除二级确认）；forceDeleteAccount 级联补全 + account:deleteImpact 影响查询
+- [x] **跨币种金额统一**：asset-cny-core 按持仓币种换算 CNY，修正 7 处汇总口径 + 2 个混币集成测试（59/59 通过）
+- [x] 打包发布 v1.5.7
+
 ## 第 24 阶段：v1.5.6 现金流水与资产概览 ✅
 
 - [x] **资产查询纳入定期存款**：新增 `asset:listAll`（assets + fixed_deposits 虚拟行），Dashboard 查询面板覆盖定存搜索/筛选/排序

@@ -187,6 +187,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'account:update': z.tuple([id, accountData.partial()]),
   'account:delete': z.tuple([id]),
   'account:forceDelete': z.tuple([id]),
+  'account:deleteImpact': z.tuple([id]),
   'account:createWithChildren': z.tuple([accountData]),
   'accountTransaction:create': z.tuple([accountTxData]),
   'accountTransaction:update': z.tuple([id, accountTxData.partial()]),

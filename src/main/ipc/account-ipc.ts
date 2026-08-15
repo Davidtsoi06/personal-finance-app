@@ -17,6 +17,7 @@ export function registerAccountIpcHandlers(): void {
   handleValidated('account:update', (id: number, data: any) => accountService.updateAccount(id, data));
   handleValidated('account:delete', (id: number) => accountService.deleteAccount(id));
   handleValidated('account:forceDelete', (id: number) => accountService.forceDeleteAccount(id));
+  handleValidated('account:deleteImpact', (id: number) => accountService.getForceDeleteImpact(id));
   ipcMain.handle('account:totalBalance', (_e, currency?: string) => accountService.getTotalBalance(currency));
   ipcMain.handle('account:balances', (_e, accountId: number) => accountService.getAccountBalances(accountId));
   handleValidated('account:createWithChildren', (data: any) => accountService.createAccountWithChildren(data));

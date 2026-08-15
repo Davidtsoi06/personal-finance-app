@@ -12,6 +12,8 @@ interface InvAccount {
   account_number: string | null; funding_account_id?: number | null; notes: string | null;
   assetCount?: number; totalMarketValue?: number; totalProfitLoss?: number; cashBalance?: number;
   totalValue?: number;
+  /** CNY 口径（v1.5.6 跨币种汇总） */
+  totalMarketValueCny?: number; totalProfitLossCny?: number; cashBalanceCny?: number; totalValueCny?: number;
 }
 
 interface DailyStats {
@@ -183,7 +185,7 @@ export function Investments() {
         <div className="stat-card">
           <div className="stat-card-label">总市值</div>
           <div className="stat-card-value number">
-            <Amount value={accounts.reduce((s, a) => s + (a.totalMarketValue || 0), 0)} currency="CNY" showSign={false} />
+            <Amount value={accounts.reduce((s, a) => s + (a.totalMarketValueCny || 0), 0)} currency="CNY" showSign={false} />
           </div>
         </div>
         <div className="stat-card">
@@ -254,7 +256,7 @@ export function Investments() {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ marginBottom: '4px' }}>
-                    <Amount value={acc.totalValue || acc.totalMarketValue || 0} currency={acc.currency} showSign={false} size="lg" />
+                    <Amount value={acc.totalValueCny ?? acc.totalValue ?? acc.totalMarketValue ?? 0} currency="CNY" showSign={false} size="lg" />
                   </div>
                   <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
                     {acc.assetCount || 0} 个持仓

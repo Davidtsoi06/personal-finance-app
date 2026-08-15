@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Amount } from '../components/ui/Amount';
 import { invoke } from '../hooks/useIpc';
+import { AccountEditModal, EditableAccount } from '../components/account/AccountEditModal';
 import './Accounts.css';
 
 interface Account {
@@ -43,6 +44,9 @@ export function Accounts() {
   const [showAdd, setShowAdd] = useState(false);
   const [addAssetType, setAddAssetType] = useState('');
   const [bankAccounts, setBankAccounts] = useState<Account[]>([]);
+
+  // Edit / delete modal state
+  const [editingAccount, setEditingAccount] = useState<EditableAccount | null>(null);
 
   const navigate = useNavigate();
 
@@ -188,6 +192,7 @@ export function Accounts() {
                   </div>
                   <div className="layer2-card-actions">
                     <span className="layer2-card-link">查看流水 →</span>
+                    <Button variant="secondary" size="sm" onClick={(e) => { e?.stopPropagation(); setEditingAccount(item as EditableAccount); }}>✏️</Button>
                   </div>
                 </div>
               );
@@ -213,6 +218,7 @@ export function Accounts() {
                   </div>
                   <div className="layer2-card-actions">
                     <span className="layer2-card-link">查看流水 →</span>
+                    <Button variant="secondary" size="sm" onClick={(e) => { e?.stopPropagation(); setEditingAccount(item as EditableAccount); }}>✏️</Button>
                   </div>
                 </div>
               );
@@ -292,6 +298,16 @@ export function Accounts() {
                           <div className="bank-card-row-value">
                             <Amount value={child.market_value_cny} currency="CNY" colored />
                           </div>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={(e) => {
+                              e?.stopPropagation();
+                              setEditingAccount(child as EditableAccount);
+                            }}
+                          >
+                            ✏️
+                          </Button>
                         </div>
                       ))}
                       <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)' }} onClick={(e) => e.stopPropagation()}>
@@ -477,6 +493,13 @@ export function Accounts() {
           </form>
         )}
       </Modal>
+
+      {/* ── Edit / Delete Account Modal ── */}
+      <AccountEditModal
+        account={editingAccount}
+        onClose={() => setEditingAccount(null)}
+        onChanged={load}
+      />
     </div>
   );
 }

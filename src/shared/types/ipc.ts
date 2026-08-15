@@ -9,6 +9,7 @@ export type IpcChannel =
   | 'account:create'
   | 'account:createWithChildren'
   | 'account:delete'
+  | 'account:deleteImpact'
   | 'account:forceDelete'
   | 'account:get'
   | 'account:list'

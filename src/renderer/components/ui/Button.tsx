@@ -4,7 +4,7 @@ interface ButtonProps {
   children: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'danger';
   size?: 'sm' | 'md';
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   className?: string;
   type?: 'button' | 'submit';

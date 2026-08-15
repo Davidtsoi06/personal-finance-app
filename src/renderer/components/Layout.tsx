@@ -50,7 +50,7 @@ function Layout({ children }: LayoutProps) {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <span className="version-text">v1.5.6</span>
+          <span className="version-text">v1.5.7</span>
         </div>
       </aside>
 

@@ -3,6 +3,7 @@
  */
 import { getDatabase } from '../index';
 import { computeAssetValuation } from '../../../shared/utils/investment';
+import { getAssetCnyTotalsInDb } from './asset-cny-core';
 
 export interface AssetRow {
   id: number;
@@ -185,18 +186,17 @@ export function deleteAsset(id: number): boolean {
   return result.changes > 0;
 }
 
+/** 全部持仓市值（按持仓币种换算 CNY 后聚合，v1.5.6 修正混币口径） */
 export function getTotalMarketValue(currency?: string): number {
   const db = getDatabase();
-  if (currency) {
-    const row = db.prepare(
-      'SELECT COALESCE(SUM(market_value), 0) as total FROM assets WHERE currency = ?'
-    ).get(currency) as any;
-    return row.total;
-  }
-  const row = db.prepare(
-    'SELECT COALESCE(SUM(market_value), 0) as total FROM assets'
-  ).get() as any;
-  return row.total;
+  const where = currency ? 'WHERE a.currency = ?' : '';
+  const args = currency ? [currency] : [];
+  return getAssetCnyTotalsInDb(db, where, args).marketValueCny;
+}
+
+/** 按持仓币种换算 CNY 的市值/盈亏聚合（供净资产/报表等复用） */
+export function getAssetCnyTotals(whereClause = '', args: any[] = []) {
+  return getAssetCnyTotalsInDb(getDatabase(), whereClause, args);
 }
 
 export function updateCurrentPrice(id: number, price: number): void {

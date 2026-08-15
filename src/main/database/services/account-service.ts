@@ -216,6 +216,22 @@ export function deleteAccount(id: number): DeleteResult {
   return { success: true };
 }
 
+/** 强制删除前的影响范围统计（供确认弹窗展示） */
+export function getForceDeleteImpact(id: number) {
+  const db = getDatabase();
+  const count = (sql: string) => (db.prepare(sql).get(id) as { c: number }).c;
+  return {
+    childCount: count('SELECT COUNT(*) as c FROM accounts WHERE parent_account_id = ? AND is_active = 1'),
+    transactionCount: count('SELECT COUNT(*) as c FROM account_transactions WHERE account_id = ?'),
+    ledgerCount: count('SELECT COUNT(*) as c FROM ledgers WHERE account_id = ?'),
+    fixedDepositCount: count('SELECT COUNT(*) as c FROM fixed_deposits WHERE account_id = ?'),
+    bankAssetCount: count('SELECT COUNT(*) as c FROM assets WHERE account_id = ?'),
+    insuranceCount: count('SELECT COUNT(*) as c FROM insurance_policies WHERE account_id = ?'),
+    premiumCount: count('SELECT COUNT(*) as c FROM premium_payments WHERE account_id = ?'),
+    linkedBrokerCount: count('SELECT COUNT(*) as c FROM investment_accounts WHERE funding_account_id = ?'),
+  };
+}
+
 /** Force-delete account and all related records (cascade). */
 export function forceDeleteAccount(id: number): DeleteResult {
   const db = getDatabase();
@@ -240,8 +256,18 @@ export function forceDeleteAccount(id: number): DeleteResult {
     // Delete ledgers
     db.prepare('DELETE FROM ledgers WHERE account_id = ?').run(id);
 
+    // Delete fixed deposits（定期存款属于账户数据，强制删除时一并清理）
+    db.prepare('DELETE FROM fixed_deposits WHERE account_id = ?').run(id);
+
     // Nullify asset links (keep the assets, just remove account linkage)
     db.prepare('UPDATE assets SET account_id = NULL WHERE account_id = ?').run(id);
+
+    // 解除保单与保费的扣款账户关联（保单数据保留）
+    db.prepare('UPDATE insurance_policies SET account_id = NULL WHERE account_id = ?').run(id);
+    db.prepare('UPDATE premium_payments SET account_id = NULL WHERE account_id = ?').run(id);
+
+    // 解除券商与本账户的资金关联（券商数据保留）
+    db.prepare('UPDATE investment_accounts SET funding_account_id = NULL WHERE funding_account_id = ?').run(id);
 
     // Soft-delete the account itself
     db.prepare('UPDATE accounts SET is_active = 0 WHERE id = ?').run(id);
@@ -503,15 +529,16 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     fdsByAccount.set(fd.account_id, list);
   }
 
-  // Fetch investment accounts with market values
+  // Fetch investment accounts with market values（按持仓币种换算 CNY，修正混币口径）
   const invAccounts = db.prepare(`
     SELECT ia.*, COALESCE(c.rate_to_base, 1) as rate_to_cny,
-      COALESCE(SUM(a.market_value), 0) as total_market_value,
+      COALESCE(SUM(a.market_value * COALESCE(ac.rate_to_base, 1)), 0) as total_market_value_cny,
       COUNT(a.id) as asset_count,
-      COALESCE(SUM(a.profit_loss), 0) as total_profit_loss
+      COALESCE(SUM(a.profit_loss * COALESCE(ac.rate_to_base, 1)), 0) as total_profit_loss_cny
     FROM investment_accounts ia
     LEFT JOIN currencies c ON ia.currency = c.code
     LEFT JOIN assets a ON a.investment_account_id = ia.id
+    LEFT JOIN currencies ac ON a.currency = ac.code
     GROUP BY ia.id
     ORDER BY ia.name
   `).all() as any[];
@@ -624,17 +651,17 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
       for (const ia of invAccounts) {
         if ((ia as any)._consumed || ia.funding_account_id !== acc.id) continue;
         (ia as any)._consumed = true;
-        const mktCny = (ia.total_market_value || 0) * (ia.rate_to_cny || 1);
+        const mktCny = ia.total_market_value_cny || 0;
         const cashCny = (ia.cash_balance || 0) * (ia.rate_to_cny || 1);
         children.push({
           id: ia.id, name: ia.name, asset_type: 'investment', type: 'investment_account',
-          currency: ia.currency, balance: (ia.total_market_value || 0) + (ia.cash_balance || 0),
+          currency: ia.currency, balance: mktCny + cashCny,
           bank_name: null, broker: ia.broker,
           card_number: null, display_alias: null,
           market_value_cny: mktCny + cashCny,
           cash_balance: ia.cash_balance,
           asset_count: ia.asset_count,
-          total_profit_loss: ia.total_profit_loss,
+          total_profit_loss: ia.total_profit_loss_cny,
           children: [], is_investment: true,
         });
         groupTotal += mktCny + cashCny;
@@ -656,17 +683,17 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
   // 5. Investment accounts (brokers) — 仅未关联银行的券商保留为独立顶级项
   for (const ia of invAccounts) {
     if ((ia as any)._consumed) continue;
-    const mktCny = (ia.total_market_value || 0) * (ia.rate_to_cny || 1);
+    const mktCny = ia.total_market_value_cny || 0;
     const cashCny = (ia.cash_balance || 0) * (ia.rate_to_cny || 1);
     result.push({
       id: ia.id, name: ia.name, asset_type: 'investment', type: 'investment_account',
-      currency: ia.currency, balance: (ia.total_market_value || 0) + (ia.cash_balance || 0),
+      currency: ia.currency, balance: mktCny + cashCny,
       bank_name: null, broker: ia.broker,
       card_number: null, display_alias: null,
       market_value_cny: mktCny + cashCny,
       cash_balance: ia.cash_balance,
       asset_count: ia.asset_count,
-      total_profit_loss: ia.total_profit_loss,
+      total_profit_loss: ia.total_profit_loss_cny,
       children: [], is_investment: true,
     });
   }
