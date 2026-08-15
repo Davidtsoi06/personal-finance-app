@@ -119,6 +119,9 @@ export function Accounts() {
   const walletTotal = assetSummary
     .filter(item => item.asset_type === 'e_wallet')
     .reduce((s, item) => s + (item.market_value_cny || 0), 0);
+  const brokerCashTotal = assetSummary
+    .filter(item => item.asset_type === 'broker_cash')
+    .reduce((s, item) => s + (item.market_value_cny || 0), 0);
 
   if (loading) return <div className="page-loading">加载中...</div>;
 
@@ -144,7 +147,9 @@ export function Accounts() {
         </div>
         <div className="stat-card">
           <div className="stat-card-label">券商</div>
-          <div className="stat-card-value number">{brokerCount} 家</div>
+          <div className="stat-card-value" style={{ fontSize: 'var(--font-size-md)' }}>
+            {brokerCount} 家 · 流动金 ¥{brokerCashTotal.toLocaleString()}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-card-label">电子钱包</div>
@@ -363,6 +368,51 @@ export function Accounts() {
                   <div className="layer2-card-actions">
                     <span className="layer2-card-link">进入投资管理 →</span>
                   </div>
+                </div>
+              );
+            }
+
+            // ── Broker cash (券商流动金) card (expandable, v1.5.8) ──
+            if (assetType === 'broker_cash') {
+              const isExpanded = expandedBanks.has(item.name);
+              return (
+                <div key="broker-cash" className="layer2-card">
+                  <div
+                    className="layer2-card-main layer2-card--clickable"
+                    onClick={() => toggleBank(item.name)}
+                  >
+                    <div className="layer2-card-icon">💸</div>
+                    <div className="layer2-card-info">
+                      <div className="layer2-card-name">{item.name}</div>
+                      <div className="layer2-card-meta">
+                        {item.children?.length || 0} 个券商账户的闲置现金
+                      </div>
+                    </div>
+                    <div className="layer2-card-value">
+                      <Amount value={item.market_value_cny} currency="CNY" colored={false} />
+                      <span style={{ marginLeft: 8, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                        {isExpanded ? '▼' : '▶'}
+                      </span>
+                    </div>
+                  </div>
+                  {isExpanded && item.children && item.children.length > 0 && (
+                    <div className="layer2-card-children">
+                      {item.children.map((child) => (
+                        <div key={'bc-' + child.id} className="bank-card-row">
+                          <div className="bank-card-row-icon">📈</div>
+                          <div className="bank-card-row-info">
+                            <div className="bank-card-row-name">{child.name}</div>
+                            <div className="bank-card-row-meta">
+                              {child.broker ? child.broker + ' · ' : ''}现金 {child.currency} {(child.balance ?? 0).toLocaleString()}
+                            </div>
+                          </div>
+                          <div className="bank-card-row-value">
+                            <Amount value={child.market_value_cny} currency="CNY" showSign={false} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             }

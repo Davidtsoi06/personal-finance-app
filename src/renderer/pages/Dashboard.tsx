@@ -12,6 +12,8 @@ import './Dashboard.css';
 interface Summary {
   totalCash: number;
   totalInvestments: number;
+  /** 券商流动金（v1.5.8 独立类别） */
+  brokerCash: number;
   totalAssets: number;
   monthlyIncome: number;
   monthlyExpense: number;
@@ -65,6 +67,7 @@ const ASSET_ICONS: Record<string, string> = {
   e_wallet: '💬',
   insurance: '🛡️',
   investment: '📈',
+  broker_cash: '💸',
   custom: '✏️',
 };
 
@@ -74,6 +77,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   e_wallet: '#409EFF',
   insurance: '#E6A23C',
   investment: '#F56C6C',
+  broker_cash: '#13C2C2',
   custom: '#909399',
 };
 
@@ -115,7 +119,13 @@ export function Dashboard() {
         (item.children || []).reduce((s, c) => s + sumInvestments(c), 0);
       let totalBank = 0;
       let totalInvestment = 0;
+      let totalBrokerCash = 0;
       for (const item of (summaryData || [])) {
+        // 券商流动金为独立类别（v1.5.8），不并入现金及存款
+        if (item.asset_type === 'broker_cash') {
+          totalBrokerCash += item.market_value_cny || 0;
+          continue;
+        }
         if (item.is_investment) {
           totalInvestment += item.market_value_cny || 0;
         } else {
@@ -126,7 +136,8 @@ export function Dashboard() {
       setSummary({
         totalCash: totalBank,
         totalInvestments: totalInvestment,
-        totalAssets: totalBank + totalInvestment,
+        brokerCash: totalBrokerCash,
+        totalAssets: totalBank + totalBrokerCash + totalInvestment,
         monthlyIncome: monthlySummary?.income || 0,
         monthlyExpense: monthlySummary?.expense || 0,
         netWorth: totalBank + totalInvestment,
@@ -300,6 +311,10 @@ export function Dashboard() {
           <div className="stat-card-value number">{s && <NetAmount value={s.totalCash} currency="CNY" />}</div>
         </div>
         <div className="stat-card">
+          <div className="stat-card-label">券商流动金</div>
+          <div className="stat-card-value number">{s && <NetAmount value={s.brokerCash} currency="CNY" />}</div>
+        </div>
+        <div className="stat-card">
           <div className="stat-card-label">投资市值</div>
           <div className="stat-card-value number">{s && <NetAmount value={s.totalInvestments} currency="CNY" />}</div>
         </div>
@@ -395,9 +410,11 @@ export function Dashboard() {
                         <div style={{ textAlign: 'right' }}>
                           <NetAmount value={child.market_value_cny} currency="CNY" />
                           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-                            {child.is_investment
-                              ? '现金 ' + (child.cash_balance ?? 0).toLocaleString() + ' · ' + (child.asset_count ?? 0) + ' 只持仓'
-                              : '定存+理财 ' + (child.asset_count ?? 0) + ' 项'}
+                            {child.asset_type === 'broker_cash'
+                              ? '流动金 ' + (child.balance ?? 0).toLocaleString() + ' ' + child.currency
+                              : child.is_investment
+                                ? '现金 ' + (child.cash_balance ?? 0).toLocaleString() + ' · ' + (child.asset_count ?? 0) + ' 只持仓'
+                                : '定存+理财 ' + (child.asset_count ?? 0) + ' 项'}
                           </div>
                         </div>
                       </div>

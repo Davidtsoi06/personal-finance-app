@@ -189,9 +189,15 @@ export function Investments() {
           </div>
         </div>
         <div className="stat-card">
+          <div className="stat-card-label">券商流动金</div>
+          <div className="stat-card-value number">
+            <Amount value={accounts.reduce((s, a) => s + (a.cashBalanceCny || 0), 0)} currency="CNY" showSign={false} />
+          </div>
+        </div>
+        <div className="stat-card">
           <div className="stat-card-label">总盈亏</div>
           <div className="stat-card-value number">
-            <Amount value={accounts.reduce((s, a) => s + (a.totalProfitLoss || 0), 0)} currency="CNY" colored />
+            <Amount value={accounts.reduce((s, a) => s + (a.totalProfitLossCny || 0), 0)} currency="CNY" colored />
           </div>
         </div>
       </div>

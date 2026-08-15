@@ -652,19 +652,18 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
         if ((ia as any)._consumed || ia.funding_account_id !== acc.id) continue;
         (ia as any)._consumed = true;
         const mktCny = ia.total_market_value_cny || 0;
-        const cashCny = (ia.cash_balance || 0) * (ia.rate_to_cny || 1);
         children.push({
           id: ia.id, name: ia.name, asset_type: 'investment', type: 'investment_account',
-          currency: ia.currency, balance: mktCny + cashCny,
+          currency: ia.currency, balance: mktCny,
           bank_name: null, broker: ia.broker,
           card_number: null, display_alias: null,
-          market_value_cny: mktCny + cashCny,
+          market_value_cny: mktCny, // 仅持仓市值；现金归入「券商流动金」独立类别
           cash_balance: ia.cash_balance,
           asset_count: ia.asset_count,
           total_profit_loss: ia.total_profit_loss_cny,
           children: [], is_investment: true,
         });
-        groupTotal += mktCny + cashCny;
+        groupTotal += mktCny;
       }
     }
 
@@ -680,22 +679,55 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     });
   }
 
-  // 5. Investment accounts (brokers) — 仅未关联银行的券商保留为独立顶级项
+  // 5. Investment accounts (brokers) — 仅未关联银行的券商保留为独立顶级项（仅持仓市值）
   for (const ia of invAccounts) {
     if ((ia as any)._consumed) continue;
     const mktCny = ia.total_market_value_cny || 0;
-    const cashCny = (ia.cash_balance || 0) * (ia.rate_to_cny || 1);
     result.push({
       id: ia.id, name: ia.name, asset_type: 'investment', type: 'investment_account',
-      currency: ia.currency, balance: mktCny + cashCny,
+      currency: ia.currency, balance: mktCny,
       bank_name: null, broker: ia.broker,
       card_number: null, display_alias: null,
-      market_value_cny: mktCny + cashCny,
+      market_value_cny: mktCny, // 仅持仓市值；现金归入「券商流动金」
       cash_balance: ia.cash_balance,
       asset_count: ia.asset_count,
       total_profit_loss: ia.total_profit_loss_cny,
       children: [], is_investment: true,
     });
+  }
+
+  // 5.5 券商流动金（v1.5.8 独立类别：全部券商现金 CNY 合计，含关联银行的券商）
+  {
+    const brokerCashChildren: AssetSummaryItem[] = [];
+    let brokerCashTotal = 0;
+    for (const ia of invAccounts) {
+      const cashCny = (ia.cash_balance || 0) * (ia.rate_to_cny || 1);
+      if (cashCny === 0) continue;
+      brokerCashTotal += cashCny;
+      brokerCashChildren.push({
+        id: ia.id, name: ia.name, asset_type: 'broker_cash', type: 'investment_account',
+        currency: ia.currency, balance: ia.cash_balance || 0,
+        bank_name: null, broker: ia.broker,
+        card_number: null, display_alias: null,
+        market_value_cny: cashCny,
+        cash_balance: ia.cash_balance,
+        asset_count: 0, total_profit_loss: 0,
+        children: [], is_investment: false,
+      });
+    }
+    if (brokerCashTotal > 0) {
+      result.push({
+        id: -3000, name: '券商流动金', asset_type: 'broker_cash', type: 'broker_cash',
+        currency: 'CNY', balance: brokerCashTotal,
+        bank_name: null, broker: null,
+        card_number: null, display_alias: null,
+        market_value_cny: brokerCashTotal,
+        cash_balance: brokerCashTotal,
+        asset_count: brokerCashChildren.length,
+        total_profit_loss: 0,
+        children: brokerCashChildren, is_investment: false,
+      });
+    }
   }
 
   // 6. Custom assets
