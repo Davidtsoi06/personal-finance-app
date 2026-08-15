@@ -24,12 +24,30 @@ export interface AssetRow {
   updated_at: string;
 }
 
+/**
+ * Shared asset sort order used across all list/report/export queries:
+ * 港股股票 → A股股票 → 美股股票 → 其他股票 → ETF → 基金 → 黄金 → 加密货币 → 定期存款, each group by code ASC.
+ * Note: market (hk_stock/a_stock/us_stock) lives on the `market` column; `type` is stock/fund/etf/...
+ */
+export const ASSET_SORT_SQL = `CASE
+  WHEN type = 'stock' AND market = 'hk_stock' THEN 1
+  WHEN type = 'stock' AND market = 'a_stock' THEN 2
+  WHEN type = 'stock' AND market = 'us_stock' THEN 3
+  WHEN type = 'stock' THEN 4
+  WHEN type = 'etf' THEN 5
+  WHEN type = 'fund' THEN 6
+  WHEN type = 'gold' THEN 7
+  WHEN type = 'crypto' THEN 8
+  WHEN type = 'fixed_deposit' THEN 9
+  ELSE 10
+END, code ASC`;
+
 export function listAssets(type?: string): AssetRow[] {
   const db = getDatabase();
   if (type) {
-    return db.prepare('SELECT * FROM assets WHERE type = ? ORDER BY market_value DESC').all(type) as AssetRow[];
+    return db.prepare(`SELECT * FROM assets WHERE type = ? ORDER BY ${ASSET_SORT_SQL}`).all(type) as AssetRow[];
   }
-  return db.prepare('SELECT * FROM assets ORDER BY market_value DESC').all() as AssetRow[];
+  return db.prepare(`SELECT * FROM assets ORDER BY ${ASSET_SORT_SQL}`).all() as AssetRow[];
 }
 
 export function getAsset(id: number): AssetRow | undefined {

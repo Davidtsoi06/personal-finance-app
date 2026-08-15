@@ -8,6 +8,7 @@ import { getDatabase } from '../database';
 let intervals: ReturnType<typeof setInterval>[] = [];
 let dailySummaryTimeout: ReturnType<typeof setTimeout> | null = null;
 let premiumCheckTimeout: ReturnType<typeof setTimeout> | null = null;
+let tradeReportTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /** Check for insurance premiums due today or within 7 days, send notifications. */
 function schedulePremiumDueCheck(): void {
@@ -106,6 +107,46 @@ function scheduleDailyAISummary(): void {
   }, delayMs);
 }
 
+/** Schedule the daily trade report check at 16:35 (after HK market 16:00 close). */
+function scheduleDailyTradeReportCheck(): void {
+  if (tradeReportTimeout) clearTimeout(tradeReportTimeout);
+
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(16, 35, 0, 0); // 16:35 to spread load off the :30 mark
+
+  if (now >= target) {
+    target.setDate(target.getDate() + 1);
+  }
+
+  const delayMs = target.getTime() - now.getTime();
+
+  tradeReportTimeout = setTimeout(async () => {
+    try {
+      const { getDailyTrades } = require('./report-export-service');
+      const date = new Date().toISOString().slice(0, 10);
+      const { rows, summary } = getDailyTrades(date);
+
+      if (rows.length > 0) {
+        const pnlText = summary.realizedPnl >= 0 ? '+' : '';
+        try {
+          const { Notification } = require('electron');
+          const n = new Notification({
+            title: `📊 今日交易报表已生成（${date}）`,
+            body: `${summary.totalCount} 笔交易 · 买入 ¥${summary.buyAmount.toLocaleString()} / 卖出 ¥${summary.sellAmount.toLocaleString()} · 已实现盈亏 ${pnlText}¥${summary.realizedPnl.toLocaleString()}`,
+          });
+          n.show();
+        } catch { /* notification may fail */ }
+      }
+    } catch (err: any) {
+      console.error(`[Scheduler] 交易报表检查失败: ${err.message}`);
+    }
+    scheduleDailyTradeReportCheck();
+  }, delayMs);
+
+  console.log(`[Scheduler] Daily trade report check scheduled in ${Math.round(delayMs / 60000)} minutes`);
+}
+
 /** Start periodic data updates */
 export function startScheduler(): void {
   console.log('Starting data update scheduler...');
@@ -137,6 +178,9 @@ export function startScheduler(): void {
 
   // Schedule daily premium due check at 8:57 AM
   schedulePremiumDueCheck();
+
+  // Schedule daily trade report check at 16:35 (after HK market close)
+  scheduleDailyTradeReportCheck();
 }
 
 /** Stop all scheduled updates */
@@ -150,6 +194,10 @@ export function stopScheduler(): void {
   if (premiumCheckTimeout) {
     clearTimeout(premiumCheckTimeout);
     premiumCheckTimeout = null;
+  }
+  if (tradeReportTimeout) {
+    clearTimeout(tradeReportTimeout);
+    tradeReportTimeout = null;
   }
 }
 

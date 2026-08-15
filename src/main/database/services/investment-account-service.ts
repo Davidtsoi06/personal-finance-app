@@ -3,6 +3,7 @@
  */
 import { getDatabase } from '../index';
 import type { TransactionRow } from './transaction-service';
+import { ASSET_SORT_SQL } from './asset-service';
 
 export interface InvestmentAccountRow {
   id: number;
@@ -89,12 +90,13 @@ export function deleteInvestmentAccount(id: number): DeleteResult {
   };
 }
 
-/** Get assets belonging to an investment account */
+/** Get assets belonging to an investment account (sorted: 港股→A股→…, code ASC). */
 export function getAccountHoldings(investmentAccountId: number) {
   const db = getDatabase();
-  return db.prepare(
-    'SELECT * FROM assets WHERE investment_account_id = ? ORDER BY market_value DESC'
-  ).all(investmentAccountId);
+  return db.prepare(`
+    SELECT * FROM assets WHERE investment_account_id = ?
+    ORDER BY ${ASSET_SORT_SQL}
+  `).all(investmentAccountId);
 }
 
 /** Daily trade stats — buy/sell counts and realized P&L for today. */

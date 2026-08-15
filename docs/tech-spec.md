@@ -67,7 +67,7 @@ Electron App
 │   │       ├── social-obligation-service.ts  # 人情债 CRUD
 │   │       └── transaction-service.ts       # 交易记录 CRUD + 当日查询
 │   │
-│   └── services/                  # 后台服务层（9 个）
+│   └── services/                  # 后台服务层（10 个）
 │       ├── ai-service.ts          # AI 对话（构建 prompt + 调用 API + 流式 SSE）
 │       ├── archive-service.ts     # 数据归档（生成月度 Excel + 清理旧数据）
 │       ├── bank-statement-parser.ts  # 银行日结单解析（CSV/Excel + 智能格式匹配）
@@ -75,6 +75,7 @@ Electron App
 │       ├── exchange-rate-fetcher.ts  # 汇率数据抓取
 │       ├── portfolio-context.ts   # 组合上下文收集（格式化为 Markdown）
 │       ├── price-fetcher.ts       # 价格抓取（主/备双源 + 智能市场检测）
+│       ├── report-export-service.ts  # 报表数据构建（每日交易 + 资产快照 sheet + 导出转换，v1.5.2 新增）
 │       ├── scheduler.ts           # 定时任务调度 + 价格提醒检查
 │       └── statement-parser.ts    # 券商日结单解析（CSV/Excel + 智能格式匹配）
 │
@@ -100,6 +101,7 @@ Electron App
 │   └── components/
 │       ├── Layout.tsx             # 侧边栏 + 内容区布局（动态应用名称）
 │       ├── ErrorBoundary.tsx      # 错误边界
+│       ├── DailyTradesReport.tsx  # 每日交易报表卡片（v1.5.2 新增）
 │       ├── ui/                    # 通用 UI 组件（8 个）
 │       │   ├── Amount.tsx         # 金额显示（含 NetAmount 变体）
 │       │   ├── Badge.tsx          # 标签徽章
@@ -167,8 +169,8 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 | `investmentAccount` | `investmentAccount:list`, `investmentAccount:summary`, `investmentAccount:dailyStats`, `investmentAccount:addCash`, `investmentAccount:withdrawCash` | 投资账户 + 现金余额管理（v1.4.3） |
 | `fixedDeposit` | `fixedDeposit:listByAccount`, `fixedDeposit:create`, `fixedDeposit:update`, `fixedDeposit:delete` | 定期存款 CRUD（v1.4.3 新增） |
 | `netWorth` | `netWorth:history`, `netWorth:record` | 净值历史 |
-| `report` | `report:monthlyTrend`, `report:categoryBreakdown`, `report:assetPerformance` | 报表数据 |
-| `export` | `export:toExcel` | 单表导出 |
+| `report` | `report:monthlyTrend`, `report:categoryBreakdown`, `report:assetPerformance`, `report:dailyTrades`（v1.5.2） | 报表数据 |
+| `export` | `export:toExcel`, `export:dailyTrades`（v1.5.2） | Excel 导出 |
 | `data` | `data:exportAll`, `data:importAll`, `data:refreshPrices` | 数据备份/刷新 |
 | `budget` | `budget:list`, `budget:status` | 预算管理 |
 | `alert` | `alert:listConfig`, `alert:updateConfig` | 提醒配置 |

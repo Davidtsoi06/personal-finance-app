@@ -1,12 +1,15 @@
 /**
  * IPC handlers for reports, analytics, and Excel export.
+ * Data building lives in report-export-service.ts; this file handles
+ * Electron dialogs and xlsx writing.
  */
 import { ipcMain } from 'electron';
 import { getDatabase } from '../database';
-import { ASSET_TYPE_LABELS, MARKET_LABELS } from '../../shared/constants/labels';
-
-const TYPE_LABEL_MAP = ASSET_TYPE_LABELS;
-const MARKET_LABEL_MAP = MARKET_LABELS;
+import { ASSET_SORT_SQL } from '../database/services/asset-service';
+import {
+  getDailyTrades, buildAssetSummarySheets,
+  transformRows, getExportHeaders,
+} from '../services/report-export-service';
 
 export function registerReportIpcHandlers(): void {
   // ── Reports / Analytics ──
@@ -87,6 +90,7 @@ export function registerReportIpcHandlers(): void {
     };
   });
 
+  // Asset performance — sorted 港股→A股→…, code ASC within each group
   ipcMain.handle('report:assetPerformance', () => {
     const db = getDatabase();
     return db.prepare(`
@@ -95,8 +99,14 @@ export function registerReportIpcHandlers(): void {
         cost_price, current_price
       FROM assets
       WHERE quantity > 0
-      ORDER BY profit_loss DESC
+      ORDER BY ${ASSET_SORT_SQL}
     `).all();
+  });
+
+  // Daily trade report for a specific date
+  ipcMain.handle('report:dailyTrades', (_e, date?: string) => {
+    const target = date || new Date().toISOString().slice(0, 10);
+    return getDailyTrades(target);
   });
 
   // ── Excel Export ──
@@ -108,31 +118,41 @@ export function registerReportIpcHandlers(): void {
     const xlsx = require('xlsx') as typeof import('xlsx');
     const db = getDatabase();
 
+    const hasMonth = params.month !== undefined && params.month !== null;
+    const timeLabel = hasMonth ? `${params.year}年${params.month}月` : `${params.year}年`;
+
+    // ── assets: 完整资产快照（多 sheet，不受时间筛选影响） ──
+    if (params.type === 'assets') {
+      const sheets = buildAssetSummarySheets();
+      const rowCount = sheets.reduce((s, sh) => s + sh.rows.length, 0);
+      if (rowCount === 0) return { success: false, error: '暂无资产数据' };
+
+      const result = await dialog.showSaveDialog({
+        title: '保存 Excel 文件',
+        defaultPath: `资产汇总快照_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        filters: [{ name: 'Excel 文件', extensions: ['xlsx'] }],
+      });
+      if (result.canceled || !result.filePath) return { success: false, canceled: true };
+
+      try {
+        const workbook = xlsx.utils.book_new();
+        for (const sh of sheets) {
+          const ws = xlsx.utils.json_to_sheet(sh.rows);
+          xlsx.utils.book_append_sheet(workbook, ws, sh.name);
+        }
+        xlsx.writeFile(workbook, result.filePath);
+        return { success: true, filePath: result.filePath, rowCount };
+      } catch (err: any) {
+        return { success: false, error: `写入文件失败：${err.message}` };
+      }
+    }
+
+    // ── trades / ledgers: 按月份/年份筛选 ──
     let rows: any[] = [];
     let sheetName = '';
     let defaultName = '';
 
-    const hasMonth = params.month !== undefined && params.month !== null;
-    const timeLabel = hasMonth ? `${params.year}年${params.month}月` : `${params.year}年`;
-
-    if (params.type === 'assets') {
-      const dateFilter = hasMonth
-        ? `AND strftime('%Y', a.created_at) = ? AND strftime('%m', a.created_at) = ?`
-        : `AND strftime('%Y', a.created_at) = ?`;
-      const filterArgs: any[] = hasMonth
-        ? [String(params.year), String(params.month).padStart(2, '0')]
-        : [String(params.year)];
-      rows = db.prepare(`
-        SELECT name, code, type, market, currency,
-          quantity, cost_price, current_price, market_value, total_cost,
-          profit_loss, profit_loss_pct, notes
-        FROM assets a
-        WHERE quantity > 0 ${dateFilter}
-        ORDER BY type, profit_loss DESC
-      `).all(...filterArgs) as any[];
-      sheetName = '资产汇总';
-      defaultName = `资产汇总_${timeLabel}.xlsx`;
-    } else if (params.type === 'trades') {
+    if (params.type === 'trades') {
       const dateFilter = hasMonth ? 'AND strftime(\'%Y\', t.date) = ? AND strftime(\'%m\', t.date) = ?'
         : 'AND strftime(\'%Y\', t.date) = ?';
       const filterArgs: any[] = hasMonth
@@ -181,7 +201,7 @@ export function registerReportIpcHandlers(): void {
     }
 
     try {
-      const transformed = transformForExport(params.type, rows);
+      const transformed = transformRows(rows, getExportHeaders(params.type), params.type);
       const workbook = xlsx.utils.book_new();
       const worksheet = xlsx.utils.json_to_sheet(transformed);
       xlsx.utils.book_append_sheet(workbook, worksheet, sheetName);
@@ -191,61 +211,43 @@ export function registerReportIpcHandlers(): void {
       return { success: false, error: `写入文件失败：${err.message}` };
     }
   });
-}
 
-// ── Export helpers ──
+  // ── 每日交易报表导出（单日 Excel） ──
+  ipcMain.handle('export:dailyTrades', async (_e, date: string) => {
+    const { dialog } = require('electron') as typeof import('electron');
+    const xlsx = require('xlsx') as typeof import('xlsx');
 
-interface ExportHeader { key: string; label: string }
-
-function transformForExport(type: 'assets' | 'trades' | 'ledgers', rows: any[]): Record<string, any>[] {
-  const headers = getExportHeaders(type);
-  return rows.map((row) => {
-    const out: Record<string, any> = {};
-    for (const h of headers) {
-      let value = row[h.key];
-      if (h.key === 'type') {
-        if (type === 'trades') {
-          value = value === 'buy' ? '买入' : value === 'sell' ? '卖出' : value;
-        } else if (type === 'ledgers') {
-          value = value === 'income' ? '收入' : value === 'expense' ? '支出' : value;
-        } else {
-          value = TYPE_LABEL_MAP[value as string] || value;
-        }
-      }
-      if (h.key === 'market') {
-        value = MARKET_LABEL_MAP[value as string] || value;
-      }
-      out[h.label] = value !== undefined && value !== null ? value : '';
+    const { rows, summary } = getDailyTrades(date);
+    if (rows.length === 0) {
+      return { success: false, error: `${date} 没有交易记录` };
     }
-    return out;
-  });
-}
 
-function getExportHeaders(type: 'assets' | 'trades' | 'ledgers'): ExportHeader[] {
-  if (type === 'assets') {
-    return [
-      { key: 'name', label: '名称' }, { key: 'code', label: '代码' },
-      { key: 'type', label: '类型' }, { key: 'market', label: '市场' },
-      { key: 'currency', label: '币种' }, { key: 'quantity', label: '持有数量' },
-      { key: 'cost_price', label: '成本价' }, { key: 'current_price', label: '当前价' },
-      { key: 'market_value', label: '市值' }, { key: 'total_cost', label: '总成本' },
-      { key: 'profit_loss', label: '盈亏金额' }, { key: 'profit_loss_pct', label: '收益率(%)' },
-      { key: 'notes', label: '备注' },
-    ];
-  }
-  if (type === 'trades') {
-    return [
-      { key: 'date', label: '日期' }, { key: 'name', label: '股票名称' },
-      { key: 'code', label: '代码' }, { key: 'type', label: '买卖方向' },
-      { key: 'quantity', label: '数量' }, { key: 'price', label: '成交价' },
-      { key: 'fee', label: '手续费' }, { key: 'total_amount', label: '总金额' },
-      { key: 'currency', label: '币种' }, { key: 'notes', label: '备注' },
-    ];
-  }
-  return [
-    { key: 'date', label: '日期' }, { key: 'type', label: '类型' },
-    { key: 'category', label: '分类' }, { key: 'amount', label: '金额' },
-    { key: 'currency', label: '币种' }, { key: 'account_name', label: '账户' },
-    { key: 'description', label: '描述' },
-  ];
+    const result = await dialog.showSaveDialog({
+      title: '保存每日交易报表',
+      defaultPath: `每日交易报表_${date}.xlsx`,
+      filters: [{ name: 'Excel 文件', extensions: ['xlsx'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, canceled: true };
+
+    try {
+      const workbook = xlsx.utils.book_new();
+      // Sheet 1: 汇总
+      const summaryRows = [
+        { 项目: '日期', 数值: date },
+        { 项目: '买入笔数', 数值: summary.buyCount },
+        { 项目: '卖出笔数', 数值: summary.sellCount },
+        { 项目: '买入金额', 数值: summary.buyAmount },
+        { 项目: '卖出金额', 数值: summary.sellAmount },
+        { 项目: '已实现盈亏', 数值: summary.realizedPnl },
+      ];
+      xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(summaryRows), '汇总');
+      // Sheet 2: 明细
+      const detail = transformRows(rows, getExportHeaders('trades'), 'trades');
+      xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(detail), '交易明细');
+      xlsx.writeFile(workbook, result.filePath);
+      return { success: true, filePath: result.filePath, rowCount: rows.length };
+    } catch (err: any) {
+      return { success: false, error: `写入文件失败：${err.message}` };
+    }
+  });
 }

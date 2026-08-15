@@ -1,6 +1,6 @@
 {
   "name": "personal-finance",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "个人理财投资管理软件",
   "main": "dist/main/main/index.js",
   "scripts": {

@@ -5,8 +5,8 @@ import { NetAmount } from '../components/ui/Amount';
 import { Table, Column } from '../components/ui/Table';
 import { invoke } from '../hooks/useIpc';
 import { NetWorthTrendChart } from '../components/charts/NetWorthTrendChart';
-import { Badge } from '../components/ui/Badge';
 import { ASSET_TYPE_LABELS } from '@shared/constants/labels';
+import { DailyTradesReport } from '../components/DailyTradesReport';
 import { CHART_PALETTE, INCOME_EXPENSE_COLORS, CATEGORY_GRADIENT } from '@shared/constants/chart-colors';
 import './Dashboard.css';
 
@@ -361,6 +361,11 @@ export function Reports() {
         </Card>
       </div>
 
+      {/* Row 3.5: Daily trades report */}
+      <div style={{ marginTop: 'var(--spacing-lg)' }}>
+        <DailyTradesReport />
+      </div>
+
       {/* Row 4: Excel Export */}
       <div style={{ marginTop: 'var(--spacing-lg)' }}>
         <Card title="📥 导出报表">
@@ -387,7 +392,12 @@ export function Reports() {
               ))}
             </div>
 
-            {/* Time mode + date selectors */}
+            {/* Time mode + date selectors (not applicable for full asset snapshot) */}
+            {exportType === 'assets' ? (
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                💼 资产汇总将导出当前全部资产快照（总览 · 银行 · 钱包 · 券商 · 持仓 · 定存 · 保险），无需选择时间
+              </span>
+            ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)', flexWrap: 'wrap' }}>
               {/* Month/Year toggle */}
               <div style={{ display: 'flex', gap: 'var(--spacing-xs)' }}>
@@ -443,6 +453,7 @@ export function Reports() {
                 </select>
               )}
             </div>
+            )}
 
             {/* Export button + status */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)', flexWrap: 'wrap' }}>
