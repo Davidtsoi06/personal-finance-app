@@ -49,6 +49,9 @@ export function HoldingsDetail() {
   const [deleteHolding, setDeleteHolding] = useState<Holding | null>(null);
   const [editingTrade, setEditingTrade] = useState<TradeRecord | null>(null);
   const [deletingTrade, setDeletingTrade] = useState<TradeRecord | null>(null);
+  const [priceTarget, setPriceTarget] = useState<Holding | null>(null);
+  const [savingPrice, setSavingPrice] = useState(false);
+  const [priceError, setPriceError] = useState('');
 
   // ── Investment accounts for edit holding modal dropdown ──
   const [invAccounts, setInvAccounts] = useState<Array<{id: number; name: string; broker: string | null}>>([]);
@@ -69,6 +72,8 @@ export function HoldingsDetail() {
       setAccountName(acc?.name || '投资账户');
       setHoldings(hList || []);
       setTrades(tList || []);
+      // Keep open modals referencing fresh data after reload
+      setSelectedHolding(prev => (prev ? (hList || []).find(h => h.id === prev.id) || null : null));
       setLoading(false);
     } catch (err) { console.error(err); setLoading(false); }
   }, [accountId]);
@@ -248,6 +253,29 @@ export function HoldingsDetail() {
     } catch (err: any) { console.error(err); }
   };
 
+  /** Manual current-price update — recalculates market value / P&L + records price history */
+  const handleUpdatePrice = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!priceTarget) return;
+    const fd = new FormData(e.currentTarget);
+    const price = parseFloat(fd.get('price') as string);
+    if (!Number.isFinite(price) || price <= 0) {
+      setPriceError('请输入大于 0 的有效价格');
+      return;
+    }
+    setPriceError('');
+    setSavingPrice(true);
+    try {
+      await invoke('asset:updatePrice', priceTarget.id, price);
+      setPriceTarget(null);
+      setSavingPrice(false);
+      load();
+    } catch (err: any) {
+      setSavingPrice(false);
+      setPriceError(`保存失败：${err?.message || '未知错误'}`);
+    }
+  };
+
   const totalMV = holdings.reduce((s, h) => s + h.market_value, 0);
   const totalPL = holdings.reduce((s, h) => s + h.profit_loss, 0);
 
@@ -281,7 +309,15 @@ export function HoldingsDetail() {
     },
     {
       key: 'current_price', title: '最新价', align: 'right',
-      render: (r) => <Amount value={r.current_price} currency={r.currency} showSign={false} size="sm" />,
+      render: (r) => (
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Amount value={r.current_price} currency={r.currency} showSign={false} size="sm" />
+          <Button variant="secondary" size="sm" onClick={() => setPriceTarget(r)}>✏️</Button>
+        </div>
+      ),
     },
     {
       key: 'market_value', title: '市值', align: 'right',
@@ -417,6 +453,7 @@ export function HoldingsDetail() {
               <div>当前持仓：<b>{selectedHolding.quantity.toLocaleString()} 股</b></div>
               <div>成本价：<b>{selectedHolding.currency} {selectedHolding.cost_price.toFixed(3)}</b></div>
               <div>最新价：<b>{selectedHolding.currency} {selectedHolding.current_price.toFixed(3)}</b></div>
+              <Button variant="secondary" size="sm" onClick={() => setPriceTarget(selectedHolding)}>✏️ 改价</Button>
             </div>
             <Table
               columns={[
@@ -789,6 +826,53 @@ Date, Symbol, Description, Buy/Sell, Quantity, Price, Commission, Currency
             <Button variant="danger" onClick={handleDeleteTrade}>确认删除</Button>
           </div>
         </div>
+      </Modal>
+
+      {/* ── Manual Current Price Modal ── */}
+      <Modal
+        open={priceTarget !== null}
+        title={`✏️ 手动修改现价 · ${priceTarget?.name || ''}`}
+        onClose={() => { setPriceTarget(null); setPriceError(''); }}
+        width="480px"
+      >
+        {priceTarget && (
+          <form key={priceTarget.id} onSubmit={handleUpdatePrice}>
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)',
+              padding: 'var(--spacing-md)', background: 'var(--color-bg-secondary)',
+              borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)',
+              marginBottom: 'var(--spacing-md)',
+            }}>
+              <div>{priceTarget.name}（{priceTarget.code}）</div>
+              <div>当前现价：<b>{priceTarget.currency} {priceTarget.current_price.toFixed(3)}</b></div>
+              <div>成本价：{priceTarget.currency} {priceTarget.cost_price.toFixed(3)}</div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">新现价（{priceTarget.currency}）</label>
+              <input
+                className="form-input" name="price" type="number" step="any" min="0"
+                defaultValue={priceTarget.current_price} autoFocus required
+              />
+            </div>
+            <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-sm)' }}>
+              保存后市值、盈亏将按新价格自动重算，并记录一条价格历史。之后自动刷新成功获取到价格时，会被最新价格覆盖。
+            </p>
+            {priceError && (
+              <div style={{
+                padding: 'var(--spacing-sm) var(--spacing-md)', background: '#FFF2F0',
+                borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-sm)',
+              }}>
+                {priceError}
+              </div>
+            )}
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => { setPriceTarget(null); setPriceError(''); }}>取消</Button>
+              <Button variant="primary" type="submit" disabled={savingPrice}>
+                {savingPrice ? '保存中...' : '保存新价格'}
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );
