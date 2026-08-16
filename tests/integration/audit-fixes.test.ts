@@ -10,6 +10,8 @@ import { updateAccount, getAccount, getAllAssetsSummary } from '../../src/main/d
 import { getMonthlySummary } from '../../src/main/database/services/ledger-service';
 import { getBudgetStatus } from '../../src/main/database/services/budget-service';
 import { updateRate, convertAmount } from '../../src/main/database/services/currency-service';
+import { createObligation, updateObligation } from '../../src/main/database/services/social-obligation-service';
+import { buildAssetSummarySheets } from '../../src/main/services/report-export-service';
 
 let db: Database.Database;
 
@@ -152,6 +154,32 @@ describe('批 1 数据正确性回归（v1.7.1）', () => {
     expect(credit!.market_value_cny).toBeCloseTo(3625, 2); // 500 USD × 7.25，done 不计
     expect(debt).toBeTruthy();
     expect(debt!.market_value_cny).toBeCloseTo(-2000, 2);
+  });
+
+  it('v1.7.4 完成日期：用户自定义、重开清空、未传默认今天', () => {
+    const id = createObligation({ type: 'owe', person: '张三', item: '借款', amount: 1000, currency: 'CNY' }).id;
+    // 完成：未传日期 → 默认今天
+    updateObligation(id, { status: 'done' });
+    expect(db.prepare('SELECT completed_at FROM social_obligations WHERE id = ?').get(id).completed_at).toBe(new Date().toISOString().slice(0, 10));
+    // 自定义完成日期
+    updateObligation(id, { completed_at: '2026-08-01' });
+    expect(db.prepare('SELECT completed_at FROM social_obligations WHERE id = ?').get(id).completed_at).toBe('2026-08-01');
+    // 重开 → 清空
+    updateObligation(id, { status: 'pending' });
+    expect(db.prepare('SELECT completed_at FROM social_obligations WHERE id = ?').get(id).completed_at).toBeNull();
+  });
+
+  it('v1.7.4 资产汇总报表包含债务债权 sheet 与总览行', () => {
+    seedCurrency('USD', 7.25);
+    db.prepare("INSERT INTO social_obligations (type, person, item, status, amount, currency, completed_at) VALUES ('owed', '李四', '借款给他', 'pending', 500, 'USD', NULL)").run();
+    db.prepare("INSERT INTO social_obligations (type, person, item, status, amount, currency, completed_at) VALUES ('owe', '王五', '借他的钱', 'pending', 2000, 'CNY', NULL)").run();
+    const sheets = buildAssetSummarySheets();
+    const dc = sheets.find((s) => s.name === '债务债权');
+    expect(dc).toBeTruthy();
+    expect(dc!.rows).toHaveLength(2);
+    const overview = sheets.find((s) => s.name === '总览')!;
+    expect(overview.rows.some((r) => r['类别'] === '债权')).toBe(true);
+    expect(overview.rows.some((r) => r['类别'] === '债务')).toBe(true);
   });
 
   it('P2 保单现金价值按币种折算 CNY', () => {

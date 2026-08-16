@@ -126,6 +126,24 @@ describe('迁移体系（v1 ~ v12）', () => {
     db.close();
   });
 
+  it('v19 债务债权完成日期列：存量默认 NULL', () => {
+    const db = new Database(':memory:');
+    db.exec("CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))");
+    for (const m of MIGRATIONS.filter((x) => x.version <= 18)) {
+      db.exec('BEGIN');
+      db.exec(m.sql);
+      if (m.migrate && m.version !== 13) m.migrate(db);
+      db.prepare('INSERT INTO _migrations (version) VALUES (?)').run(m.version);
+      db.exec('COMMIT');
+    }
+    db.prepare("INSERT INTO social_obligations (type, person, item) VALUES ('owe', '张三', '借款')").run();
+    const v19 = MIGRATIONS.find((x) => x.version === 19)!;
+    db.exec(v19.sql);
+    const row = db.prepare('SELECT * FROM social_obligations LIMIT 1').get() as any;
+    expect(row.completed_at).toBeNull();
+    db.close();
+  });
+
   it('v15 检测孤儿持仓并写入计数', () => {
     const db = new Database(':memory:');
     db.exec("CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))");

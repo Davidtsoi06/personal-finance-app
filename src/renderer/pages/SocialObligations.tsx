@@ -14,6 +14,7 @@ interface Obligation {
   status: 'pending' | 'done';
   amount: number;
   currency: string;
+  completed_at: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -36,8 +37,11 @@ export function SocialObligations() {
   const [activeTab, setActiveTab] = useState<TabType>('owe');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState({ person: '', item: '', amount: '', currency: 'CNY', notes: '' });
+  const [form, setForm] = useState({ person: '', item: '', amount: '', currency: 'CNY', completed_at: '', notes: '' });
   const [saving, setSaving] = useState(false);
+  // v1.7.4：完成时让用户选择完成日期（默认今天）
+  const [completing, setCompleting] = useState<Obligation | null>(null);
+  const [completeDate, setCompleteDate] = useState('');
 
   const load = useCallback(() => {
     invoke<Obligation[]>('socialObligation:list')
@@ -50,13 +54,13 @@ export function SocialObligations() {
 
   const openAdd = () => {
     setEditingId(null);
-    setForm({ person: '', item: '', amount: '', currency: 'CNY', notes: '' });
+    setForm({ person: '', item: '', amount: '', currency: 'CNY', completed_at: '', notes: '' });
     setShowModal(true);
   };
 
   const openEdit = (o: Obligation) => {
     setEditingId(o.id);
-    setForm({ person: o.person, item: o.item, amount: String(o.amount || ''), currency: o.currency || 'CNY', notes: o.notes || '' });
+    setForm({ person: o.person, item: o.item, amount: String(o.amount || ''), currency: o.currency || 'CNY', completed_at: o.completed_at || '', notes: o.notes || '' });
     setShowModal(true);
   };
 
@@ -69,6 +73,7 @@ export function SocialObligations() {
         item: form.item.trim(),
         amount: parseFloat(form.amount) || 0,
         currency: form.currency,
+        completed_at: form.completed_at || null,
         notes: form.notes.trim() || undefined,
       };
       if (editingId) {
@@ -83,11 +88,27 @@ export function SocialObligations() {
     }
   };
 
+  // v1.7.4：完成时让用户选择完成日期（默认今天）；重开直接切换
   const toggleStatus = async (o: Obligation) => {
-    await invoke('socialObligation:update', o.id, {
-      status: o.status === 'pending' ? 'done' : 'pending',
-    });
+    if (o.status === 'pending') {
+      setCompleting(o);
+      setCompleteDate(new Date().toISOString().slice(0, 10));
+      return;
+    }
+    await invoke('socialObligation:update', o.id, { status: 'pending' });
     load();
+  };
+
+  const confirmComplete = async () => {
+    if (!completing) return;
+    setSaving(true);
+    try {
+      await invoke('socialObligation:update', completing.id, { status: 'done', completed_at: completeDate });
+      setCompleting(null);
+      load();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -153,6 +174,11 @@ export function SocialObligations() {
               <div className="obl-card-body">
                 <div className="obl-card-person">{o.person}</div>
                 <div className="obl-card-item">{o.item}</div>
+                {o.status === 'done' && o.completed_at && (
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-success)', marginTop: 2 }}>
+                    ✅ 完成于 {o.completed_at}
+                  </div>
+                )}
                 <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 600, marginTop: 4 }}>
                   {currencySymbol(o.currency)} {o.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
@@ -234,6 +260,17 @@ export function SocialObligations() {
               </select>
             </div>
           </div>
+          {editingId && form.completed_at !== undefined && (
+            <div className="obl-form-group">
+              <label className="obl-form-label">完成日期</label>
+              <input
+                className="obl-form-input"
+                type="date"
+                value={form.completed_at}
+                onChange={(e) => setForm({ ...form, completed_at: e.target.value })}
+              />
+            </div>
+          )}
           <div className="obl-form-group">
             <label className="obl-form-label">备注（可选）</label>
             <input
@@ -253,6 +290,36 @@ export function SocialObligations() {
             <Button variant="secondary" onClick={() => setShowModal(false)}>取消</Button>
             <Button variant="primary" disabled={saving} onClick={handleSave}>
               {saving ? '保存中...' : '💾 保存'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── 完成日期选择弹窗（v1.7.4 用户自定义） ── */}
+      <Modal
+        open={!!completing}
+        title="✅ 标记完成"
+        onClose={() => setCompleting(null)}
+      >
+        <div className="obl-form">
+          {completing && (
+            <p className="obl-form-hint" style={{ margin: 0 }}>
+              {completing.type === 'owe' ? '债务' : '债权'}：{completing.person} · {completing.item}
+            </p>
+          )}
+          <div className="obl-form-group">
+            <label className="obl-form-label">完成日期</label>
+            <input
+              className="obl-form-input"
+              type="date"
+              value={completeDate}
+              onChange={(e) => setCompleteDate(e.target.value)}
+            />
+          </div>
+          <div className="obl-form-actions">
+            <Button variant="secondary" onClick={() => setCompleting(null)}>取消</Button>
+            <Button variant="primary" disabled={saving} onClick={confirmComplete}>
+              {saving ? '保存中...' : '💾 确认完成'}
             </Button>
           </div>
         </div>

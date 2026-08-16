@@ -97,13 +97,29 @@ export function buildAssetSummarySheets(): SheetData[] {
     WHERE p.is_active = 1
   `).get() as any;
 
+  // v1.7.4：债务债权（未结，按币种折算）
+  const creditRow = db.prepare(`
+    SELECT COALESCE(SUM(s.amount * COALESCE(c.rate_to_base, 1)), 0) as total
+    FROM social_obligations s
+    LEFT JOIN currencies c ON s.currency = c.code
+    WHERE s.type = 'owed' AND s.status = 'pending'
+  `).get() as any;
+  const debtRow = db.prepare(`
+    SELECT COALESCE(SUM(s.amount * COALESCE(c.rate_to_base, 1)), 0) as total
+    FROM social_obligations s
+    LEFT JOIN currencies c ON s.currency = c.code
+    WHERE s.type = 'owe' AND s.status = 'pending'
+  `).get() as any;
+
   const bankTotal = bankCash.total || 0;
   const walletTotal = walletCash.total || 0;
   const brokerHoldings = brokerRows?.holdings || 0;
   const brokerCash = brokerRows?.cash || 0;
   const fdTotal = fdRow.total || 0;
   const insTotal = insRow.total || 0;
-  const grandTotal = bankTotal + walletTotal + brokerHoldings + brokerCash + fdTotal + insTotal;
+  const creditTotal = creditRow.total || 0;
+  const debtTotal = debtRow.total || 0;
+  const grandTotal = bankTotal + walletTotal + brokerHoldings + brokerCash + fdTotal + insTotal + creditTotal - debtTotal;
 
   const overview = [
     { category: '银行账户', amount_cny: bankTotal },
@@ -112,6 +128,8 @@ export function buildAssetSummarySheets(): SheetData[] {
     { category: '券商现金余额', amount_cny: brokerCash },
     { category: '定期存款', amount_cny: fdTotal },
     { category: '保险现金价值', amount_cny: insTotal },
+    { category: '债权', amount_cny: creditTotal },
+    { category: '债务', amount_cny: -debtTotal },
     { category: '总计', amount_cny: grandTotal },
   ];
 
@@ -178,6 +196,16 @@ export function buildAssetSummarySheets(): SheetData[] {
     ORDER BY id
   `).all() as any[];
 
+  // 债务债权（v1.7.4）
+  const debtCredit = db.prepare(`
+    SELECT s.type, s.person, s.item, s.amount, s.currency,
+      s.amount * COALESCE(c.rate_to_base, 1) as amount_cny,
+      s.status, s.completed_at, s.notes, date(s.created_at) as created_date
+    FROM social_obligations s
+    LEFT JOIN currencies c ON s.currency = c.code
+    ORDER BY s.status, s.type, s.id DESC
+  `).all() as any[];
+
   return [
     { name: '总览', rows: transformRows(overview, H.overview, 'overview') },
     { name: '银行账户', rows: transformRows(banks, H.banks, 'overview') },
@@ -186,6 +214,7 @@ export function buildAssetSummarySheets(): SheetData[] {
     { name: '投资持仓', rows: transformRows(holdings, H.holdings, 'assets') },
     { name: '定期存款', rows: transformRows(fixedDeposits, H.fixedDeposits, 'overview') },
     { name: '保险', rows: transformRows(insurance, H.insurance, 'overview') },
+    { name: '债务债权', rows: transformRows(debtCredit, H.debtCredit, 'debtCredit') },
   ];
 }
 
@@ -194,13 +223,17 @@ export function buildAssetSummarySheets(): SheetData[] {
 export type ExportHeader = { key: string; label: string };
 
 export function transformRows(
-  rows: any[], headers: ExportHeader[], ctx: 'assets' | 'trades' | 'ledgers' | 'overview'
+  rows: any[], headers: ExportHeader[], ctx: 'assets' | 'trades' | 'ledgers' | 'overview' | 'debtCredit'
 ): Record<string, any>[] {
   return rows.map((row) => {
     const out: Record<string, any> = {};
     for (const h of headers) {
       let value = row[h.key];
-      if (h.key === 'type') {
+      if (ctx === 'debtCredit' && h.key === 'type') {
+        value = value === 'owe' ? '债务（我欠）' : value === 'owed' ? '债权（欠我）' : value;
+      } else if (ctx === 'debtCredit' && h.key === 'status') {
+        value = value === 'pending' ? '未结' : value === 'done' ? '已结' : value;
+      } else if (h.key === 'type') {
         if (ctx === 'trades') value = TRADE_TYPE_LABELS[value as string] || value;
         else if (ctx === 'ledgers') value = value === 'income' ? '收入' : value === 'expense' ? '支出' : value;
         else if (ctx === 'assets') value = ASSET_TYPE_LABELS[value as string] || value;
@@ -260,6 +293,13 @@ const H: Record<string, ExportHeader[]> = {
     { key: 'premium_currency', label: '保费币种' }, { key: 'cash_value', label: '现金价值' },
     { key: 'cash_value_currency', label: '价值币种' }, { key: 'start_date', label: '投保日期' },
     { key: 'insured_person', label: '被保险人' },
+  ],
+  debtCredit: [
+    { key: 'type', label: '类型' }, { key: 'person', label: '对方' },
+    { key: 'item', label: '事项' }, { key: 'amount', label: '金额' },
+    { key: 'currency', label: '币种' }, { key: 'amount_cny', label: 'CNY等值' },
+    { key: 'status', label: '状态' }, { key: 'completed_at', label: '完成日期' },
+    { key: 'notes', label: '备注' }, { key: 'created_date', label: '创建日期' },
   ],
   trades: [
     { key: 'date', label: '日期' }, { key: 'name', label: '股票名称' },

@@ -633,6 +633,16 @@ export const MIGRATIONS: Migration[] = [
     ].join('\n'),
   },
   {
+    version: 19,
+    sql: [
+      "-- ============================================",
+      "-- Migration v19: 债务债权完成日期（v1.7.4，用户自定义）",
+      "-- completed_at: 完成日期（NULL=未完成）",
+      "-- ============================================",
+      "ALTER TABLE social_obligations ADD COLUMN completed_at TEXT;",
+    ].join('\n'),
+  },
+  {
     version: 17,
     sql: [
       "-- ============================================",

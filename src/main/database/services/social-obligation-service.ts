@@ -12,6 +12,7 @@ export interface SocialObligationRow {
   status: 'pending' | 'done';
   amount: number;
   currency: string;
+  completed_at: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -61,7 +62,7 @@ export function createObligation(data: {
 
 export function updateObligation(
   id: number,
-  data: { person?: string; item?: string; status?: string; amount?: number; currency?: string; notes?: string }
+  data: { person?: string; item?: string; status?: string; amount?: number; currency?: string; completed_at?: string | null; notes?: string }
 ): SocialObligationRow | undefined {
   const db = getDatabase();
   const existing = getObligation(id);
@@ -73,13 +74,25 @@ export function updateObligation(
   const amount = data.amount ?? existing.amount;
   const currency = data.currency ?? existing.currency;
   const notes = data.notes !== undefined ? (data.notes || null) : existing.notes;
+  // v1.7.4：完成日期用户自定义；重开（pending）时清空完成日期
+  let completedAt: string | null;
+  if (data.completed_at !== undefined) {
+    completedAt = data.completed_at || null;
+  } else if (status === 'pending') {
+    completedAt = null;
+  } else if (status === 'done' && !existing.completed_at) {
+    completedAt = new Date().toISOString().slice(0, 10);
+  } else {
+    completedAt = existing.completed_at;
+  }
 
   db.prepare(
     `UPDATE social_obligations
-     SET person = @person, item = @item, status = @status, amount = @amount, currency = @currency, notes = @notes,
+     SET person = @person, item = @item, status = @status, amount = @amount, currency = @currency,
+         completed_at = @completedAt, notes = @notes,
          updated_at = datetime('now')
      WHERE id = @id`
-  ).run({ person, item, status, amount, currency, notes, id });
+  ).run({ person, item, status, amount, currency, completedAt, notes, id });
   return getObligation(id);
 }
 
