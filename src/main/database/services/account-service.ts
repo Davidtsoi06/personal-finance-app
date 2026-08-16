@@ -561,9 +561,12 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     bankAssetsByAccount.set(ba.account_id, list);
   }
 
-  // Fetch insurance total
+  // Fetch insurance total（v1.6.1 修复：按保单现金价值币种换算 CNY）
   const insRow = db.prepare(
-    'SELECT COALESCE(SUM(cash_value), 0) as total, COUNT(*) as cnt FROM insurance_policies WHERE is_active = 1'
+    "SELECT COALESCE(SUM(p.cash_value * COALESCE(c.rate_to_base, 1)), 0) as total, COUNT(*) as cnt" +
+    " FROM insurance_policies p" +
+    " LEFT JOIN currencies c ON p.cash_value_currency = c.code" +
+    " WHERE p.is_active = 1"
   ).get() as any;
 
   const result: AssetSummaryItem[] = [];

@@ -143,7 +143,8 @@ export function Dashboard() {
         totalAssets: totalBank + totalBrokerCash + totalInvestment,
         monthlyIncome: monthlySummary?.income || 0,
         monthlyExpense: monthlySummary?.expense || 0,
-        netWorth: totalBank + totalInvestment,
+        // 总资产统一口径（v1.6.1）：含券商流动金，与顶部「总资产」卡完全一致
+        netWorth: totalBank + totalBrokerCash + totalInvestment,
       });
       setAssetSummary(summaryData || []);
       setNwHistory(nwData || []);
