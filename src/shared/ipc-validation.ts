@@ -157,7 +157,9 @@ const investmentAccountData = z.object({
   currency: optStr,
   account_number: z.string().nullish(),
   notes: z.string().nullish(),
-  funding_account_id: id.nullish(),
+  // "无关联" 时表单提交空串（coerce → 0），此处归一化为 null；负数/非数字仍拒绝（v1.6.1）
+  funding_account_id: z.coerce.number().int().nonnegative().nullish()
+    .transform((v) => (v && v > 0 ? v : null)),
   cash_balance: z.coerce.number().min(0).optional(),
 }).passthrough();
 

@@ -41,6 +41,33 @@ describe('IPC 入参校验 schema', () => {
     expect(SCHEMAS['accountTransaction:create'].safeParse([{ ...base, investment_account_id: 'abc' }]).success).toBe(false);
   });
 
+  it('添加券商：funding_account_id 空串/0 归一化为 null，负数/非数字拒绝（v1.6.1）', () => {
+    const base = { name: '富途牛牛', currency: 'HKD' };
+    // 表单「无关联」提交空串 → 通过并归一化为 null
+    const empty = SCHEMAS['investmentAccount:create'].safeParse([{ ...base, funding_account_id: '' }]);
+    expect(empty.success).toBe(true);
+    if (empty.success) expect(empty.data[0].funding_account_id).toBeNull();
+    // 0 → null
+    const zero = SCHEMAS['investmentAccount:create'].safeParse([{ ...base, funding_account_id: 0 }]);
+    expect(zero.success).toBe(true);
+    if (zero.success) expect(zero.data[0].funding_account_id).toBeNull();
+    // 缺省 → null
+    const none = SCHEMAS['investmentAccount:create'].safeParse([{ ...base }]);
+    expect(none.success).toBe(true);
+    if (none.success) expect(none.data[0].funding_account_id).toBeNull();
+    // 正数（字符串形式）→ 保留为数字
+    const valid = SCHEMAS['investmentAccount:create'].safeParse([{ ...base, funding_account_id: '5' }]);
+    expect(valid.success).toBe(true);
+    if (valid.success) expect(valid.data[0].funding_account_id).toBe(5);
+    // 负数 / 非数字 → 拒绝
+    expect(SCHEMAS['investmentAccount:create'].safeParse([{ ...base, funding_account_id: -1 }]).success).toBe(false);
+    expect(SCHEMAS['investmentAccount:create'].safeParse([{ ...base, funding_account_id: 'abc' }]).success).toBe(false);
+    // update 同样生效（partial 保留 transform）
+    const upd = SCHEMAS['investmentAccount:update'].safeParse([1, { funding_account_id: '' }]);
+    expect(upd.success).toBe(true);
+    if (upd.success) expect(upd.data[1].funding_account_id).toBeNull();
+  });
+
   it('金额为 0 或负数被拒绝', () => {
     expect(SCHEMAS['accountTransaction:create'].safeParse([{ account_id: 1, type: 'deposit', amount: 0 }]).success).toBe(false);
     expect(SCHEMAS['ledger:create'].safeParse([{ type: 'expense', amount: -5 }]).success).toBe(false);

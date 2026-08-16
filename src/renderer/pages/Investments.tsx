@@ -39,6 +39,7 @@ export function Investments() {
   const [todayTrades, setTodayTrades] = useState<TodayTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [addError, setAddError] = useState('');
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
 
   // Edit / Delete state
@@ -92,9 +93,12 @@ export function Investments() {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
     const data: Record<string, unknown> = {};
-    new FormData(form).forEach((v, k) => { data[k] = v; });
+    new FormData(form).forEach((v, k) => { data[k] = v || null; });
+    // v1.6.1 修复：funding_account_id 空串会触发 schema positive 校验失败
+    if (data.funding_account_id === null) delete data.funding_account_id;
+    setAddError('');
     try { await invoke('investmentAccount:create', data); setShowAdd(false); load(); }
-    catch (err) { console.error(err); }
+    catch (err: any) { console.error(err); setAddError(err?.message || '创建失败'); }
   };
 
   // ── Edit ──
@@ -150,7 +154,7 @@ export function Investments() {
       <div className="page-header">
         <h2 className="page-title">投资管理</h2>
         <p className="page-subtitle">管理你的投资账户，查看持仓明细与当日交易</p>
-        <Button variant="primary" onClick={() => setShowAdd(true)}>+ 添加投资账户</Button>
+        <Button variant="primary" onClick={() => { setAddError(''); setShowAdd(true); }}>+ 添加投资账户</Button>
       </div>
 
       {/* ── Today's Trades ── */}
@@ -358,7 +362,7 @@ export function Investments() {
       </div>
 
       {/* ── Add Modal ── */}
-      <Modal open={showAdd} title="添加投资账户" onClose={() => setShowAdd(false)}>
+      <Modal open={showAdd} title="添加投资账户" onClose={() => { setShowAdd(false); setAddError(''); }}>
         <form onSubmit={handleAdd}>
           <div className="form-group">
             <label className="form-label">账户名称 *</label>
@@ -391,6 +395,11 @@ export function Investments() {
               ))}
             </select>
           </div>
+          {addError && (
+            <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)', background: '#FFF2F0', borderRadius: 'var(--radius-sm)', color: 'var(--color-danger)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}>
+              {addError}
+            </div>
+          )}
           <div className="form-actions">
             <Button variant="secondary" onClick={() => setShowAdd(false)} type="button">取消</Button>
             <Button variant="primary" type="submit">保存</Button>
