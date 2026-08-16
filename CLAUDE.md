@@ -80,12 +80,15 @@
 - [ ] 开发会话结束？→ 更新 `dev-logs/YYYY-MM-DD.md`
 
 ### 安全要求
-- 敏感字段加密存储：AI API Key 使用 AES-256-GCM 加密（密钥与数据库分离）；银行卡号仅存后 4 位，完整卡号不落库
+- 敏感字段加密存储：AI API Key 与 SMTP 授权码使用 AES-256-GCM 加密（密钥与数据库分离）；银行卡号仅存后 4 位，完整卡号不落库
+- 启动密码 scrypt 加盐哈希存储（不存明文）；锁屏窗口使用最小权限 `lock-preload.ts`；未解锁时所有 IPC 频道经全局门禁拒绝（`ipc/index.ts` 对 `ipcMain.handle` 的统一补丁，新增裸注册频道自动被覆盖）
 - 整库加密（SQLCipher）列入后续迭代计划
 - 敏感配置（如引入第三方数据源密钥）通过环境变量注入
-- 导出数据时不包含完整密码/密钥（备份导出排除 AI Key）
+- 导出数据时不包含完整密码/密钥（备份导出排除 `ai.*` / `auth.*` / `smtp.*` 键）
 - preload 仅放行白名单内的 IPC 频道；新增频道必须同步 `src/main/preload.ts` 白名单与 `src/shared/types/ipc.ts` 类型联合（运行 `npm run check:ipc` 校验三处一致）
-- AI/外部内容渲染前必须先 HTML 转义
+- AI/外部内容渲染前必须先 HTML 转义；AI 接口地址必须经 `shared/utils/url-safety.ts` 校验（仅公网 HTTPS，防 SSRF）
+- 金额/日期等外部输入解析统一走 `parseAmount` / `normalizeDate`，不得直接 `parseFloat`；所有写库金额出口经 `roundMoney`
+- 数据一致性：账户余额以 `account_balances` 为唯一真源（`updateAccountBalance` 负责同步与 `accounts.balance` 重算），不得绕过它直接改 `accounts.balance`
 
 ### 兼容性
 - 目标系统：Windows 10/11

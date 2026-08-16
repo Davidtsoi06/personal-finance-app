@@ -90,12 +90,11 @@ Electron App
 ├── Renderer Process (src/renderer/)
 │   ├── index.html                 # HTML 入口
 │   ├── index.tsx                  # React 入口（createRoot）
-│   ├── App.tsx                    # 根组件（12 个页面路由）
+│   ├── App.tsx                    # 根组件（13 个页面路由，含 #/lock 锁屏页）
 │   ├── hooks/
 │   │   ├── useIpc.ts              # IPC 调用封装（泛型 invoke）
 │   │   ├── useCurrencyRefresh.ts   # 汇率更新事件订阅 → 页面自动重载（v1.6.1）
 │   │   └── useIdleLock.ts          # 空闲自动锁定（v1.7.0）
-│   │   └── useCurrencyRefresh.ts   # 汇率更新事件订阅 → 页面自动重载（v1.6.1）
 │   ├── pages/                     # 页面组件（13 个，含 LockScreen 锁屏页 v1.7.0）
 │   │   ├── Dashboard.tsx          # 仪表盘（饼图下钻 + 概览可展开分组[银行内嵌关联券商] + 资产查询 + 走势 + 预算）
 │   │   ├── Accounts.tsx           # 资产管理（Layer 2 四层架构卡片 + 银行分组可展开）
@@ -162,6 +161,8 @@ Electron App
         ├── investment.ts          # 加权平均成本/盈亏纯函数
         ├── market.ts              # 股票代码智能市场检测
         ├── asset-totals.ts        # 总资产口径汇总纯函数（现金/流动金/投资/总资产，v1.6.1）
+        ├── amount-parse.ts        # 日结单金额解析（千分位/括号负数/货币符号，v1.7.1）
+        └── url-safety.ts          # AI 端点 SSRF 校验（公网 HTTPS，v1.7.1）
         ├── card.ts                # 卡号仅存后 4 位
         └── markdown.ts            # AI 回复安全渲染（先转义后转换）
 ```
@@ -224,12 +225,13 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 - `scripts/check-ipc-whitelist.js` 校验「主进程注册（ipcMain.handle + handleValidated） ↔ preload 白名单 ↔ 类型联合 ↔ zod schema 接入」四处一致，挂入 `npm test`（也可单独 `npm run check:ipc`）
 - 新增 IPC 频道流程：先在主进程注册 → 运行 `npm run check:ipc` 查看不一致 → 同步 preload 白名单、`ipc.ts` 类型联合与校验 schema
 
-### IPC 入参运行时校验（zod，v1.5.5）
+### IPC 入参运行时校验（zod，v1.5.5，v1.7.1 全局门禁）
 
 - **边界防护**：渲染进程传错类型/缺字段/非法枚举时在 IPC 边界直接拒绝（报错含具体字段与原因），防止脏数据落库
-- **实现**：`src/shared/ipc-validation.ts` 定义 54 个可变操作的参数元组 schema（对象一律 `.passthrough()` 向前兼容；数字字段 `z.coerce` 兼容表单字符串）；`src/main/ipc/validation.ts` 提供 `handleValidated(channel, handler)` 包装器
-- **覆盖范围**：全部 `:create` / `:update` / `:delete` 及 addCash/withdrawCash、trade:record、日结单导入、清空/归档等 54 个频道
-- **测试**：`tests/unit/validation.test.ts` 10 个用例（合法通过/字符串转数字/负数与 NaN 拒绝/非法枚举/缺字段/日期格式/超长字段）
+- **实现**：`src/shared/ipc-validation.ts` 定义 76 个频道的参数元组 schema（对象一律 `.passthrough()` 向前兼容；数字字段 `z.coerce` 兼容表单字符串）；`src/main/ipc/validation.ts` 提供 `handleValidated(channel, handler)` 包装器
+- **全局密码锁门禁（v1.7.1）**：`ipc/index.ts` 对 `ipcMain.handle` 统一打补丁，全部频道（含裸注册的只读/报表/更新频道）在未解锁时一律拒绝，`auth:*` 频道放行
+- **覆盖范围**：全部 `:create` / `:update` / `:delete` 及 addCash/withdrawCash、trade:record、日结单导入、清空（含主进程二次确认）/归档等频道
+- **测试**：`tests/unit/validation.test.ts` 13 个用例（合法通过/字符串转数字/负数与 NaN 拒绝/非法枚举/缺字段/日期格式/超长字段/联动字段归一化/auth 频道）
 
 ### 流式通信
 
