@@ -622,6 +622,17 @@ export const MIGRATIONS: Migration[] = [
     },
   },
   {
+    version: 18,
+    sql: [
+      "-- ============================================",
+      "-- Migration v18: 债务债权金额（v1.7.3 计入资产）",
+      "-- amount/currency：债务(owe)与债权(owed)的金额与币种；存量行默认 0",
+      "-- ============================================",
+      "ALTER TABLE social_obligations ADD COLUMN amount REAL NOT NULL DEFAULT 0;",
+      "ALTER TABLE social_obligations ADD COLUMN currency TEXT NOT NULL DEFAULT 'CNY';",
+    ].join('\n'),
+  },
+  {
     version: 17,
     sql: [
       "-- ============================================",

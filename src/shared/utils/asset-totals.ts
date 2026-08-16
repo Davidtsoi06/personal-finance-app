@@ -24,6 +24,12 @@ export interface AssetTotals {
   totalInvestments: number;
   /** 券商流动金（独立类别） */
   totalBrokerCash: number;
+  /** 债权（别人欠我，正值计入资产，v1.7.3） */
+  totalCredit: number;
+  /** 债务（我欠别人，正值展示，冲减总资产，v1.7.3） */
+  totalDebt: number;
+  /** 债务债权净值 = 债权 − 债务（可为负） */
+  totalDebtCredit: number;
   /** 总资产 */
   totalAssets: number;
 }
@@ -37,11 +43,22 @@ export function computeAssetTotals(items: AssetTotalsItem[]): AssetTotals {
   let totalCash = 0;
   let totalInvestments = 0;
   let totalBrokerCash = 0;
+  let totalCredit = 0;
+  let totalDebt = 0;
 
   for (const item of items) {
     // 券商流动金为独立类别（v1.5.8），不并入现金及存款
     if (item.asset_type === 'broker_cash') {
       totalBrokerCash += item.market_value_cny || 0;
+      continue;
+    }
+    // 债权/债务独立于现金及存款（v1.7.3：分别展示，债务以负值冲减总资产）
+    if (item.asset_type === 'credit') {
+      totalCredit += Math.abs(item.market_value_cny || 0);
+      continue;
+    }
+    if (item.asset_type === 'debt') {
+      totalDebt += Math.abs(item.market_value_cny || 0);
       continue;
     }
     if (item.is_investment) {
@@ -54,10 +71,14 @@ export function computeAssetTotals(items: AssetTotalsItem[]): AssetTotals {
     }
   }
 
+  const totalDebtCredit = totalCredit - totalDebt;
   return {
     totalCash,
     totalInvestments,
     totalBrokerCash,
-    totalAssets: totalCash + totalInvestments + totalBrokerCash,
+    totalCredit,
+    totalDebt,
+    totalDebtCredit,
+    totalAssets: totalCash + totalInvestments + totalBrokerCash + totalDebtCredit,
   };
 }

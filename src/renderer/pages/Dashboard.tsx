@@ -16,6 +16,10 @@ interface Summary {
   totalInvestments: number;
   /** 券商流动金（v1.5.8 独立类别） */
   brokerCash: number;
+  /** 债权（v1.7.3） */
+  totalCredit: number;
+  /** 债务（v1.7.3） */
+  totalDebt: number;
   totalAssets: number;
   monthlyIncome: number;
   monthlyExpense: number;
@@ -125,6 +129,8 @@ export function Dashboard() {
         totalCash: totals.totalCash,
         totalInvestments: totals.totalInvestments,
         brokerCash: totals.totalBrokerCash,
+        totalCredit: totals.totalCredit,
+        totalDebt: totals.totalDebt,
         totalAssets: totals.totalAssets,
         monthlyIncome: monthlySummary?.income || 0,
         monthlyExpense: monthlySummary?.expense || 0,
@@ -312,6 +318,18 @@ export function Dashboard() {
         <div className="stat-card">
           <div className="stat-card-label">投资市值</div>
           <div className="stat-card-value number">{s && <NetAmount value={s.totalInvestments} currency="CNY" />}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-label">债权（别人欠我）</div>
+          <div className="stat-card-value number" style={{ color: s && s.totalCredit > 0 ? 'var(--color-success)' : undefined }}>
+            {s && <NetAmount value={s.totalCredit} currency="CNY" />}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-label">债务（我欠别人）</div>
+          <div className="stat-card-value number" style={{ color: s && s.totalDebt > 0 ? 'var(--color-danger)' : undefined }}>
+            {s && <NetAmount value={s.totalDebt} currency="CNY" />}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-card-label">本月收入 / 支出</div>

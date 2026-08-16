@@ -12,6 +12,8 @@ interface Obligation {
   person: string;
   item: string;
   status: 'pending' | 'done';
+  amount: number;
+  currency: string;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -20,9 +22,13 @@ interface Obligation {
 type TabType = 'owe' | 'owed';
 
 const TAB_OPTIONS: { key: TabType; label: string; icon: string }[] = [
-  { key: 'owe', label: '我欠别人的', icon: '🙏' },
-  { key: 'owed', label: '别人欠我的', icon: '🤝' },
+  { key: 'owe', label: '债务（我欠别人）', icon: '🙏' },
+  { key: 'owed', label: '债权（别人欠我）', icon: '🤝' },
 ];
+
+function currencySymbol(c: string): string {
+  return c === 'CNY' ? '¥' : c === 'HKD' ? 'HK$' : '$';
+}
 
 export function SocialObligations() {
   const [obligations, setObligations] = useState<Obligation[]>([]);
@@ -30,7 +36,7 @@ export function SocialObligations() {
   const [activeTab, setActiveTab] = useState<TabType>('owe');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState({ person: '', item: '', notes: '' });
+  const [form, setForm] = useState({ person: '', item: '', amount: '', currency: 'CNY', notes: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
@@ -44,13 +50,13 @@ export function SocialObligations() {
 
   const openAdd = () => {
     setEditingId(null);
-    setForm({ person: '', item: '', notes: '' });
+    setForm({ person: '', item: '', amount: '', currency: 'CNY', notes: '' });
     setShowModal(true);
   };
 
   const openEdit = (o: Obligation) => {
     setEditingId(o.id);
-    setForm({ person: o.person, item: o.item, notes: o.notes || '' });
+    setForm({ person: o.person, item: o.item, amount: String(o.amount || ''), currency: o.currency || 'CNY', notes: o.notes || '' });
     setShowModal(true);
   };
 
@@ -58,19 +64,17 @@ export function SocialObligations() {
     if (!form.person.trim() || !form.item.trim()) return;
     setSaving(true);
     try {
+      const payload = {
+        person: form.person.trim(),
+        item: form.item.trim(),
+        amount: parseFloat(form.amount) || 0,
+        currency: form.currency,
+        notes: form.notes.trim() || undefined,
+      };
       if (editingId) {
-        await invoke('socialObligation:update', editingId, {
-          person: form.person.trim(),
-          item: form.item.trim(),
-          notes: form.notes.trim() || null,
-        });
+        await invoke('socialObligation:update', editingId, payload);
       } else {
-        await invoke('socialObligation:create', {
-          type: activeTab,
-          person: form.person.trim(),
-          item: form.item.trim(),
-          notes: form.notes.trim() || undefined,
-        });
+        await invoke('socialObligation:create', { type: activeTab, ...payload });
       }
       setShowModal(false);
       load();
@@ -102,8 +106,8 @@ export function SocialObligations() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2 className="page-title">🤝 人情债</h2>
-        <p className="page-subtitle">记录人情往来，不纳入资产统计</p>
+        <h2 className="page-title">💳 债务债权</h2>
+        <p className="page-subtitle">未结清的债务与债权计入资产总览（债务冲减净资产、债权增加净资产）</p>
         <Button variant="primary" onClick={openAdd}>+ 添加记录</Button>
       </div>
 
@@ -124,12 +128,16 @@ export function SocialObligations() {
         ))}
       </div>
 
+      <div className="query-stats" style={{ marginTop: 'var(--spacing-md)' }}>
+        <span>💳 未结{activeTab === 'owe' ? '债务' : '债权'} <strong>{pendingList.length}</strong> 笔 · 合计 <strong>{currencySymbol('CNY')} {pendingList.reduce((s, o) => s + (o.amount || 0) * (o.currency === 'USD' ? 7.25 : o.currency === 'HKD' ? 0.92 : 1), 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>（CNY 等值）</span>
+      </div>
+
       {/* Card grid */}
       {displayList.length === 0 ? (
         <Card>
           <div className="card-placeholder">
-            <p>{activeTab === 'owe' ? '没有我欠别人的记录' : '没有别人欠我的记录'}</p>
-            <p className="text-secondary">点击「+ 添加记录」开始记录人情往来</p>
+            <p>{activeTab === 'owe' ? '没有债务记录' : '没有债权记录'}</p>
+            <p className="text-secondary">点击「+ 添加记录」开始记录债务债权</p>
           </div>
         </Card>
       ) : (
@@ -145,6 +153,9 @@ export function SocialObligations() {
               <div className="obl-card-body">
                 <div className="obl-card-person">{o.person}</div>
                 <div className="obl-card-item">{o.item}</div>
+                <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 600, marginTop: 4 }}>
+                  {currencySymbol(o.currency)} {o.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </div>
                 {o.notes && <div className="obl-card-notes">{o.notes}</div>}
               </div>
               <div className="obl-card-footer">
@@ -173,7 +184,7 @@ export function SocialObligations() {
       {/* Add / Edit Modal */}
       <Modal
         open={showModal}
-        title={editingId ? '编辑人情记录' : '添加人情记录'}
+        title={editingId ? '编辑债务债权' : '添加债务债权'}
         onClose={() => setShowModal(false)}
       >
         <div className="obl-form">
@@ -197,6 +208,32 @@ export function SocialObligations() {
               onChange={(e) => setForm({ ...form, item: e.target.value })}
             />
           </div>
+          <div className="obl-form-row">
+            <div className="obl-form-group">
+              <label className="obl-form-label">金额</label>
+              <input
+                className="obl-form-input"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={form.amount}
+                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              />
+            </div>
+            <div className="obl-form-group">
+              <label className="obl-form-label">币种</label>
+              <select
+                className="obl-form-input"
+                value={form.currency}
+                onChange={(e) => setForm({ ...form, currency: e.target.value })}
+              >
+                <option value="CNY">¥ 人民币</option>
+                <option value="HKD">HK$ 港币</option>
+                <option value="USD">$ 美元</option>
+              </select>
+            </div>
+          </div>
           <div className="obl-form-group">
             <label className="obl-form-label">备注（可选）</label>
             <input
@@ -209,7 +246,7 @@ export function SocialObligations() {
           </div>
           {!editingId && (
             <p className="obl-form-hint">
-              当前记录的类别为「{activeTab === 'owe' ? '我欠别人的' : '别人欠我的'}」（由上方 Tab 决定）
+              当前记录的类别为「{activeTab === 'owe' ? '债务（我欠别人）' : '债权（别人欠我）'}」（由上方 Tab 决定）
             </p>
           )}
           <div className="obl-form-actions">

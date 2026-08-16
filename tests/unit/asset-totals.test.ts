@@ -54,6 +54,19 @@ describe("computeAssetTotals", () => {
     expect(t.totalAssets).toBeCloseTo(topSum, 2);
   });
 
+  it("债务债权分量（v1.7.3）：债权计入、债务冲减、不入现金及存款", () => {
+    const t = computeAssetTotals([
+      { asset_type: 'cash', is_investment: false, market_value_cny: 10000 },
+      { asset_type: 'credit', is_investment: false, market_value_cny: 3625 },
+      { asset_type: 'debt', is_investment: false, market_value_cny: -2000 },
+    ]);
+    expect(t.totalCash).toBeCloseTo(10000, 2); // 债务债权不并入现金及存款
+    expect(t.totalCredit).toBeCloseTo(3625, 2);
+    expect(t.totalDebt).toBeCloseTo(2000, 2);
+    expect(t.totalDebtCredit).toBeCloseTo(1625, 2);
+    expect(t.totalAssets).toBeCloseTo(11625, 2);
+  });
+
   it("空数组 → 全部为 0", () => {
     const t = computeAssetTotals([]);
     expect(t.totalCash).toBe(0);

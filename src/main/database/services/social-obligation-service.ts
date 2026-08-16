@@ -10,6 +10,8 @@ export interface SocialObligationRow {
   person: string;
   item: string;
   status: 'pending' | 'done';
+  amount: number;
+  currency: string;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -38,16 +40,20 @@ export function createObligation(data: {
   type: string;
   person: string;
   item: string;
+  amount?: number;
+  currency?: string;
   notes?: string;
 }): SocialObligationRow {
   const db = getDatabase();
   const result = db.prepare(
-    `INSERT INTO social_obligations (type, person, item, notes)
-     VALUES (@type, @person, @item, @notes)`
+    `INSERT INTO social_obligations (type, person, item, amount, currency, notes)
+     VALUES (@type, @person, @item, @amount, @currency, @notes)`
   ).run({
     type: data.type,
     person: data.person,
     item: data.item,
+    amount: data.amount || 0,
+    currency: data.currency || 'CNY',
     notes: data.notes || null,
   });
   return getObligation(result.lastInsertRowid as number)!;
@@ -55,7 +61,7 @@ export function createObligation(data: {
 
 export function updateObligation(
   id: number,
-  data: { person?: string; item?: string; status?: string; notes?: string }
+  data: { person?: string; item?: string; status?: string; amount?: number; currency?: string; notes?: string }
 ): SocialObligationRow | undefined {
   const db = getDatabase();
   const existing = getObligation(id);
@@ -64,14 +70,16 @@ export function updateObligation(
   const person = data.person ?? existing.person;
   const item = data.item ?? existing.item;
   const status = data.status ?? existing.status;
+  const amount = data.amount ?? existing.amount;
+  const currency = data.currency ?? existing.currency;
   const notes = data.notes !== undefined ? (data.notes || null) : existing.notes;
 
   db.prepare(
     `UPDATE social_obligations
-     SET person = @person, item = @item, status = @status, notes = @notes,
+     SET person = @person, item = @item, status = @status, amount = @amount, currency = @currency, notes = @notes,
          updated_at = datetime('now')
      WHERE id = @id`
-  ).run({ person, item, status, notes, id });
+  ).run({ person, item, status, amount, currency, notes, id });
   return getObligation(id);
 }
 

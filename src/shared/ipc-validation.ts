@@ -179,6 +179,8 @@ const socialData = z.object({
   person: z.string().min(1).max(100),
   item: z.string().min(1).max(200),
   status: z.enum(['pending', 'done']).optional(),
+  amount: z.coerce.number().min(0).optional(),
+  currency: optStr,
   notes: z.string().nullish(),
 }).passthrough();
 

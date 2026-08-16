@@ -131,6 +131,12 @@ insLed.run('income', 30000, 'CNY', catWage, bocCny, '演示工资');
 insLed.run('expense', 1200, 'CNY', catFood, icbc, '演示餐饮');
 insLed.run('expense', 800, 'CNY', catFood, icbc, '演示购物');
 
+// ── 债务债权（v1.7.3 计入资产）──
+const insObl = db.prepare("INSERT INTO social_obligations (type, person, item, status, amount, currency) VALUES (?, ?, ?, ?, ?, ?)");
+insObl.run('owed', '李四', '借款给他', 'pending', 500, 'USD'); // 债权 500×7.25 = 3,625
+insObl.run('owe', '王五', '借他的钱', 'pending', 2000, 'CNY');  // 债务 2,000
+insObl.run('owed', '赵六', '已还清（不计入）', 'done', 999, 'CNY');
+
 console.log('');
 console.log('✓ 演示数据已写入: ' + dbPath);
 console.log('');
@@ -138,7 +144,8 @@ console.log('===== 种子汇率下的预期金额（供总资产口径验证） 
 console.log('现金及存款（钱包8000 + 现金2000 + 银行余额192000 + 保险83850）: ¥285,850');
 console.log('券商流动金（富途 10,000×0.92 + 盈透 2,000×7.25）: ¥23,700');
 console.log('投资市值（券商持仓370,400 + 银行理财33,400）: ¥403,800');
-console.log('总资产 = 285,850 + 23,700 + 403,800 = ¥713,350');
+console.log('债权（李四 USD 500×7.25）: ¥3,625；债务（王五 CNY 2,000）: −¥2,000');
+console.log('总资产 = 285,850 + 23,700 + 403,800 + 3,625 − 2,000 = ¥714,975');
 console.log('========================================');
 console.log('');
 console.log('⚠️ 注意：以上金额基于种子汇率（HKD 0.92 / USD 7.25）。');

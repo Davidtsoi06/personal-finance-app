@@ -1,3 +1,13 @@
+/* ── 表单两列（v1.7.3 金额+币种） ── */
+.obl-form-row {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.obl-form-row .obl-form-group {
+  flex: 1;
+}
+
 /* ── Tab bar ── */
 .obl-tabs {
   display: flex;

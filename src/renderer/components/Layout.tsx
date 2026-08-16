@@ -14,7 +14,7 @@ const navItems = [
   { path: '/investments', label: '投资管理', icon: '📈' },
   { path: '/ai', label: 'AI 助手', icon: '🤖' },
   { path: '/bookkeeping', label: '记账', icon: '📝' },
-  { path: '/social', label: '人情债', icon: '🤝' },
+  { path: '/social', label: '债务债权', icon: '🤝' },
   { path: '/reports', label: '报表分析', icon: '📉' },
   { path: '/settings', label: '设置', icon: '⚙️' },
 ];

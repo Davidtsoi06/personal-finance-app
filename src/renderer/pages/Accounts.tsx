@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Amount } from '../components/ui/Amount';
+import { Amount, NetAmount } from '../components/ui/Amount';
 import { invoke } from '../hooks/useIpc';
 import { useCurrencyRefresh } from '../hooks/useCurrencyRefresh';
 import { AccountEditModal, EditableAccount } from '../components/account/AccountEditModal';
@@ -34,6 +34,7 @@ const ASSET_TYPE_OPTIONS = [
 
 const ASSET_CARD_ICONS: Record<string, string> = {
   e_wallet: '💬', cash: '💵', insurance: '🛡️', bank: '🏦', investment: '📈', custom: '✏️',
+  credit: '🤝', debt: '🙏',
 };
 
 export function Accounts() {
@@ -345,6 +346,34 @@ export function Accounts() {
                       </div>
                     </div>
                   )}
+                </div>
+              );
+            }
+
+            // ── 债权/债务卡片（v1.7.3：计入资产总览） ──
+            if (assetType === 'credit' || assetType === 'debt') {
+              const isDebt = assetType === 'debt';
+              return (
+                <div
+                  key={`dc-${item.id}`}
+                  className="layer2-card layer2-card--clickable"
+                  onClick={() => navigate('/social')}
+                >
+                  <div className="layer2-card-main">
+                    <div className="layer2-card-icon">{icon}</div>
+                    <div className="layer2-card-info">
+                      <div className="layer2-card-name">{item.name}</div>
+                      <div className="layer2-card-meta">
+                        {isDebt ? '未结清债务 · 冲减总资产' : '未结清债权 · 计入总资产'}
+                      </div>
+                    </div>
+                    <div className="layer2-card-value">
+                      <NetAmount value={item.market_value_cny} currency="CNY" />
+                    </div>
+                  </div>
+                  <div className="layer2-card-actions">
+                    <span className="layer2-card-link">管理债务债权 →</span>
+                  </div>
                 </div>
               );
             }

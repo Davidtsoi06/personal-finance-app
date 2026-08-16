@@ -793,6 +793,50 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     }
   }
 
+  // 5.7 债权（v1.7.3：别人欠我的未结金额计入资产，按币种折算 CNY）
+  {
+    const creditRow = db.prepare(`
+      SELECT COALESCE(SUM(s.amount * COALESCE(c.rate_to_base, 1)), 0) as total
+      FROM social_obligations s
+      LEFT JOIN currencies c ON s.currency = c.code
+      WHERE s.type = 'owed' AND s.status = 'pending'
+    `).get() as { total: number };
+    const creditTotal = creditRow.total;
+    if (creditTotal > 0) {
+      result.push({
+        id: -3200, name: '债权（别人欠我）', asset_type: 'credit', type: 'credit',
+        currency: 'CNY', balance: creditTotal,
+        bank_name: null, broker: null,
+        card_number: null, display_alias: null,
+        market_value_cny: creditTotal,
+        cash_balance: 0, asset_count: 0, total_profit_loss: 0,
+        children: [], is_investment: false,
+      });
+    }
+  }
+
+  // 5.8 债务（v1.7.3：我欠别人的未结金额冲减净资产，值为负；按币种折算 CNY）
+  {
+    const debtRow = db.prepare(`
+      SELECT COALESCE(SUM(s.amount * COALESCE(c.rate_to_base, 1)), 0) as total
+      FROM social_obligations s
+      LEFT JOIN currencies c ON s.currency = c.code
+      WHERE s.type = 'owe' AND s.status = 'pending'
+    `).get() as { total: number };
+    const debtTotal = debtRow.total;
+    if (debtTotal > 0) {
+      result.push({
+        id: -3300, name: '债务（我欠别人）', asset_type: 'debt', type: 'debt',
+        currency: 'CNY', balance: debtTotal,
+        bank_name: null, broker: null,
+        card_number: null, display_alias: null,
+        market_value_cny: -debtTotal, // 负值：冲减总资产
+        cash_balance: 0, asset_count: 0, total_profit_loss: 0,
+        children: [], is_investment: false,
+      });
+    }
+  }
+
   // 6. Custom assets
   for (const acc of allAccounts) {
     if (acc.asset_type === 'custom') {

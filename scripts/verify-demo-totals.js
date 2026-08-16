@@ -65,7 +65,7 @@ const totals = {
   totalBank,
   totalBrokerCash,
   totalInvestment,
-  totalAssets: totalBank + totalBrokerCash + totalInvestment,
+  totalAssets: computed.totalAssets, // v1.7.3：含债务债权净值
   accountsPageTotal,
 };
 
@@ -73,8 +73,10 @@ const expected = {
   totalBank: 285850,
   totalBrokerCash: 23700,
   totalInvestment: 403800,
-  totalAssets: 713350,
-  accountsPageTotal: 713350,
+  totalAssets: 714975,
+  accountsPageTotal: 714975,
+  creditItem: 3625,
+  debtItem: -2000,
   insuranceItem: 83850,
   bankWealthItem: 33400,
   brokerCashItem: 23700,
@@ -107,6 +109,8 @@ const itemChecks = [
   ['broker_cash|券商流动金', expected.brokerCashItem],
   ['bank|中国银行', expected.bocGroup],
   ['bank|工商银行', expected.icbcGroup],
+  ['credit|债权（别人欠我）', expected.creditItem],
+  ['debt|债务（我欠别人）', expected.debtItem],
 ];
 for (const [key, exp] of itemChecks) {
   const v = byName.get(key);

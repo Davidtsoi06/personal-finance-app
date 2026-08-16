@@ -6,7 +6,7 @@ import { payPremium, getTotalCashValue } from '../../src/main/database/services/
 import { importWalletBills } from '../../src/main/database/services/account-transaction-service';
 import { deleteAsset, getAsset } from '../../src/main/database/services/asset-service';
 import { createTransaction, getTransaction } from '../../src/main/database/services/transaction-service';
-import { updateAccount, getAccount } from '../../src/main/database/services/account-service';
+import { updateAccount, getAccount, getAllAssetsSummary } from '../../src/main/database/services/account-service';
 import { getMonthlySummary } from '../../src/main/database/services/ledger-service';
 import { getBudgetStatus } from '../../src/main/database/services/budget-service';
 import { updateRate, convertAmount } from '../../src/main/database/services/currency-service';
@@ -136,6 +136,20 @@ describe('批 1 数据正确性回归（v1.7.1）', () => {
     db.prepare("INSERT INTO ledgers (type, amount, currency, account_id, date, description) VALUES ('expense', 10, 'USD', ?, '2026-08-11', '美元支出')").run(acc);
     const status = getBudgetStatus('2026-08');
     expect(status.totalSpent).toBeCloseTo(172.5, 2);
+  });
+
+  it('v1.7.3 债务债权计入资产总览：债权正值、债务负值（按币种折算）', () => {
+    seedCurrency('USD', 7.25);
+    db.prepare("INSERT INTO social_obligations (type, person, item, status, amount, currency) VALUES ('owed', '李四', '借款给他', 'pending', 500, 'USD')").run();
+    db.prepare("INSERT INTO social_obligations (type, person, item, status, amount, currency) VALUES ('owe', '王五', '借他的钱', 'pending', 2000, 'CNY')").run();
+    db.prepare("INSERT INTO social_obligations (type, person, item, status, amount, currency) VALUES ('owed', '赵六', '已还清', 'done', 999, 'CNY')").run();
+    const summary = getAllAssetsSummary();
+    const credit = summary.find((i) => i.asset_type === 'credit');
+    const debt = summary.find((i) => i.asset_type === 'debt');
+    expect(credit).toBeTruthy();
+    expect(credit!.market_value_cny).toBeCloseTo(3625, 2); // 500 USD × 7.25，done 不计
+    expect(debt).toBeTruthy();
+    expect(debt!.market_value_cny).toBeCloseTo(-2000, 2);
   });
 
   it('P2 保单现金价值按币种折算 CNY', () => {
