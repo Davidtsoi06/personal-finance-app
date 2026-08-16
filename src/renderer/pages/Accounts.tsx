@@ -16,6 +16,11 @@ interface Account {
   parent_account_id: number | null; sort_order: number;
 }
 
+interface EditableInvAccount {
+  id: number; name: string; broker: string | null; currency: string;
+  account_number: string | null; funding_account_id?: number | null;
+}
+
 interface AssetSummaryItem {
   id: number; name: string; asset_type: string; type: string;
   currency: string; balance: number;
@@ -52,6 +57,11 @@ export function Accounts() {
 
   // Edit / delete modal state
   const [editingAccount, setEditingAccount] = useState<EditableAccount | null>(null);
+  // v1.7.5：投资账号编辑（资产管理页内嵌券商/流动金子项的 ✏️）
+  const [editingInvAccount, setEditingInvAccount] = useState<EditableInvAccount | null>(null);
+  const [invForm, setInvForm] = useState<{ name: string; broker: string; currency: string; account_number: string; funding_account_id: string }>({ name: '', broker: '', currency: 'CNY', account_number: '', funding_account_id: '' });
+  const [invSaving, setInvSaving] = useState(false);
+  const [invError, setInvError] = useState('');
 
   const navigate = useNavigate();
 
@@ -76,6 +86,42 @@ export function Accounts() {
       else next.add(bankName);
       return next;
     });
+  };
+
+  // v1.7.5：打开投资账号编辑弹窗
+  const openInvEdit = (acc: EditableInvAccount) => {
+    setInvForm({
+      name: acc.name,
+      broker: acc.broker || '',
+      currency: acc.currency || 'CNY',
+      account_number: acc.account_number || '',
+      funding_account_id: acc.funding_account_id != null ? String(acc.funding_account_id) : '',
+    });
+    setInvError('');
+    setEditingInvAccount(acc);
+  };
+
+  // v1.7.5：保存投资账号编辑（只影响券商自身）
+  const handleSaveInvAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingInvAccount) return;
+    if (!invForm.name.trim()) { setInvError('名称不能为空'); return; }
+    setInvSaving(true);
+    setInvError('');
+    try {
+      await invoke('investmentAccount:update', editingInvAccount.id, {
+        name: invForm.name.trim(),
+        broker: invForm.broker.trim() || null,
+        currency: invForm.currency,
+        account_number: invForm.account_number.trim() || null,
+        funding_account_id: invForm.funding_account_id ? parseInt(invForm.funding_account_id, 10) : null,
+      });
+      setEditingInvAccount(null);
+      load();
+    } catch (err: any) {
+      setInvError(err?.message || '保存失败');
+    }
+    setInvSaving(false);
   };
 
   // ── Add handlers ──
@@ -302,38 +348,76 @@ export function Accounts() {
                   {/* Expanded card list */}
                   {isExpanded && item.children && item.children.length > 0 && (
                     <div className="layer2-card-children">
-                      {item.children.map((child) => (
-                        <div
-                          key={`card-${child.id}`}
-                          className="bank-card-row"
-                          onClick={() => navigate(`/accounts/${child.id}`)}
-                        >
-                          <div className="bank-card-row-icon">💳</div>
-                          <div className="bank-card-row-info">
-                            <div className="bank-card-row-name">
-                              {child.display_alias || child.name}
+                      {item.children.map((child) => {
+                        // v1.7.5：内嵌券商子项与银行卡分流——点击进投资详情、编辑改券商自身
+                        const isBrokerChild = child.is_investment === true;
+                        if (isBrokerChild) {
+                          return (
+                            <div
+                              key={`inv-${child.id}`}
+                              className="bank-card-row"
+                              onClick={() => navigate(`/investments/${child.id}`)}
+                            >
+                              <div className="bank-card-row-icon">📈</div>
+                              <div className="bank-card-row-info">
+                                <div className="bank-card-row-name">
+                                  {child.name}
+                                  <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-primary-500)', marginLeft: 6 }}>· 投资</span>
+                                </div>
+                                <div className="bank-card-row-meta">
+                                  {child.broker ? child.broker + ' · ' : '券商 · '}
+                                  {(child.asset_count || 0) > 0 ? child.asset_count + ' 只持仓' : '暂无持仓'}
+                                </div>
+                              </div>
+                              <div className="bank-card-row-value">
+                                <Amount value={child.market_value_cny} currency="CNY" colored={false} />
+                              </div>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={(e) => {
+                                  e?.stopPropagation();
+                                  openInvEdit(child as unknown as EditableInvAccount);
+                                }}
+                              >
+                                ✏️
+                              </Button>
                             </div>
-                            <div className="bank-card-row-meta">
-                              {child.card_number ? `尾号 ${child.card_number.slice(-4)}` : ''}
-                              {child.cash_balance && child.cash_balance > 0 ? ` · 定期 ${child.cash_balance.toLocaleString()}` : ''}
-                              {(child.asset_count || 0) > 0 ? ` · 定存 ${child.asset_count} 笔` : ''}
-                            </div>
-                          </div>
-                          <div className="bank-card-row-value">
-                            <Amount value={child.market_value_cny} currency="CNY" colored />
-                          </div>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={(e) => {
-                              e?.stopPropagation();
-                              setEditingAccount(child as EditableAccount);
-                            }}
+                          );
+                        }
+                        return (
+                          <div
+                            key={`card-${child.id}`}
+                            className="bank-card-row"
+                            onClick={() => navigate(`/accounts/${child.id}`)}
                           >
-                            ✏️
-                          </Button>
-                        </div>
-                      ))}
+                            <div className="bank-card-row-icon">💳</div>
+                            <div className="bank-card-row-info">
+                              <div className="bank-card-row-name">
+                                {child.display_alias || child.name}
+                              </div>
+                              <div className="bank-card-row-meta">
+                                {child.card_number ? `尾号 ${child.card_number.slice(-4)}` : ''}
+                                {child.cash_balance && child.cash_balance > 0 ? ` · 定期 ${child.cash_balance.toLocaleString()}` : ''}
+                                {(child.asset_count || 0) > 0 ? ` · 定存 ${child.asset_count} 笔` : ''}
+                              </div>
+                            </div>
+                            <div className="bank-card-row-value">
+                              <Amount value={child.market_value_cny} currency="CNY" colored />
+                            </div>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(e) => {
+                                e?.stopPropagation();
+                                setEditingAccount(child as EditableAccount);
+                              }}
+                            >
+                              ✏️
+                            </Button>
+                          </div>
+                        );
+                      })}
                       <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)' }} onClick={(e) => e.stopPropagation()}>
                         <Button variant="secondary" size="sm" onClick={() => {
                           setAddAssetType('bank');
@@ -447,7 +531,11 @@ export function Accounts() {
                   {isExpanded && item.children && item.children.length > 0 && (
                     <div className="layer2-card-children">
                       {item.children.map((child) => (
-                        <div key={'bc-' + child.id} className="bank-card-row">
+                        <div
+                          key={'bc-' + child.id}
+                          className="bank-card-row"
+                          onClick={() => navigate(`/investments/${child.id}`)}
+                        >
                           <div className="bank-card-row-icon">📈</div>
                           <div className="bank-card-row-info">
                             <div className="bank-card-row-name">{child.name}</div>
@@ -458,6 +546,16 @@ export function Accounts() {
                           <div className="bank-card-row-value">
                             <Amount value={child.market_value_cny} currency="CNY" showSign={false} />
                           </div>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={(e) => {
+                              e?.stopPropagation();
+                              setEditingInvAccount(child as unknown as EditableInvAccount);
+                            }}
+                          >
+                            ✏️
+                          </Button>
                         </div>
                       ))}
                     </div>
@@ -663,6 +761,72 @@ export function Accounts() {
         onClose={() => setEditingAccount(null)}
         onChanged={load}
       />
+
+      {/* ── 投资账号编辑弹窗（v1.7.5：只影响券商自身） ── */}
+      <Modal
+        open={!!editingInvAccount}
+        title="📈 编辑投资账号"
+        onClose={() => setEditingInvAccount(null)}
+      >
+        <form onSubmit={handleSaveInvAccount}>
+          <div className="form-group">
+            <label className="form-label">名称 *</label>
+            <input
+              className="form-input"
+              value={invForm.name}
+              onChange={(e) => setInvForm({ ...invForm, name: e.target.value })}
+            />
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">券商</label>
+              <input
+                className="form-input"
+                placeholder="如：富途证券"
+                value={invForm.broker}
+                onChange={(e) => setInvForm({ ...invForm, broker: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">主要币种</label>
+              <select className="form-select" value={invForm.currency} onChange={(e) => setInvForm({ ...invForm, currency: e.target.value })}>
+                <option value="HKD">HK$ 港币</option>
+                <option value="USD">$ 美元</option>
+                <option value="CNY">¥ 人民币</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">账号</label>
+            <input
+              className="form-input"
+              placeholder="选填"
+              value={invForm.account_number}
+              onChange={(e) => setInvForm({ ...invForm, account_number: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">关联银行账户</label>
+            <select className="form-select" value={invForm.funding_account_id} onChange={(e) => setInvForm({ ...invForm, funding_account_id: e.target.value })}>
+              <option value="">无关联</option>
+              {bankAccounts.map((ba: any) => (
+                <option key={ba.id} value={ba.id}>🏦 {ba.name} ({ba.currency})</option>
+              ))}
+            </select>
+          </div>
+          {invError && (
+            <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)', background: 'var(--color-danger-bg)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-danger)', marginBottom: 'var(--spacing-md)' }}>
+              ❌ {invError}
+            </div>
+          )}
+          <div className="form-actions">
+            <Button variant="secondary" onClick={() => setEditingInvAccount(null)} type="button">取消</Button>
+            <Button variant="primary" type="submit" disabled={invSaving}>
+              {invSaving ? '保存中...' : '保存'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
