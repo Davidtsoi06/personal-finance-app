@@ -804,7 +804,7 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     const creditTotal = creditRow.total;
     if (creditTotal > 0) {
       result.push({
-        id: -3200, name: '债权（别人欠我）', asset_type: 'credit', type: 'credit',
+        id: -3200, name: '债权', asset_type: 'credit', type: 'credit',
         currency: 'CNY', balance: creditTotal,
         bank_name: null, broker: null,
         card_number: null, display_alias: null,
@@ -826,7 +826,7 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     const debtTotal = debtRow.total;
     if (debtTotal > 0) {
       result.push({
-        id: -3300, name: '债务（我欠别人）', asset_type: 'debt', type: 'debt',
+        id: -3300, name: '债务', asset_type: 'debt', type: 'debt',
         currency: 'CNY', balance: debtTotal,
         bank_name: null, broker: null,
         card_number: null, display_alias: null,

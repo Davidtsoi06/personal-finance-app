@@ -22,8 +22,8 @@ interface Obligation {
 type TabType = 'owe' | 'owed';
 
 const TAB_OPTIONS: { key: TabType; label: string; icon: string }[] = [
-  { key: 'owe', label: '债务（我欠别人）', icon: '🙏' },
-  { key: 'owed', label: '债权（别人欠我）', icon: '🤝' },
+  { key: 'owe', label: '债务', icon: '🙏' },
+  { key: 'owed', label: '债权', icon: '🤝' },
 ];
 
 function currencySymbol(c: string): string {

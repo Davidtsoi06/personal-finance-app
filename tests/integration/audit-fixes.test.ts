@@ -146,6 +146,8 @@ describe('批 1 数据正确性回归（v1.7.1）', () => {
     const summary = getAllAssetsSummary();
     const credit = summary.find((i) => i.asset_type === 'credit');
     const debt = summary.find((i) => i.asset_type === 'debt');
+    expect(credit!.name).toBe('债权');
+    expect(debt!.name).toBe('债务');
     expect(credit).toBeTruthy();
     expect(credit!.market_value_cny).toBeCloseTo(3625, 2); // 500 USD × 7.25，done 不计
     expect(debt).toBeTruthy();

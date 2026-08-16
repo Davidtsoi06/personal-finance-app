@@ -109,8 +109,8 @@ const itemChecks = [
   ['broker_cash|券商流动金', expected.brokerCashItem],
   ['bank|中国银行', expected.bocGroup],
   ['bank|工商银行', expected.icbcGroup],
-  ['credit|债权（别人欠我）', expected.creditItem],
-  ['debt|债务（我欠别人）', expected.debtItem],
+  ['credit|债权', expected.creditItem],
+  ['debt|债务', expected.debtItem],
 ];
 for (const [key, exp] of itemChecks) {
   const v = byName.get(key);

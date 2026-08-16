@@ -320,13 +320,13 @@ export function Dashboard() {
           <div className="stat-card-value number">{s && <NetAmount value={s.totalInvestments} currency="CNY" />}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-label">债权（别人欠我）</div>
+          <div className="stat-card-label">债权</div>
           <div className="stat-card-value number" style={{ color: s && s.totalCredit > 0 ? 'var(--color-success)' : undefined }}>
             {s && <NetAmount value={s.totalCredit} currency="CNY" />}
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-card-label">债务（我欠别人）</div>
+          <div className="stat-card-label">债务</div>
           <div className="stat-card-value number" style={{ color: s && s.totalDebt > 0 ? 'var(--color-danger)' : undefined }}>
             {s && <NetAmount value={s.totalDebt} currency="CNY" />}
           </div>
