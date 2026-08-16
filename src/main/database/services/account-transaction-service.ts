@@ -183,11 +183,14 @@ interface BillRecord {
   category?: string;
 }
 
-/** Import wallet bills — writes to both account_transactions AND ledgers (dual-write). */
-export function importWalletBills(accountId: number, records: BillRecord[]): { imported: number; errors: string[] } {
+/** Import wallet bills — writes to both account_transactions AND ledgers (dual-write).
+ *  v1.8.0：返回写入的存取记录 id 与记账 id，供「撤销」使用。 */
+export function importWalletBills(accountId: number, records: BillRecord[]): { imported: number; errors: string[]; txIds: number[]; ledgerIds: number[] } {
   const db = getDatabase();
   let imported = 0;
   const errors: string[] = [];
+  const txIds: number[] = [];
+  const ledgerIds: number[] = [];
 
   const insertTx = db.prepare(`
     INSERT INTO account_transactions (account_id, type, amount, currency, date, notes)
@@ -210,7 +213,8 @@ export function importWalletBills(accountId: number, records: BillRecord[]): { i
         if (amount <= 0) { errors.push(`金额无效：${rec.description}`); continue; }
 
         // 1. Write account_transaction
-        insertTx.run(accountId, txType, amount, currency, date, rec.description);
+        const txRes = insertTx.run(accountId, txType, amount, currency, date, rec.description);
+        txIds.push(Number(txRes.lastInsertRowid));
 
         // 2. Write ledger (for expense analysis)
         const ledgerType = rec.type === 'income' ? 'income' : 'expense';
@@ -221,7 +225,8 @@ export function importWalletBills(accountId: number, records: BillRecord[]): { i
           if (cat) categoryId = cat.id;
         }
 
-        insertLedger.run(ledgerType, amount, currency, accountId, date, rec.description, categoryId);
+        const ledgerRes = insertLedger.run(ledgerType, amount, currency, accountId, date, rec.description, categoryId);
+        ledgerIds.push(Number(ledgerRes.lastInsertRowid));
 
         // v1.7.1 修复：同步账户余额（此前导入完全不更新余额）
         updateAccountBalance(accountId, currency, rec.type === 'income' ? amount : -amount);
@@ -239,5 +244,5 @@ export function importWalletBills(accountId: number, records: BillRecord[]): { i
   });
 
   tx();
-  return { imported, errors };
+  return { imported, errors, txIds, ledgerIds };
 }

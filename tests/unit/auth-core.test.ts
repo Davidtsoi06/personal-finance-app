@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   hashPassword, verifyPassword, generateVerificationCode,
-  createAttemptLimiter, createSendLimiter, maskEmail,
+  createAttemptLimiter, createSendLimiter, createEscalatingLock, maskEmail,
   CODE_MAX_ATTEMPTS,
 } from '../../src/main/services/auth-core';
 
@@ -52,6 +52,29 @@ describe('auth-core 登录限流', () => {
     expect(limiter.lockedRemainingMs(40_000)).toBe(0);
     limiter.reset();
     expect(limiter.lockedRemainingMs(20_000)).toBe(0);
+  });
+});
+
+describe('auth-core 阶梯式锁定（v1.8.0）', () => {
+  it('首次触发锁 10 秒，解锁后再触发锁 60 秒，成功重置', () => {
+    const lock = createEscalatingLock(5, 10_000, 60_000);
+    for (let i = 0; i < 4; i++) expect(lock.registerFailure(1_000).locked).toBe(false);
+    const first = lock.registerFailure(1_000);
+    expect(first.locked).toBe(true);
+    expect(first.level).toBe(1);
+    expect(lock.lockedRemainingMs(1_000)).toBe(10_000);
+    // 解锁后（时间推进）再次连续失败 → 60 秒
+    for (let i = 0; i < 4; i++) expect(lock.registerFailure(20_000).locked).toBe(false);
+    const second = lock.registerFailure(20_000);
+    expect(second.locked).toBe(true);
+    expect(second.level).toBe(2);
+    expect(lock.lockedRemainingMs(20_000)).toBe(60_000);
+    // 成功登录整体重置
+    lock.reset();
+    for (let i = 0; i < 4; i++) expect(lock.registerFailure(200_000).locked).toBe(false);
+    const third = lock.registerFailure(200_000);
+    expect(third.level).toBe(1);
+    expect(lock.lockedRemainingMs(200_000)).toBe(10_000);
   });
 });
 

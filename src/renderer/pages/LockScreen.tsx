@@ -117,6 +117,11 @@ export function LockScreen() {
               />
             </div>
             {error && <div className="lock-msg lock-msg--error">{error}</div>}
+            {error && error.includes('锁定') && (
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                等不及？可点击下方「忘记密码」通过邮箱验证码重设密码。
+              </div>
+            )}
             {notice && <div className="lock-msg lock-msg--ok">{notice}</div>}
             <div className="form-actions" style={{ flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
               <Button variant="primary" type="submit" disabled={busy}>

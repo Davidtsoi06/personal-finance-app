@@ -443,7 +443,14 @@ export function Dashboard() {
               </div>
             </div>
           ) : (
-            <div className="card-placeholder">暂无资产数据</div>
+            <div style={{ textAlign: 'center', padding: 'var(--spacing-md)' }}>
+              <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
+                还没有任何资产记录——从添加一个银行卡或投资账户开始吧。
+              </p>
+              <Button variant="primary" onClick={() => { window.location.hash = '#/accounts'; }}>
+                ＋ 添加第一个资产
+              </Button>
+            </div>
           )}
         </Card>
       </div>

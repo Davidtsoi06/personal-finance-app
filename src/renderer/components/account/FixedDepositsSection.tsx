@@ -7,6 +7,7 @@ import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { Badge } from '../ui/Badge';
 import { invoke } from '../../hooks/useIpc';
+import { useToast } from '../ui/Toast';
 
 export interface FixedDeposit {
   id: number; account_id: number; amount: number; currency: string;
@@ -28,6 +29,7 @@ interface Props {
 }
 
 export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: Props) {
+  const { showToast } = useToast();
   const [fixedDeposits, setFixedDeposits] = useState<FixedDeposit[]>([]);
   const [showFdForm, setShowFdForm] = useState(false);
   const [editingFd, setEditingFd] = useState<FixedDeposit | null>(null);
@@ -126,7 +128,7 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
     if (!pendingCreate) return;
     setFdSaving(true);
     try {
-      await invoke('fixedDeposit:create', {
+      const row = await invoke<FixedDeposit>('fixedDeposit:create', {
         ...pendingCreate,
         deductMode: deductMode,
         deductAccountId: deductMode === 'deduct' ? (parseInt(deductAccountId) || accountId) : null,
@@ -134,6 +136,14 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
       setPendingCreate(null);
       loadFds();
       onChanged();
+      // v1.8.0：操作后撤销——扣款型可一键撤销（删除定存并退回金额）
+      if (row && deductMode === 'deduct') {
+        showToast('已创建定期存款并写扣款记录', '撤销', async () => {
+          await invoke('fixedDeposit:delete', row.id, true).catch(() => {});
+          loadFds();
+          onChanged();
+        });
+      }
     } catch (err: any) { setFdError(err.message || '创建失败'); }
     setFdSaving(false);
   };

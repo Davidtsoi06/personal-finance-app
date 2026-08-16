@@ -173,16 +173,17 @@ export function registerAssetIpcHandlers(): void {
   ipcMain.handle('transaction:list', (_e, assetId?: number, limit?: number) =>
     transactionService.listTransactions(assetId, limit)
   );
-  ipcMain.handle('transaction:listByAccount', async (_e, investmentAccountId: number) => {
+  ipcMain.handle('transaction:listByAccount', async (_e, investmentAccountId: number, limit?: number) => {
     const db = getDatabase();
+    // v1.8.0：支持「加载更多」分页
     return db.prepare(`
       SELECT t.*, a.name as asset_name, a.code as asset_code
       FROM transactions t
       JOIN assets a ON t.asset_id = a.id
       WHERE a.investment_account_id = ?
       ORDER BY t.date DESC, t.id DESC
-      LIMIT 200
-    `).all(investmentAccountId);
+      LIMIT ?
+    `).all(investmentAccountId, limit || 200);
   });
   ipcMain.handle('transaction:get', (_e, id: number) => transactionService.getTransaction(id));
   handleValidated('transaction:create', (data: any) => {

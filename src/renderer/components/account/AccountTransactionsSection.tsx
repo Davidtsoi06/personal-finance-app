@@ -35,10 +35,12 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
   const [deletingTx, setDeletingTx] = useState<AccountTransaction | null>(null);
   const [invAccounts, setInvAccounts] = useState<Array<{id: number; name: string; broker: string | null; currency: string}>>([]);
 
+  // v1.8.0：分页加载（默认 100 条，「加载更多」递增）
+  const [txLimit, setTxLimit] = useState(100);
   const loadTxs = useCallback(() => {
-    invoke<AccountTransaction[]>('accountTransaction:list', accountId)
+    invoke<AccountTransaction[]>('accountTransaction:list', accountId, txLimit)
       .then((txs) => onTransactionsChange(txs || []));
-  }, [accountId]);
+  }, [accountId, txLimit]);
 
   useEffect(() => { loadTxs(); }, [loadTxs]);
 
@@ -164,6 +166,13 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
           rowKey={(r) => r.id}
           emptyText="暂无存取记录，点击上方按钮添加"
         />
+        {transactions.length >= txLimit && (
+          <div style={{ marginTop: 'var(--spacing-sm)', textAlign: 'center' }}>
+            <Button variant="secondary" size="sm" onClick={() => setTxLimit((l) => l + 100)}>
+              加载更多（当前显示 {transactions.length} 条）
+            </Button>
+          </div>
+        )}
       </Card>
 
       <AccountTxFormModal

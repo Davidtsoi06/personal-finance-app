@@ -198,7 +198,10 @@ export function Investments() {
       {/* 未归属持仓（删除券商遗留，v1.6.0） */}
       {orphans.length > 0 && (
         <div style={{ marginTop: 'var(--spacing-lg)' }}>
-          <Card title="⚠️ 未归属持仓（删除券商时遗留）">
+          <Card title="📦 未关联账户的资产">
+            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginTop: 0 }}>
+              这些持仓没有关联任何投资账户（通常因删除券商产生）。请把它们转挂到现有账户，或直接删除。
+            </p>
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-md)' }}>
               以下持仓不属于任何券商账户，导致资产总览与投资页金额不一致。请转挂到某个券商账户，或删除。
             </div>

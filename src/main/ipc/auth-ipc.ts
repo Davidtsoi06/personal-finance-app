@@ -84,8 +84,8 @@ export function registerAuthIpcHandlers(callbacks: AuthIpcCallbacks): void {
     return { ok: true };
   });
 
-  handleValidated('onboarding:complete', () => {
-    authService.completeOnboarding();
+  handleValidated('onboarding:complete', (mode?: string) => {
+    authService.completeOnboarding(mode === 'skipped' ? 'skipped' : 'done');
     return { ok: true };
   });
 }

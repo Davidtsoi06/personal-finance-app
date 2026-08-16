@@ -22,15 +22,44 @@ const navItems = [
 function Layout({ children }: LayoutProps) {
   const [appName, setAppName] = useState('个人理财');
   const [idleMinutes, setIdleMinutes] = useState<number | null>(null);
+  // v1.8.0：数据更新提示条（汇率/价格刷新后显示）
+  const [staleBanner, setStaleBanner] = useState<string | null>(null);
+  // v1.8.0：侧栏版本号改为真实版本（原硬编码 v1.6.0 过时）
+  const [appVersion, setAppVersion] = useState('');
+  // v1.8.0：跳过安全设置后的温和提醒（每次启动一次，可忽略）
+  const [securityReminder, setSecurityReminder] = useState(false);
 
   useEffect(() => {
     invoke<string>('settings:getAppName').then((name) => {
       if (name) setAppName(name);
     });
     // v1.7.0：启动密码锁——读取空闲锁定时长并启用自动锁
-    invoke<{ enabled: boolean; idleMinutes: number }>('auth:status')
-      .then((s) => { if (s?.enabled) setIdleMinutes(s.idleMinutes); })
+    invoke<{ enabled: boolean; idleMinutes: number; onboardingSkipped: boolean }>('auth:status')
+      .then((s) => {
+        if (s?.enabled) setIdleMinutes(s.idleMinutes);
+        // v1.8.0：跳过安全设置 → 每次启动温和提醒一次（可忽略）
+        if (s && !s.enabled && s.onboardingSkipped && !sessionStorage.getItem('pf_security_reminded')) {
+          setSecurityReminder(true);
+        }
+      })
       .catch(() => {});
+
+    // v1.8.0：数据更新提示条（汇率/价格刷新完成 → 显示 8 秒）
+    const showStale = (msg: string) => {
+      setStaleBanner(msg);
+      window.setTimeout(() => setStaleBanner(null), 8000);
+    };
+    if (window.electronAPI?.onCurrencyUpdated) {
+      window.electronAPI.onCurrencyUpdated(() => showStale('汇率已更新'));
+    }
+    if (window.electronAPI?.onPricesUpdated) {
+      window.electronAPI.onPricesUpdated(() => showStale('行情价格已更新'));
+    }
+    invoke<string>('update:getVersion').then((v) => { if (v) setAppVersion(v); }).catch(() => {});
+    return () => {
+      window.electronAPI?.removeCurrencyUpdatedListener?.();
+      window.electronAPI?.removePricesUpdatedListener?.();
+    };
   }, []);
 
   useIdleLock(idleMinutes);
@@ -58,12 +87,56 @@ function Layout({ children }: LayoutProps) {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <span className="version-text">v1.6.0</span>
+          <span className="version-text">{appVersion ? 'v' + appVersion : ''}</span>
         </div>
       </aside>
 
       {/* 主内容区域 */}
-      <main className="main-content">{children}</main>
+      <main className="main-content">
+        {securityReminder && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            background: '#EAF3FC', borderBottom: '1px solid #B7D4F0',
+            padding: '6px 16px', fontSize: 'var(--font-size-sm)', color: '#2f5d8a',
+          }}>
+            <span>🔒 尚未设置启动密码，他人打开电脑即可查看你的财务数据</span>
+            <button
+              style={{
+                background: 'var(--color-primary)', border: 'none', color: '#fff', borderRadius: 'var(--radius-sm)',
+                padding: '2px 10px', cursor: 'pointer', fontSize: 'var(--font-size-sm)',
+              }}
+              onClick={() => { window.location.hash = '#/settings'; }}
+            >
+              前往设置
+            </button>
+            <button
+              style={{ background: 'transparent', border: 'none', color: '#2f5d8a', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }}
+              onClick={() => { sessionStorage.setItem('pf_security_reminded', '1'); setSecurityReminder(false); }}
+            >
+              暂不提醒
+            </button>
+          </div>
+        )}
+        {staleBanner && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            background: '#FFF7E6', borderBottom: '1px solid #FFE1A8',
+            padding: '6px 16px', fontSize: 'var(--font-size-sm)', color: '#8a6d3b',
+          }}>
+            <span>🔄 {staleBanner}，部分页面数据可能已过期</span>
+            <button
+              style={{
+                background: 'var(--color-primary)', border: 'none', color: '#fff', borderRadius: 'var(--radius-sm)',
+                padding: '2px 10px', cursor: 'pointer', fontSize: 'var(--font-size-sm)',
+              }}
+              onClick={() => window.location.reload()}
+            >
+              刷新页面
+            </button>
+          </div>
+        )}
+        {children}
+      </main>
     </div>
   );
 }

@@ -177,7 +177,10 @@ export function Accounts() {
   // ── Compute stats ──
   const totalAssets = assetSummary.reduce((s, item) => s + (item.market_value_cny || 0), 0);
   const bankCount = assetSummary.filter(item => item.asset_type === 'bank').length;
-  const brokerCount = assetSummary.filter(item => item.asset_type === 'investment').length;
+  // v1.8.0：券商计数含银行组内嵌的关联券商（此前漏计显示 0 家）
+  const brokerCount = assetSummary.filter(item => item.asset_type === 'investment').length
+    + assetSummary.filter(item => item.asset_type === 'bank')
+      .reduce((s, b) => s + ((b.children || []).filter(c => c.is_investment)).length, 0);
   const walletCount = assetSummary.filter(item => item.asset_type === 'e_wallet').length;
   const policyCount = assetSummary.filter(item => item.asset_type === 'insurance').length;
   const cashCount = assetSummary.filter(item => item.asset_type === 'cash').length;

@@ -7,6 +7,7 @@ import { Table, Column } from '../components/ui/Table';
 import { Amount } from '../components/ui/Amount';
 import { Badge } from '../components/ui/Badge';
 import { invoke } from '../hooks/useIpc';
+import { useToast } from '../components/ui/Toast';
 
 interface SystemWallet {
   id: number; name: string; type: string; currency: string; balance: number;
@@ -27,12 +28,16 @@ const WALLET_LABELS: Record<string, string> = {
 };
 
 export function WalletFlow() {
+  const { showToast } = useToast();
   const { type } = useParams<{ type: string }>();
   const navigate = useNavigate();
 
   const [wallet, setWallet] = useState<SystemWallet | null>(null);
   const [ledgers, setLedgers] = useState<LedgerRow[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // v1.8.0：分页加载
+  const [limit, setLimit] = useState(200);
 
   // Add ledger
   const [showForm, setShowForm] = useState(false);
@@ -63,12 +68,12 @@ export function WalletFlow() {
       });
       if (found) {
         setWallet(found);
-        const list = await invoke<LedgerRow[]>('ledger:list', { accountId: found.id, limit: 200 });
+        const list = await invoke<LedgerRow[]>('ledger:list', { accountId: found.id, limit });
         setLedgers(list || []);
       }
       setLoading(false);
     } catch (err) { console.error(err); setLoading(false); }
-  }, [type]);
+  }, [type, limit]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -147,9 +152,21 @@ export function WalletFlow() {
           type: cols[3] === 'income' ? 'income' : 'expense',
         };
       }).filter(r => r.date && r.amount > 0);
-      const result = await invoke<{ imported: number; errors: string[] }>('wallet:importBills', wallet.id, records);
+      const result = await invoke<{ imported: number; errors: string[]; txIds: number[]; ledgerIds: number[] }>('wallet:importBills', wallet.id, records);
       setImportStatus(`✅ 成功导入 ${result.imported} 条记录`);
       setCsvText('');
+      // v1.8.0：操作后撤销——一键回滚本次导入（删存取记录与记账，余额自动反冲）
+      if (result.imported > 0) {
+        showToast(`已导入 ${result.imported} 条账单并更新余额`, '撤销', async () => {
+          for (const lid of [...result.ledgerIds].reverse()) {
+            await invoke('ledger:delete', lid).catch(() => {});
+          }
+          for (const tid of [...result.txIds].reverse()) {
+            await invoke('accountTransaction:delete', tid).catch(() => {});
+          }
+          load();
+        });
+      }
       load();
     } catch (err: any) {
       setImportStatus(`❌ 导入失败：${err.message}`);
@@ -263,6 +280,13 @@ export function WalletFlow() {
           rowKey={(r) => r.id}
           emptyText="暂无收支记录"
         />
+        {ledgers.length >= limit && (
+          <div style={{ marginTop: 'var(--spacing-sm)', textAlign: 'center' }}>
+            <Button variant="secondary" size="sm" onClick={() => setLimit((l) => l + 200)}>
+              加载更多（当前 {ledgers.length} 条）
+            </Button>
+          </div>
+        )}
       </Card>
 
       {/* ── Add Ledger Modal ── */}

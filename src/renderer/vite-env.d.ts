@@ -12,6 +12,9 @@ declare global {
       /** Listen for currency rate update events (v1.6.1) */
       onCurrencyUpdated: (callback: (data: CurrencyUpdatedEvent) => void) => void;
       removeCurrencyUpdatedListener: () => void;
+      /** Listen for price update events (v1.8.0) */
+      onPricesUpdated: (callback: (data: PricesUpdatedEvent) => void) => void;
+      removePricesUpdatedListener: () => void;
       /** Listen for AI streaming response chunks */
       onAiStreamChunk: (callback: (text: string) => void) => void;
       /** Listen for AI streaming completion */
@@ -23,6 +26,12 @@ declare global {
 
   /** Currency rate update event sent from main → renderer (v1.6.1) */
   interface CurrencyUpdatedEvent {
+    updatedAt: string;
+    updated: number;
+  }
+
+  /** Price update event sent from main → renderer (v1.8.0) */
+  interface PricesUpdatedEvent {
     updatedAt: string;
     updated: number;
   }

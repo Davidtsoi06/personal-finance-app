@@ -24,8 +24,9 @@ export function registerAccountIpcHandlers(): void {
   ipcMain.handle('account:allAssetsSummary', () => accountService.getAllAssetsSummary());
 
   // ── Account Transactions (deposit/withdraw) ──
-  ipcMain.handle('accountTransaction:list', (_e, accountId: number) =>
-    atService.listAccountTransactions(accountId)
+  // v1.8.0：支持 limit 分页（默认 100，渲染端「加载更多」递增）
+  ipcMain.handle('accountTransaction:list', (_e, accountId: number, limit?: number) =>
+    atService.listAccountTransactions(accountId, limit)
   );
   handleValidated('accountTransaction:create', (data: any) => {
     data.date = normalizeDate(data.date);

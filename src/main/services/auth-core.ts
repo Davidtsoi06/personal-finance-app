@@ -69,6 +69,47 @@ export function createAttemptLimiter(maxAttempts: number = LOGIN_MAX_ATTEMPTS, l
   };
 }
 
+/**
+ * 阶梯式登录锁定（v1.8.0）：连续失败达到上限 → 首次锁 firstLockMs，
+ * 解锁后再次触发 → 锁 nextLockMs（更久），成功登录整体重置。
+ */
+export interface EscalatingLock {
+  registerFailure: (now?: number) => { locked: boolean; lockUntil: number; level: number };
+  lockedRemainingMs: (now?: number) => number;
+  reset: () => void;
+}
+
+export function createEscalatingLock(
+  maxAttempts: number = LOGIN_MAX_ATTEMPTS,
+  firstLockMs: number = 10_000,
+  nextLockMs: number = 60_000
+): EscalatingLock {
+  let failures = 0;
+  let lockUntil = 0;
+  let level = 0;
+
+  return {
+    registerFailure(now = Date.now()) {
+      failures += 1;
+      if (failures >= maxAttempts) {
+        failures = 0;
+        level += 1;
+        lockUntil = now + (level >= 2 ? nextLockMs : firstLockMs);
+        return { locked: true, lockUntil, level };
+      }
+      return { locked: false, lockUntil: 0, level };
+    },
+    lockedRemainingMs(now = Date.now()) {
+      return Math.max(0, lockUntil - now);
+    },
+    reset() {
+      failures = 0;
+      lockUntil = 0;
+      level = 0;
+    },
+  };
+}
+
 /** 发信限流：两次发送之间至少间隔 intervalMs。 */
 export interface SendLimiter {
   trySend: (now?: number) => boolean;

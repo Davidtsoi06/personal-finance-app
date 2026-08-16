@@ -26,13 +26,15 @@ export function HoldingsDetail() {
   const [priceTarget, setPriceTarget] = useState<Holding | null>(null);
 
   const accountId = parseInt(id || '0');
+  // v1.8.0：交易历史分页加载
+  const [tradeLimit, setTradeLimit] = useState(200);
 
   const load = useCallback(async () => {
     try {
       const [acc, hList, tList, sum] = await Promise.all([
         invoke<any>('investmentAccount:get', accountId),
         invoke<Holding[]>('investmentAccount:holdings', accountId),
-        invoke<TradeRecord[]>('transaction:listByAccount', accountId),
+        invoke<TradeRecord[]>('transaction:listByAccount', accountId, tradeLimit),
         invoke<any>('investmentAccount:summary', accountId).catch(() => null),
       ]);
       setAccountName(acc?.name || '投资账户');
@@ -48,7 +50,7 @@ export function HoldingsDetail() {
       setSelectedHolding(prev => (prev ? (hList || []).find(h => h.id === prev.id) || null : null));
       setLoading(false);
     } catch (err) { console.error(err); setLoading(false); }
-  }, [accountId]);
+  }, [accountId, tradeLimit]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -100,6 +102,13 @@ export function HoldingsDetail() {
 
       {/* Trade History */}
       <TradesTableCard trades={trades} onChanged={load} />
+      {trades.length >= tradeLimit && (
+        <div style={{ textAlign: 'center', marginTop: 'var(--spacing-sm)' }}>
+          <Button variant="secondary" size="sm" onClick={() => setTradeLimit((l) => l + 200)}>
+            加载更多交易记录（当前 {trades.length} 条）
+          </Button>
+        </div>
+      )}
 
       {/* Cash Flow (v1.5.6) */}
       <CashFlowCard accountId={accountId} onChanged={load} />

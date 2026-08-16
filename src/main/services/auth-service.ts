@@ -10,7 +10,7 @@ import { getSetting, setSetting } from '../database/services/settings-service';
 import { encryptText, decryptText } from './crypto-util';
 import {
   hashPassword, verifyPassword, generateVerificationCode,
-  createAttemptLimiter, createSendLimiter,
+  createEscalatingLock, createSendLimiter,
   CODE_TTL_MS, CODE_MAX_ATTEMPTS, maskEmail,
 } from './auth-core';
 import * as nodemailer from 'nodemailer';
@@ -50,7 +50,8 @@ interface PendingReset {
 
 let unlocked = false;
 let initialized = false;
-const loginLimiter = createAttemptLimiter();
+// v1.8.0：阶梯式锁定（首次 10 秒，再次 60 秒）
+const loginLimiter = createEscalatingLock();
 const sendLimiter = createSendLimiter();
 const pendingResets = new Map<string, PendingReset>();
 
@@ -87,6 +88,7 @@ export interface AuthStatus {
   recoveryEmailMasked: string | null;
   smtpConfigured: boolean;
   onboardingDone: boolean;
+  onboardingSkipped: boolean;
 }
 
 export function getAuthStatus(): AuthStatus {
@@ -99,6 +101,8 @@ export function getAuthStatus(): AuthStatus {
     smtpConfigured: !!(getSetting(KEYS.smtpHost) && getSetting(KEYS.smtpUser) && getSetting(KEYS.smtpPassEnc)),
     // v1.7.2：首次使用引导标记；仅全新库为 '0'（老库无键视为已完成，不打扰老用户）
     onboardingDone: getSetting('onboarding.done') !== '0',
+    // v1.8.0：跳过过安全设置（下次启动温和提醒一次）
+    onboardingSkipped: getSetting('onboarding.done') === 'skipped',
   };
 }
 
@@ -205,7 +209,7 @@ export function verifyAuth(password: string): void {
   if (!salt || !hash) throw new Error('尚未启用启动密码');
   if (!verifyPassword(password, salt, hash)) {
     const r = loginLimiter.registerFailure();
-    if (r.locked) throw new Error('密码错误次数过多，已锁定 30 秒');
+    if (r.locked) throw new Error(`密码错误次数过多，已锁定 ${Math.round(loginLimiter.lockedRemainingMs() / 1000)} 秒`);
     throw new Error('密码不正确');
   }
   loginLimiter.reset();
@@ -216,9 +220,9 @@ export function lockAuth(): void {
   unlocked = false;
 }
 
-/** 完成首次使用引导（v1.7.2）：写入完成标记（跳过与完成都调用） */
-export function completeOnboarding(): void {
-  setSetting('onboarding.done', '1');
+/** 完成首次使用引导（v1.7.2，v1.8.0 支持 skipped 标记）：完成写 '1'，跳过写 'skipped' */
+export function completeOnboarding(mode: 'done' | 'skipped' = 'done'): void {
+  setSetting('onboarding.done', mode === 'skipped' ? 'skipped' : '1');
 }
 
 // ── 忘记密码（邮箱验证码） ──

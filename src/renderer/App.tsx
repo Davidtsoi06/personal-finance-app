@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { LockScreen } from './pages/LockScreen';
 import { Welcome } from './pages/Welcome';
 import { invoke } from './hooks/useIpc';
+import { ToastProvider } from './components/ui/Toast';
 
 // ── 路由级代码分割：每个页面独立 chunk，首屏只加载当前路由（修复单包 1.5MB 告警）──
 // 页面为命名导出，lazy 需要 default → .then 适配
@@ -54,6 +55,16 @@ function App() {
     return <div className="page-loading" style={{ padding: 'var(--spacing-xxl)' }}>加载中...</div>;
   }
 
+  // v1.8.0：Toast 体系包裹主布局
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  );
+}
+
+/** 主布局内容（原 App 主体） */
+function AppContent() {
   return (
     <ErrorBoundary>
       <Layout>

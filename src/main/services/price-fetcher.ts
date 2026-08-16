@@ -12,6 +12,7 @@
  *
  * All errors are logged with structured [PriceFetcher] prefix for debugging.
  */
+import { BrowserWindow } from 'electron';
 import { getDatabase } from '../database';
 import { updateCurrentPrice } from '../database/services/asset-service';
 import { detectMarket } from '../../shared/utils/market';
@@ -485,6 +486,13 @@ export async function fetchAllPrices(): Promise<{
     }
   } else {
     console.log(`${TAG} 完成: ${updated}/${assets.length} 全部更新成功`);
+  }
+
+  // v1.8.0：价格更新完成广播（页面显示「数据已更新」提示条）
+  if (updated > 0) {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('prices:updated', { updatedAt: new Date().toISOString(), updated });
+    }
   }
 
   return { success: true, total: assets.length, updated, errors };

@@ -20,10 +20,11 @@ export function Welcome({ onDone }: Props) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  const finish = async () => {
+  // v1.8.0：完成安全设置传 'done'，跳过传 'skipped'（下次启动温和提醒）
+  const finish = async (mode: 'done' | 'skipped' = 'done') => {
     setBusy(true);
     try {
-      await invoke('onboarding:complete');
+      await invoke('onboarding:complete', mode);
       onDone();
     } catch (err: any) {
       setError(err?.message || '操作失败');
@@ -120,7 +121,7 @@ export function Welcome({ onDone }: Props) {
             {notice && <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)', background: '#F6FFED', borderRadius: 'var(--radius-sm)', color: 'var(--color-success)', fontSize: 'var(--font-size-sm)' }}>{notice}</div>}
             <div className="form-actions">
               <Button variant="secondary" onClick={() => setStep('intro')}>← 返回</Button>
-              <Button variant="secondary" onClick={finish} disabled={busy}>跳过，稍后再说</Button>
+              <Button variant="secondary" onClick={() => finish('skipped')} disabled={busy}>跳过，稍后再说</Button>
             </div>
           </div>
         )}

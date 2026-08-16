@@ -111,8 +111,13 @@ export function SocialObligations() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    await invoke('socialObligation:delete', id);
+  // v1.8.0：删除需二次确认（债务债权涉及人情与法律效力）
+  const [deleting, setDeleting] = useState<Obligation | null>(null);
+
+  const handleDelete = async () => {
+    if (!deleting) return;
+    await invoke('socialObligation:delete', deleting.id);
+    setDeleting(null);
     load();
   };
 
@@ -197,7 +202,7 @@ export function SocialObligations() {
                   <Button variant="secondary" size="sm" onClick={() => openEdit(o)}>
                     ✏️ 编辑
                   </Button>
-                  <Button variant="secondary" size="sm" onClick={() => handleDelete(o.id)}>
+                  <Button variant="secondary" size="sm" onClick={() => setDeleting(o)}>
                     🗑 删除
                   </Button>
                 </div>
