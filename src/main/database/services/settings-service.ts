@@ -3,6 +3,7 @@
  * Used for AI configuration and other user preferences.
  */
 import { getDatabase } from '../index';
+import { isSafeApiUrl } from '../../../shared/utils/url-safety';
 import { decryptText, encryptText } from '../../services/crypto-util';
 
 // ── Types ──
@@ -109,6 +110,10 @@ export function getAiConfigPublic(): AiConfigPublic {
 
 /** Save AI config from renderer. API Key 加密后落库（明文不进数据库）。 */
 export function saveAiConfig(config: AiConfig): void {
+  // v1.7.1：AI 端点安全校验（公网 HTTPS，禁止内网/localhost，防 SSRF）
+  if (config.apiUrl && !isSafeApiUrl(config.apiUrl)) {
+    throw new Error('AI 接口地址无效：仅支持公网 HTTPS 地址');
+  }
   setSetting('ai.provider', config.provider || DEFAULT_PROVIDER);
   setSetting('ai.apiUrl', config.apiUrl || '');
   // 仅当传入非空 Key 时更新（空值表示"保持现有 Key"，修复掩码保存误清空 Key 的 bug）

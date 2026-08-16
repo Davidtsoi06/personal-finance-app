@@ -279,6 +279,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'settings:setAppName': z.tuple([z.string().min(1).max(50)]),
   'settings:saveAiConfig': z.tuple([aiConfigData]),
   'data:confirmImport': z.tuple([z.string().min(1)]),
+  'data:clearAll': z.tuple([]),
   'archive:execute': z.tuple([z.array(z.string())]),
   'report:realizedPnl': z.tuple([z.coerce.number().int().positive()]),
   'trade:importParsed': z.tuple([z.array(recordItem), id]),

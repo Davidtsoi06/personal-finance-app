@@ -198,8 +198,8 @@ export function lockAuth(): void {
 
 export async function requestResetCode(email: string): Promise<void> {
   const registered = getSetting(KEYS.recoveryEmail);
-  if (!registered) throw new Error('未设置恢复邮箱，无法找回');
-  if (email.trim().toLowerCase() !== registered.toLowerCase()) throw new Error('邮箱与登记的恢复邮箱不一致');
+  // v1.7.1 防枚举：无论邮箱是否匹配都返回同样的结果；不匹配时不发邮件
+  if (!registered || email.trim().toLowerCase() !== registered.toLowerCase()) return;
   if (!sendLimiter.trySend()) {
     const wait = Math.ceil(sendLimiter.nextAllowedInMs() / 1000);
     throw new Error(`发送过于频繁，请 ${wait} 秒后再试`);

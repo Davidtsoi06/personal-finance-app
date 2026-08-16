@@ -312,6 +312,9 @@ export function registerSettingsIpcHandlers(): void {
   });
 
   // ── Data Export / Import ──
+  // v1.7.1：confirmImport 只接受 data:importAll 对话框回传的路径（防渲染端任意文件读取）
+  let pendingImportPath: string | null = null;
+
   ipcMain.handle('data:exportAll', async () => {
     const { dialog } = require('electron') as typeof import('electron');
     const xlsx = require('xlsx') as typeof import('xlsx');
@@ -399,13 +402,26 @@ export function registerSettingsIpcHandlers(): void {
         preview.push({ sheet: name, count: rows.length });
       }
 
+      // v1.7.1：记录待导入路径，confirmImport 仅接受该路径
+      pendingImportPath = result.filePaths[0];
       return { success: true, preview, filePath: result.filePaths[0], workbookReady: true };
     } catch (err: any) {
-      return { success: false, error: `读取备份文件失败：${err.message}` };
+      console.error('[data:importAll] 读取备份失败:', err);
+      return { success: false, error: '读取备份文件失败：文件格式不正确或已损坏' };
     }
   });
 
   handleValidated('data:confirmImport', async (filePath: string) => {
+    // v1.7.1：路径必须与 data:importAll 对话框回传一致（一次性会话）
+    const path = require('path') as typeof import('path');
+    if (!pendingImportPath || path.resolve(filePath) !== path.resolve(pendingImportPath)) {
+      throw new Error('导入文件校验失败，请重新选择备份文件');
+    }
+    if (!filePath.toLowerCase().endsWith('.xlsx')) {
+      throw new Error('仅支持 .xlsx 备份文件');
+    }
+    pendingImportPath = null;
+
     const xlsx = require('xlsx') as typeof import('xlsx');
     const db = getDatabase();
     const fs = require('fs');
@@ -479,7 +495,8 @@ export function registerSettingsIpcHandlers(): void {
       }
       return { success: true, totalImported, totalSkipped };
     } catch (err: any) {
-      return { success: false, error: `导入失败：${err.message}` };
+      console.error('[data:confirmImport] 导入失败:', err);
+      return { success: false, error: '导入失败：数据不完整或文件已损坏' };
     }
   });
 
@@ -505,12 +522,25 @@ export function registerSettingsIpcHandlers(): void {
     return { success: true };
   });
 
-  // ── One-click Data Clear ──
-  ipcMain.handle('data:clearAll', () => {
+  // ── One-click Data Clear（v1.7.1：handleValidated 校验 + 密码锁门禁 + 主进程二次确认） ──
+  handleValidated('data:clearAll', async () => {
+    const { dialog } = require('electron') as typeof import('electron');
+    const choice = await dialog.showMessageBox({
+      type: 'warning',
+      title: '清空全部数据',
+      message: '即将删除全部业务数据（账户/持仓/交易/记账/保单等）！',
+      detail: '此操作不可撤销。系统设置（汇率/分类/应用设置）会保留。建议先「导出数据备份」。',
+      buttons: ['取消', '我已备份，确认清空'],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (choice.response !== 1) return { success: false, canceled: true };
+
     const db = getDatabase();
     // 按外键依赖顺序删除：子表在前、父表在后。
     // 保留系统数据：currencies / categories / alert_config / app_settings（应用设置与默认分类）。
     const tables = [
+      'investment_cash_flows', // → transactions / investment_accounts（v1.7.1 补上，否则外键违约）
       'asset_prices',          // → assets
       'transactions',          // → assets
       'account_transactions',  // → accounts / investment_accounts
