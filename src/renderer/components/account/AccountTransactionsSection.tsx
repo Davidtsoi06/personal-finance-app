@@ -64,6 +64,12 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
       setSaving(false);
       return;
     }
+    // 归一化 investment_account_id："不转入"（空串/0）时不提交该字段，否则转数字（v1.6.1 修复取出报错）
+    if (data.investment_account_id === '' || data.investment_account_id === '0' || data.investment_account_id == null) {
+      delete data.investment_account_id;
+    } else {
+      data.investment_account_id = parseInt(String(data.investment_account_id), 10);
+    }
     try {
       await invoke('accountTransaction:create', data);
       setShowForm(false);

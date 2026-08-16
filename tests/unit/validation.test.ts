@@ -18,6 +18,29 @@ describe('IPC 入参校验 schema', () => {
     }
   });
 
+  it('取出转券商：investment_account_id 空串/0 归一化为 null，负数/非数字拒绝（v1.6.1）', () => {
+    const base = { account_id: 1, type: 'withdraw', amount: 100 };
+    // 表单「不转入」提交空串 → 通过并归一化为 null
+    const empty = SCHEMAS['accountTransaction:create'].safeParse([{ ...base, investment_account_id: '' }]);
+    expect(empty.success).toBe(true);
+    if (empty.success) expect(empty.data[0].investment_account_id).toBeNull();
+    // 0 → null
+    const zero = SCHEMAS['accountTransaction:create'].safeParse([{ ...base, investment_account_id: 0 }]);
+    expect(zero.success).toBe(true);
+    if (zero.success) expect(zero.data[0].investment_account_id).toBeNull();
+    // 缺省 → 归一化为 null（transform 对 undefined 同样生效）
+    const none = SCHEMAS['accountTransaction:create'].safeParse([{ ...base }]);
+    expect(none.success).toBe(true);
+    if (none.success) expect(none.data[0].investment_account_id).toBeNull();
+    // 正数 → 保留
+    const valid = SCHEMAS['accountTransaction:create'].safeParse([{ ...base, investment_account_id: '7' }]);
+    expect(valid.success).toBe(true);
+    if (valid.success) expect(valid.data[0].investment_account_id).toBe(7);
+    // 负数 / 非数字 → 拒绝
+    expect(SCHEMAS['accountTransaction:create'].safeParse([{ ...base, investment_account_id: -1 }]).success).toBe(false);
+    expect(SCHEMAS['accountTransaction:create'].safeParse([{ ...base, investment_account_id: 'abc' }]).success).toBe(false);
+  });
+
   it('金额为 0 或负数被拒绝', () => {
     expect(SCHEMAS['accountTransaction:create'].safeParse([{ account_id: 1, type: 'deposit', amount: 0 }]).success).toBe(false);
     expect(SCHEMAS['ledger:create'].safeParse([{ type: 'expense', amount: -5 }]).success).toBe(false);

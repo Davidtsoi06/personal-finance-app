@@ -32,7 +32,9 @@ const accountTxData = z.object({
   currency: optStr,
   date: dateStr.optional(),
   notes: z.string().nullish(),
-  investment_account_id: id.nullish(),
+  // "不转入" 时渲染端提交空串（coerce → 0），此处归一化为 null；负数/非数字仍拒绝（v1.6.1）
+  investment_account_id: z.coerce.number().int().nonnegative().nullish()
+    .transform((v) => (v && v > 0 ? v : null)),
 }).passthrough();
 
 const ledgerData = z.object({
