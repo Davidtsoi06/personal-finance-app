@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { invoke } from '../hooks/useIpc';
+import { useIdleLock } from '../hooks/useIdleLock';
 import './Layout.css';
 
 interface LayoutProps {
@@ -20,12 +21,19 @@ const navItems = [
 
 function Layout({ children }: LayoutProps) {
   const [appName, setAppName] = useState('个人理财');
+  const [idleMinutes, setIdleMinutes] = useState<number | null>(null);
 
   useEffect(() => {
     invoke<string>('settings:getAppName').then((name) => {
       if (name) setAppName(name);
     });
+    // v1.7.0：启动密码锁——读取空闲锁定时长并启用自动锁
+    invoke<{ enabled: boolean; idleMinutes: number }>('auth:status')
+      .then((s) => { if (s?.enabled) setIdleMinutes(s.idleMinutes); })
+      .catch(() => {});
   }, []);
+
+  useIdleLock(idleMinutes);
 
   return (
     <div className="layout">

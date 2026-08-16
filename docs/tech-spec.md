@@ -71,8 +71,10 @@ Electron App
 │   │       ├── social-obligation-service.ts  # 人情债 CRUD
 │   │       └── transaction-service.ts       # 交易记录 CRUD + 当日查询
 │   │
-│   └── services/                  # 后台服务层（12 个）
+│   └── services/                  # 后台服务层（14 个）
 │       ├── ai-service.ts          # AI 对话（构建 prompt + 调用 API + 流式 SSE）
+│       ├── auth-core.ts            # 启动密码锁纯逻辑（scrypt 哈希/验证码/限流，v1.7.0）
+│       ├── auth-service.ts         # 启动密码锁门禁（解锁状态/SMTP 发信/邮箱验证码找回，v1.7.0）
 │       ├── archive-service.ts     # 数据归档（生成月度 Excel + 清理旧数据）
 │       ├── bank-statement-parser.ts  # 银行日结单解析（CSV/Excel + 智能格式匹配）
 │       ├── crypto-core.ts         # AES-256-GCM 纯函数核心（无 electron 依赖）
@@ -91,8 +93,10 @@ Electron App
 │   ├── App.tsx                    # 根组件（12 个页面路由）
 │   ├── hooks/
 │   │   ├── useIpc.ts              # IPC 调用封装（泛型 invoke）
+│   │   ├── useCurrencyRefresh.ts   # 汇率更新事件订阅 → 页面自动重载（v1.6.1）
+│   │   └── useIdleLock.ts          # 空闲自动锁定（v1.7.0）
 │   │   └── useCurrencyRefresh.ts   # 汇率更新事件订阅 → 页面自动重载（v1.6.1）
-│   ├── pages/                     # 页面组件（12 个）
+│   ├── pages/                     # 页面组件（13 个，含 LockScreen 锁屏页 v1.7.0）
 │   │   ├── Dashboard.tsx          # 仪表盘（饼图下钻 + 概览可展开分组[银行内嵌关联券商] + 资产查询 + 走势 + 预算）
 │   │   ├── Accounts.tsx           # 资产管理（Layer 2 四层架构卡片 + 银行分组可展开）
 │   │   ├── AccountDetail.tsx      # 账户详情（存取记录 + 定期存款 + 银行理财产品）
@@ -199,6 +203,7 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 | `currency` | `currency:list`, `currency:convert`, `currency:rateHistory` | 货币汇率 |
 | `investmentAccount` | `investmentAccount:list`, `investmentAccount:summary`, `investmentAccount:dailyStats`, `investmentAccount:addCash`, `investmentAccount:withdrawCash`, `investmentAccount:cashFlows`（v1.5.6）, `investmentAccount:adjustCash`（v1.5.6） | 投资账户 + 现金余额管理（v1.4.3，v1.5.6 起流水派生） |
 | `fixedDeposit` | `fixedDeposit:listByAccount`, `fixedDeposit:create`, `fixedDeposit:update`（含 balanceMode 询问式）, `fixedDeposit:delete`（含 restoreBalance 询问式）, `fixedDeposit:settle`（到期回款，v1.6.1） | 定期存款 CRUD + 联动询问式（v1.4.3 新增） |
+| `auth` | `auth:status`, `auth:setRecoveryEmail`, `auth:setupSmtp`, `auth:sendTestEmail`, `auth:enable`, `auth:changePassword`, `auth:disable`, `auth:verify`, `auth:lock`, `auth:quit`, `auth:requestResetCode`, `auth:verifyResetCode`, `auth:resetPassword`, `auth:setIdleMinutes` | 启动密码锁（v1.7.0，锁屏窗口仅暴露 verify/status/quit/重置类频道） |
 | `netWorth` | `netWorth:history`, `netWorth:record` | 净值历史 |
 | `report` | `report:monthlyTrend`, `report:categoryBreakdown`, `report:assetPerformance`, `report:dailyTrades`（v1.5.2）, `report:realizedPnl`（v1.5.5） | 报表数据 |
 | `export` | `export:toExcel`, `export:dailyTrades`（v1.5.2） | Excel 导出 |
@@ -295,7 +300,7 @@ AI 对话支持 SSE 流式响应，通过 Electron 的 `event.sender.send()` 推
 | **Context Isolation** | `contextIsolation: true`，渲染进程不暴露 Node.js API |
 | **API Key 保护** | AI API Key 仅存主进程 `app_settings` 表（AES-256-GCM 密文，密钥存 `userData/secret.key`，与数据库分离），`getAiConfigPublic()` 只返回 `hasApiKey` 布尔值，Key 明文永不到达渲染进程，且不随备份导出 |
 | **卡号保护** | 银行卡号仅存后 4 位（服务层 `normalizeCardNumber` 截断 + 迁移 v13 清洗存量数据），完整卡号不落库 |
-| **IPC 白名单** | preload 仅放行主进程已注册的 146 个频道（含 `app:ping`），未授权频道调用直接拒绝 |
+| **IPC 白名单** | preload 仅放行主进程已注册的 160 个频道（含 `app:ping`），未授权频道调用直接拒绝；锁屏窗口使用独立最小权限 `lock-preload`（v1.7.0） |
 | **AI 渲染安全** | AI 回复先整体 HTML 转义再做 Markdown 转换，模型输出中的原始 HTML 不会进入 DOM（防 XSS） |
 | **单实例运行** | `app.requestSingleInstanceLock()`：双开时第二个实例直接退出并聚焦已有窗口，防止双进程写库/重复调度 |
 | **迁移前自动备份** | 有待执行迁移时自动把数据库复制到 `userData/backups/`（WAL checkpoint 后），仅保留最近 5 份 |

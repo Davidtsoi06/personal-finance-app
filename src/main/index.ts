@@ -9,8 +9,10 @@ import { recordNetWorth } from './database/services/net-worth-service';
 import { closeDatabase } from './database';
 import { getAppName } from './database/services/settings-service';
 import { recalculateAllAccountBalances } from './database/services/account-service';
+import { initAuthService, isAuthEnabled } from './services/auth-service';
 
 let mainWindow: electron.BrowserWindow | null = null;
+let lockWindow: electron.BrowserWindow | null = null;
 const startTime = Date.now();
 
 // ── 测试/便携模式：允许通过环境变量覆盖用户数据目录（Playwright E2E 等）──
@@ -25,9 +27,11 @@ if (!gotSingleInstanceLock) {
   electron.app.quit();
 } else {
   electron.app.on('second-instance', () => {
-    if (mainWindow) {
+    if (mainWindow && mainWindow.isVisible()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
+    } else if (lockWindow && !lockWindow.isDestroyed()) {
+      lockWindow.focus();
     }
   });
 }
@@ -43,7 +47,7 @@ process.on('unhandledRejection', (reason: any) => {
   console.error('[Main] 未处理的Promise拒绝:', reason);
 });
 
-function createWindow() {
+function createMainWindow() {
   mainWindow = new electron.BrowserWindow({
     width: 1400,
     height: 900,
@@ -75,6 +79,61 @@ function createWindow() {
   });
 }
 
+/** 锁屏窗口（v1.7.0）：最小权限 preload，只暴露 auth 频道 */
+function createLockWindow() {
+  if (lockWindow && !lockWindow.isDestroyed()) return;
+  lockWindow = new electron.BrowserWindow({
+    width: 480,
+    height: 620,
+    minWidth: 420,
+    minHeight: 520,
+    title: getAppName() + ' - 已锁定',
+    backgroundColor: '#F5F7FA',
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'lock-preload.js'),
+    },
+  });
+
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
+  const builtHtml = path.join(__dirname, '../../renderer/index.html');
+  if (process.env.ELECTRON_DEV === '1') {
+    lockWindow.loadURL(devServerUrl + '#/lock');
+  } else if (fs.existsSync(builtHtml)) {
+    lockWindow.loadFile(builtHtml, { hash: 'lock' });
+  } else {
+    lockWindow.loadURL(devServerUrl + '#/lock');
+  }
+
+  lockWindow.on('closed', () => {
+    lockWindow = null;
+  });
+}
+
+/** 解锁成功：关锁屏窗、开主窗 */
+function showMainAfterUnlock() {
+  if (lockWindow && !lockWindow.isDestroyed()) lockWindow.close();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    createMainWindow();
+  }
+}
+
+/** 锁定：隐藏主窗、显示锁屏窗（主窗状态保留，解锁后恢复现场） */
+function showLockAfterLock() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+  if (lockWindow && !lockWindow.isDestroyed()) {
+    lockWindow.show();
+    lockWindow.focus();
+  } else {
+    createLockWindow();
+  }
+}
+
 // Initialize database and IPC on startup
 electron.app.whenReady().then(() => {
   try {
@@ -82,22 +141,31 @@ electron.app.whenReady().then(() => {
     initDatabase();
     console.log('[Main] 步骤 1/6: ✓ 数据库就绪');
 
-    console.log('[Main] 步骤 2/5: 注册 IPC 处理器...');
-    registerIpcHandlers();
-    console.log('[Main] 步骤 2/5: ✓ IPC 就绪');
+    console.log('[Main] 步骤 2/6: 注册 IPC 处理器...');
+    registerIpcHandlers({ onUnlocked: showMainAfterUnlock, onLock: showLockAfterLock });
+    console.log('[Main] 步骤 2/6: ✓ IPC 就绪');
 
-    console.log('[Main] 步骤 3/5: 初始化自动更新...');
+    console.log('[Main] 步骤 3/6: 初始化启动密码锁...');
+    initAuthService();
+    console.log(`[Main] 步骤 3/6: ✓ 密码锁${isAuthEnabled() ? '已启用' : '未启用'}`);
+
+    console.log('[Main] 步骤 4/6: 初始化自动更新...');
     initAutoUpdater();
-    console.log('[Main] 步骤 3/5: ✓ 自动更新就绪');
+    console.log('[Main] 步骤 4/6: ✓ 自动更新就绪');
 
-    console.log('[Main] 步骤 4/5: 启动定时调度器...');
+    console.log('[Main] 步骤 5/6: 启动定时调度器...');
     startScheduler();
-    console.log('[Main] 步骤 4/5: ✓ 调度器就绪');
+    console.log('[Main] 步骤 5/6: ✓ 调度器就绪');
 
-    console.log('[Main] 步骤 5/5: 创建主窗口...');
-    createWindow();
-    console.log('[Main] 步骤 5/5: ✓ 主窗口已创建');
-    console.log(`[Main] ✓ 启动完成（窗口可见），总耗时 ${Date.now() - startTime}ms`);
+    console.log('[Main] 步骤 6/6: 创建窗口（密码门禁）...');
+    if (isAuthEnabled()) {
+      createLockWindow();
+      console.log('[Main] 步骤 6/6: ✓ 已显示锁屏（等待验证）');
+    } else {
+      createMainWindow();
+      console.log('[Main] 步骤 6/6: ✓ 主窗口已创建');
+    }
+    console.log(`[Main] ✓ 启动完成，总耗时 ${Date.now() - startTime}ms`);
 
     // ── 窗口创建后的后台一致性任务（不阻塞首屏）──
     setTimeout(() => {
@@ -140,7 +208,14 @@ electron.app.on('window-all-closed', () => {
 });
 
 electron.app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
+  try {
+    // v1.7.0：激活时若已启用密码且未解锁，显示锁屏而非主窗
+    if (isAuthEnabled() && !mainWindow && !lockWindow) {
+      createLockWindow();
+    } else if (mainWindow === null) {
+      createMainWindow();
+    }
+  } catch {
+    if (mainWindow === null) createMainWindow();
   }
 });

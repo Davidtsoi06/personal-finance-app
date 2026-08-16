@@ -305,6 +305,12 @@
 | `archive.folderPath` | 归档文件夹路径 | `""` |
 | `archive.retentionMonths` | 数据保留月数 | `12` |
 | `archive.lastRun` | 上次归档日期 | — |
+| `auth.enabled` | 启动密码锁开关（'1' 开 / '0' 关，v1.7.0） | `'0'` |
+| `auth.salt` / `auth.hash` | 启动密码 scrypt 盐与哈希（v1.7.0，不存明文） | — |
+| `auth.recovery_email` | 密码找回的恢复邮箱（v1.7.0） | — |
+| `auth.idle_minutes` | 空闲自动锁定时长（1~60 分钟，v1.7.0） | `10` |
+| `smtp.host` / `smtp.port` / `smtp.secure` / `smtp.user` | 发件邮箱 SMTP 配置（v1.7.0） | — |
+| `smtp.pass_enc` | SMTP 授权码（AES-256-GCM 密文存储，v1.7.0） | — |
 
 ---
 

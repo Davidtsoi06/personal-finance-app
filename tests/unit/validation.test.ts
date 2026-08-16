@@ -107,6 +107,17 @@ describe('IPC 入参校验 schema', () => {
     expect(r.success).toBe(true);
   });
 
+  it('auth 频道校验（v1.7.0）', () => {
+    expect(SCHEMAS['auth:status'].safeParse([]).success).toBe(true);
+    expect(SCHEMAS['auth:verify'].safeParse(['abcdef']).success).toBe(true);
+    expect(SCHEMAS['auth:verify'].safeParse(['12345']).success).toBe(false); // 少于 6 位
+    expect(SCHEMAS['auth:setupSmtp'].safeParse([{ host: 'smtp.qq.com', port: '465', secure: true, user: 'a@qq.com', pass: 'x' }]).success).toBe(true);
+    expect(SCHEMAS['auth:setupSmtp'].safeParse([{ host: 'smtp.qq.com', port: 0, secure: true, user: 'a@qq.com', pass: 'x' }]).success).toBe(false);
+    expect(SCHEMAS['auth:verifyResetCode'].safeParse(['a@b.com', '123456']).success).toBe(true);
+    expect(SCHEMAS['auth:verifyResetCode'].safeParse(['a@b.com', '12ab56']).success).toBe(false);
+    expect(SCHEMAS['auth:setIdleMinutes'].safeParse(['10']).success).toBe(true);
+  });
+
   it('settings:saveAiConfig 拒绝过长字段', () => {
     const ok = SCHEMAS['settings:saveAiConfig'].safeParse([{ provider: 'deepseek', apiUrl: 'https://api.deepseek.com', apiKey: 'sk-xxx', model: 'deepseek-chat' }]);
     expect(ok.success).toBe(true);

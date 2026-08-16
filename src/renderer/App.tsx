@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { LockScreen } from './pages/LockScreen';
 
 // ── 路由级代码分割：每个页面独立 chunk，首屏只加载当前路由（修复单包 1.5MB 告警）──
 // 页面为命名导出，lazy 需要 default → .then 适配
@@ -28,6 +29,11 @@ function PageFallback() {
 }
 
 function App() {
+  // 锁屏窗口（#/lock）独立渲染：不经 Layout、不加载业务数据（v1.7.0）
+  if (window.location.hash.startsWith('#/lock')) {
+    return <LockScreen />;
+  }
+
   return (
     <ErrorBoundary>
       <Layout>

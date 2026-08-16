@@ -11,6 +11,7 @@ import { BrokerFormatCard } from '../components/cards/BrokerFormatCard';
 import { BankFormatCard } from '../components/cards/BankFormatCard';
 import { UpdateCard } from '../components/cards/UpdateCard';
 import { DangerZoneCard } from '../components/cards/DangerZoneCard';
+import { SecurityCard } from '../components/cards/SecurityCard';
 
 interface Currency {
   id: number; code: string; name: string; symbol: string;
@@ -175,7 +176,9 @@ export function Settings() {
       </Card>
 
       {/* Data source refresh card */}
-      <Card title="📡 数据源更新">
+      <SecurityCard />
+
+          <Card title="📡 数据源更新">
         <div style={{ marginBottom: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
           <Button variant="primary" onClick={handleRefreshRates} disabled={refreshing !== null}>
             {refreshing === 'rates' ? '⏳ 更新中...' : '💱 更新汇率'}

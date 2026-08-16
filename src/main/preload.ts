@@ -10,6 +10,21 @@ import electron = require('electron');
  */
 const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'app:ping',
+  // ── 启动密码锁（v1.7.0） ──
+  'auth:status',
+  'auth:setRecoveryEmail',
+  'auth:setupSmtp',
+  'auth:sendTestEmail',
+  'auth:enable',
+  'auth:changePassword',
+  'auth:disable',
+  'auth:verify',
+  'auth:lock',
+  'auth:quit',
+  'auth:requestResetCode',
+  'auth:verifyResetCode',
+  'auth:resetPassword',
+  'auth:setIdleMinutes',
   'account:allAssetsSummary',
   'account:balances',
   'account:create',

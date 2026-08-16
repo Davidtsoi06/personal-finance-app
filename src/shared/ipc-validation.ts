@@ -124,6 +124,17 @@ const fdSettleData = z.object({
   date: dateStr.optional(),
 }).passthrough();
 
+// ── 启动密码锁（v1.7.0） ──
+const authPassword = z.string().min(6).max(128);
+const resetCodeStr = z.string().regex(/^\d{6}$/);
+const smtpData = z.object({
+  host: z.string().min(1).max(200),
+  port: z.coerce.number().int().min(1).max(65535),
+  secure: z.boolean(),
+  user: z.string().min(1).max(200),
+  pass: z.string().min(1).max(200),
+}).passthrough();
+
 const insurancePolicyData = z.object({
   name: z.string().min(1).max(100),
   company: z.string().nullish(),
@@ -203,6 +214,21 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'account:deleteImpact': z.tuple([id]),
   'account:createWithChildren': z.tuple([accountData]),
   'accountTransaction:create': z.tuple([accountTxData]),
+  // ── 启动密码锁（v1.7.0） ──
+  'auth:status': z.tuple([]),
+  'auth:setRecoveryEmail': z.tuple([z.string().min(3).max(200)]),
+  'auth:setupSmtp': z.tuple([smtpData]),
+  'auth:sendTestEmail': z.tuple([]),
+  'auth:enable': z.tuple([authPassword]),
+  'auth:changePassword': z.tuple([authPassword, authPassword]),
+  'auth:disable': z.tuple([authPassword]),
+  'auth:verify': z.tuple([authPassword]),
+  'auth:lock': z.tuple([]),
+  'auth:quit': z.tuple([]),
+  'auth:requestResetCode': z.tuple([z.string().min(3).max(200)]),
+  'auth:verifyResetCode': z.tuple([z.string().min(3).max(200), resetCodeStr]),
+  'auth:resetPassword': z.tuple([z.string().min(3).max(200), resetCodeStr, authPassword]),
+  'auth:setIdleMinutes': z.tuple([z.coerce.number().int()]),
   'accountTransaction:update': z.tuple([id, accountTxData.partial(), z.boolean().optional()]),
   'accountTransaction:delete': z.tuple([id]),
   'trade:record': z.tuple([tradeRecordData]),

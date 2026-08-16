@@ -5,6 +5,7 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { SCHEMAS } from '../../shared/ipc-validation';
+import { assertUnlocked } from '../services/auth-service';
 
 /**
  * 注册带 zod 校验的 IPC handler：校验失败抛出错误（渲染进程 catch 后展示），
@@ -17,6 +18,12 @@ export function handleValidated(
   const schema = SCHEMAS[channel];
   if (!schema) throw new Error('未定义校验 schema: ' + channel);
   ipcMain.handle(channel, (_event, ...args: unknown[]) => {
+    // 启动密码锁门禁（v1.7.0）：未解锁时拒绝一切非 auth 频道（auth 频道自身放行）
+    try {
+      assertUnlocked(channel);
+    } catch (gateErr: any) {
+      throw new Error(gateErr?.message || '应用已锁定');
+    }
     const parsed = (schema as z.ZodTypeAny).safeParse(args);
     if (!parsed.success) {
       const detail = parsed.error.issues

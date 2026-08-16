@@ -4,6 +4,20 @@
  * 三处一致性由 scripts/check-ipc-whitelist.js 校验（npm test 中自动执行）。
  */
 export type IpcChannel =
+  | 'auth:status'
+  | 'auth:setRecoveryEmail'
+  | 'auth:setupSmtp'
+  | 'auth:sendTestEmail'
+  | 'auth:enable'
+  | 'auth:changePassword'
+  | 'auth:disable'
+  | 'auth:verify'
+  | 'auth:lock'
+  | 'auth:quit'
+  | 'auth:requestResetCode'
+  | 'auth:verifyResetCode'
+  | 'auth:resetPassword'
+  | 'auth:setIdleMinutes'
   | 'account:allAssetsSummary'
   | 'account:balances'
   | 'account:create'
