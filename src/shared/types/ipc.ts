@@ -86,6 +86,7 @@ export type IpcChannel =
   | 'fixedDeposit:delete'
   | 'fixedDeposit:listByAccount'
   | 'fixedDeposit:update'
+  | 'fixedDeposit:settle'
   | 'insurance:createPolicy'
   | 'insurance:deletePolicy'
   | 'insurance:getDuePolicies'

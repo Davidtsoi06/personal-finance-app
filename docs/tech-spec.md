@@ -48,7 +48,7 @@ Electron App
 │   ├── database/
 │   │   ├── index.ts               # 数据库初始化 + WAL 模式 + 迁移执行（支持 SQL + JS 迁移）
 │   │   ├── migrations.ts          # 版本化建表 SQL + JS 数据迁移（v1 ~ v12）
-│   │   └── services/              # 数据服务层（20 个）
+│   │   └── services/              # 数据服务层（21 个）
 │   │       ├── account-service.ts          # 账户 CRUD + 树形结构 + 统一资产汇总（四层架构）
 │   │       ├── asset-cny-core.ts           # 跨币种 CNY 换算纯 DB 函数（无 electron 依赖）
 │   │       ├── account-transaction-service.ts  # 存取记录 CRUD + 钱包账单导入
@@ -60,7 +60,8 @@ Electron App
 │   │       ├── category-service.ts          # 收支分类 CRUD
 │   │       ├── currency-service.ts          # 货币 + 汇率转换 + 汇率历史
 │   │       ├── custom-format-service.ts     # 券商日结单自定义格式 CRUD
-│   │       ├── fixed-deposit-service.ts      # 定期存款 CRUD
+│   │       ├── fixed-deposit-core.ts        # 定存纯 DB 操作（联动询问式 + 到期回款，v1.6.1）
+│   │       ├── fixed-deposit-service.ts      # 定期存款 CRUD（薄封装）
 │   │       ├── insurance-service.ts         # 保单 CRUD + 保费缴纳 + 到期查询（v1.5.0 新增）
 │   │       ├── investment-account-service.ts # 投资账户 CRUD + 持仓汇总 + 日统计 + 现金余额
 │   │       ├── ledger-service.ts            # 收支记账 CRUD + 月度汇总（支持 accountId 过滤）
@@ -197,7 +198,7 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 | `category` | `category:list`, `category:create` | 收支分类 |
 | `currency` | `currency:list`, `currency:convert`, `currency:rateHistory` | 货币汇率 |
 | `investmentAccount` | `investmentAccount:list`, `investmentAccount:summary`, `investmentAccount:dailyStats`, `investmentAccount:addCash`, `investmentAccount:withdrawCash`, `investmentAccount:cashFlows`（v1.5.6）, `investmentAccount:adjustCash`（v1.5.6） | 投资账户 + 现金余额管理（v1.4.3，v1.5.6 起流水派生） |
-| `fixedDeposit` | `fixedDeposit:listByAccount`, `fixedDeposit:create`, `fixedDeposit:update`, `fixedDeposit:delete` | 定期存款 CRUD（v1.4.3 新增） |
+| `fixedDeposit` | `fixedDeposit:listByAccount`, `fixedDeposit:create`, `fixedDeposit:update`（含 balanceMode 询问式）, `fixedDeposit:delete`（含 restoreBalance 询问式）, `fixedDeposit:settle`（到期回款，v1.6.1） | 定期存款 CRUD + 联动询问式（v1.4.3 新增） |
 | `netWorth` | `netWorth:history`, `netWorth:record` | 净值历史 |
 | `report` | `report:monthlyTrend`, `report:categoryBreakdown`, `report:assetPerformance`, `report:dailyTrades`（v1.5.2）, `report:realizedPnl`（v1.5.5） | 报表数据 |
 | `export` | `export:toExcel`, `export:dailyTrades`（v1.5.2） | Excel 导出 |
@@ -294,7 +295,7 @@ AI 对话支持 SSE 流式响应，通过 Electron 的 `event.sender.send()` 推
 | **Context Isolation** | `contextIsolation: true`，渲染进程不暴露 Node.js API |
 | **API Key 保护** | AI API Key 仅存主进程 `app_settings` 表（AES-256-GCM 密文，密钥存 `userData/secret.key`，与数据库分离），`getAiConfigPublic()` 只返回 `hasApiKey` 布尔值，Key 明文永不到达渲染进程，且不随备份导出 |
 | **卡号保护** | 银行卡号仅存后 4 位（服务层 `normalizeCardNumber` 截断 + 迁移 v13 清洗存量数据），完整卡号不落库 |
-| **IPC 白名单** | preload 仅放行主进程已注册的 138 个频道（含 `app:ping`），未授权频道调用直接拒绝 |
+| **IPC 白名单** | preload 仅放行主进程已注册的 146 个频道（含 `app:ping`），未授权频道调用直接拒绝 |
 | **AI 渲染安全** | AI 回复先整体 HTML 转义再做 Markdown 转换，模型输出中的原始 HTML 不会进入 DOM（防 XSS） |
 | **单实例运行** | `app.requestSingleInstanceLock()`：双开时第二个实例直接退出并聚焦已有窗口，防止双进程写库/重复调度 |
 | **迁移前自动备份** | 有待执行迁移时自动把数据库复制到 `userData/backups/`（WAL checkpoint 后），仅保留最近 5 份 |

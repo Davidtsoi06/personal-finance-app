@@ -117,6 +117,13 @@ const fixedDepositData = z.object({
   deductAccountId: id.nullish(),
 }).passthrough();
 
+const fdSettleData = z.object({
+  amount: z.coerce.number().positive(),
+  toAccountId: id,
+  currency: optStr,
+  date: dateStr.optional(),
+}).passthrough();
+
 const insurancePolicyData = z.object({
   name: z.string().min(1).max(100),
   company: z.string().nullish(),
@@ -194,7 +201,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'account:deleteImpact': z.tuple([id]),
   'account:createWithChildren': z.tuple([accountData]),
   'accountTransaction:create': z.tuple([accountTxData]),
-  'accountTransaction:update': z.tuple([id, accountTxData.partial()]),
+  'accountTransaction:update': z.tuple([id, accountTxData.partial(), z.boolean().optional()]),
   'accountTransaction:delete': z.tuple([id]),
   'trade:record': z.tuple([tradeRecordData]),
   'asset:listAll': z.tuple([]),
@@ -218,8 +225,9 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'budget:delete': z.tuple([id]),
   'currency:updateRate': z.tuple([z.string().min(1), z.coerce.number().positive()]),
   'fixedDeposit:create': z.tuple([fixedDepositData]),
-  'fixedDeposit:update': z.tuple([id, fixedDepositData.partial()]),
-  'fixedDeposit:delete': z.tuple([id]),
+  'fixedDeposit:update': z.tuple([id, fixedDepositData.partial(), z.enum(['sync', 'record_only']).optional()]),
+  'fixedDeposit:delete': z.tuple([id, z.boolean().optional()]),
+  'fixedDeposit:settle': z.tuple([id, fdSettleData]),
   'insurance:createPolicy': z.tuple([insurancePolicyData]),
   'insurance:updatePolicy': z.tuple([id, insurancePolicyData.partial()]),
   'insurance:deletePolicy': z.tuple([id]),

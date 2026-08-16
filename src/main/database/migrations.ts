@@ -621,4 +621,14 @@ export const MIGRATIONS: Migration[] = [
       ).run();
     },
   },
+  {
+    version: 17,
+    sql: [
+      "-- ============================================",
+      "-- Migration v17: 定期存款状态（v1.6.1 到期回款询问式）",
+      "-- status: active（存续中）/ settled（已到期结算回款）",
+      "-- ============================================",
+      "ALTER TABLE fixed_deposits ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','settled'));",
+    ].join('\n'),
+  },
 ];

@@ -32,10 +32,11 @@ export function registerAccountIpcHandlers(): void {
     data.currency = normalizeCurrency(data.currency, 'CNY');
     return atService.createAccountTransaction(data);
   });
-  handleValidated('accountTransaction:update', (id: number, data: any) => {
+  handleValidated('accountTransaction:update', (id: number, data: any, syncBrokerCash?: boolean) => {
     if (data.date) data.date = normalizeDate(data.date);
     if (data.currency) data.currency = normalizeCurrency(data.currency, 'CNY');
-    return atService.updateAccountTransaction(id, data);
+    // v1.6.1：联动询问式——默认同步券商流动金（渲染端弹窗确认后传入）
+    return atService.updateAccountTransaction(id, data, syncBrokerCash !== false);
   });
   handleValidated('accountTransaction:delete', (id: number) =>
     atService.deleteAccountTransaction(id)

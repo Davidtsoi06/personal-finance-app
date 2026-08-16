@@ -59,11 +59,17 @@ export function registerSettingsIpcHandlers(): void {
   handleValidated('fixedDeposit:create', (data: any) =>
     fdService.createFixedDeposit(data)
   );
-  handleValidated('fixedDeposit:update', (id: number, data: any) =>
-    fdService.updateFixedDeposit(id, data)
+  // v1.6.1 询问式：balanceMode='sync' 按差额调整余额并写记录；'record_only' 不调余额并脱钩
+  handleValidated('fixedDeposit:update', (id: number, data: any, balanceMode?: string) =>
+    fdService.updateFixedDeposit(id, data, balanceMode === 'record_only' ? 'record_only' : 'sync')
   );
-  handleValidated('fixedDeposit:delete', (id: number) =>
-    fdService.deleteFixedDeposit(id)
+  // v1.6.1 询问式：restoreBalance=false 仅删记录不退回余额
+  handleValidated('fixedDeposit:delete', (id: number, restoreBalance?: boolean) =>
+    fdService.deleteFixedDeposit(id, restoreBalance !== false)
+  );
+  // v1.6.1 到期回款：确认后写存款记录并标记已结算
+  handleValidated('fixedDeposit:settle', (id: number, data: any) =>
+    fdService.settleFixedDeposit(id, data)
   );
 
   // ── Custom Statement Formats ──

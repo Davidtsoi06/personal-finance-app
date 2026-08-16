@@ -364,7 +364,7 @@ export function Insurance() {
             <div className="form-group">
               <label className="form-label">付款账户</label>
               <select className="form-select" name="account_id" defaultValue={payingPolicy.account_id || ''}>
-                <option value="">不指定</option>
+                <option value="">不指定（仅记录缴费，不动账户余额）</option>
                 {bankAccounts.map(ba => (
                   <option key={ba.id} value={ba.id}>🏦 {ba.bank_name || ba.name}</option>
                 ))}
@@ -375,7 +375,7 @@ export function Insurance() {
               <input className="form-input" name="notes" defaultValue={`${payingPolicy.name} 保费`} />
             </div>
             <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-md)' }}>
-              ⚠️ 缴费将自动从指定银行账户扣款，并计入流水账。
+              ⚠️ 选择付款账户：确认后将自动从该账户扣款，并写存取记录与流水账支出；选「不指定」则仅记录缴费，不动任何账户余额。
             </p>
             <div className="form-actions">
               <Button variant="secondary" onClick={() => { setShowPremium(false); setPayingPolicy(null); }} type="button">取消</Button>

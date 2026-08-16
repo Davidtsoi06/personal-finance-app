@@ -87,6 +87,26 @@ describe('迁移体系（v1 ~ v12）', () => {
     db.close();
   });
 
+  it('v17 定期存款状态列：存量默认 active', () => {
+    const db = new Database(':memory:');
+    db.exec("CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))");
+    for (const m of MIGRATIONS.filter((x) => x.version <= 16)) {
+      db.exec('BEGIN');
+      db.exec(m.sql);
+      if (m.migrate && m.version !== 13) m.migrate(db);
+      db.prepare('INSERT INTO _migrations (version) VALUES (?)').run(m.version);
+      db.exec('COMMIT');
+    }
+    db.prepare("INSERT INTO accounts (name, type, asset_type, currency) VALUES ('中行卡', 'bank_card', 'bank', 'CNY')").run();
+    const accId = db.prepare("SELECT id FROM accounts WHERE name = '中行卡'").get() as { id: number };
+    db.prepare("INSERT INTO fixed_deposits (account_id, amount, currency, start_date, maturity_date) VALUES (?, 10000, 'CNY', '2026-01-01', '2027-01-01')").run(accId.id);
+    const v17 = MIGRATIONS.find((x) => x.version === 17)!;
+    db.exec(v17.sql);
+    const row = db.prepare('SELECT * FROM fixed_deposits LIMIT 1').get() as any;
+    expect(row.status).toBe('active');
+    db.close();
+  });
+
   it('v15 检测孤儿持仓并写入计数', () => {
     const db = new Database(':memory:');
     db.exec("CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))");

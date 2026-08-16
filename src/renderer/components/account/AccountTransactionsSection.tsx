@@ -14,6 +14,7 @@ import { AccountTxFormModal } from './AccountTxFormModal';
 export interface AccountTransaction {
   id: number; account_id: number; type: 'deposit' | 'withdraw';
   amount: number; currency: string; date: string; notes: string | null;
+  investment_account_id?: number | null;
 }
 
 interface Props {
@@ -90,8 +91,11 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
     new FormData(form).forEach((v, k) => { data[k] = v; });
     const amount = parseFloat((data.amount ?? '') as string) || 0;
     if (amount <= 0 || isNaN(amount)) { setSaving(false); return; }
+    // v1.6.1 询问式：原记录带券商联动时，由复选框决定是否同步调整券商流动金
+    const syncCheckbox = form.querySelector('input[name="sync_broker_cash"]') as HTMLInputElement | null;
+    const syncBrokerCash = !syncCheckbox || syncCheckbox.checked;
     try {
-      await invoke('accountTransaction:update', editingTx.id, { ...data, amount });
+      await invoke('accountTransaction:update', editingTx.id, { ...data, amount }, syncBrokerCash);
       setEditingTx(null);
       loadTxs();
       onChanged();
@@ -207,6 +211,17 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
               <label className="form-label">备注</label>
               <input className="form-input" name="notes" defaultValue={editingTx.notes || ''} />
             </div>
+            {editingTx.investment_account_id && (
+              <div className="form-group">
+                <label style={{ fontSize: 'var(--font-size-sm)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" name="sync_broker_cash" defaultChecked />
+                  🔗 同步调整券商流动金（此记录曾转入券商，修改金额/类型会相应调整券商现金）
+                </label>
+                <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', margin: '4px 0 0 24px' }}>
+                  取消勾选则券商现金保持不变，此记录与券商脱钩（之后删除不再自动扣回）。
+                </p>
+              </div>
+            )}
             <div className="form-actions">
               <Button variant="secondary" onClick={() => setEditingTx(null)} type="button">取消</Button>
               <Button variant="primary" type="submit" disabled={saving}>保存修改</Button>
@@ -218,11 +233,16 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
       {/* ── Delete Transaction Modal ── */}
       <Modal open={!!deletingTx} title="🗑 删除存取记录" onClose={() => setDeletingTx(null)}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-          <p>确认删除此存取记录吗？余额将自动回滚。</p>
+          <p>确认删除此存取记录吗？账户余额将自动回滚。</p>
           {deletingTx && (
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: 'var(--spacing-sm)', borderRadius: 'var(--radius-sm)' }}>
               {deletingTx.type === 'deposit' ? '📥 存入' : '📤 取出'} · {deletingTx.currency} {deletingTx.amount.toLocaleString()} · {deletingTx.date}
             </div>
+          )}
+          {deletingTx?.investment_account_id && (
+            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning, #E6A23C)', margin: 0 }}>
+              ⚠️ 此记录曾转入券商，删除将同步扣回券商流动金 {deletingTx.currency} {deletingTx.amount.toLocaleString()}。
+            </p>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)' }}>
             <Button variant="secondary" onClick={() => setDeletingTx(null)}>取消</Button>

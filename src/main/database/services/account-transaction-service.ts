@@ -109,10 +109,19 @@ export function deleteAccountTransaction(id: number): boolean {
   return tx();
 }
 
-/** Update a transaction, recalculating balances for both old and new values. */
-export function updateAccountTransaction(id: number, data: {
-  type?: string; amount?: number; currency?: string; date?: string; notes?: string;
-}): AccountTransactionRow | undefined {
+/**
+ * Update a transaction, recalculating balances for both old and new values.
+ * v1.6.1：联动询问式——syncBrokerCash=true（用户确认）时同步调整券商流动金：
+ *   撤销旧联动（withdraw 扣回）+ 应用新联动（新类型为 withdraw 时增加）；
+ * syncBrokerCash=false（用户拒绝）时券商现金不动，并将记录脱钩（investment_account_id 置空）。
+ */
+export function updateAccountTransaction(
+  id: number,
+  data: {
+    type?: string; amount?: number; currency?: string; date?: string; notes?: string;
+  },
+  syncBrokerCash: boolean = true
+): AccountTransactionRow | undefined {
   const db = getDatabase();
   const existing = getAccountTransaction(id);
   if (!existing) return undefined;
@@ -131,16 +140,32 @@ export function updateAccountTransaction(id: number, data: {
       .run(oldReversed, existing.account_id);
     updateAccountBalance(existing.account_id, existing.currency, oldReversed);
 
-    // 2. Update the row
-    db.prepare(`UPDATE account_transactions SET type=?, amount=?, currency=?, date=?, notes=? WHERE id=?`)
-      .run(newType, newAmount, newCurrency, newDate, newNotes, id);
+    // 2. 联动调整（v1.6.1 询问式）
+    if (existing.type === 'withdraw' && existing.investment_account_id) {
+      if (syncBrokerCash) {
+        // 撤销旧联动：扣回原转入的券商流动金
+        withdrawCashBalance(existing.investment_account_id, existing.amount);
+      } else {
+        // 用户拒绝同步：脱钩，删除此记录时不再自动扣回
+      }
+    }
 
-    // 3. Apply new balance adjustment
+    // 3. Update the row（拒绝同步或新类型不再是取出时脱钩）
+    const newInvAccountId = syncBrokerCash && newType === 'withdraw' ? existing.investment_account_id : null;
+    db.prepare(`UPDATE account_transactions SET type=?, amount=?, currency=?, date=?, notes=?, investment_account_id=? WHERE id=?`)
+      .run(newType, newAmount, newCurrency, newDate, newNotes, newInvAccountId, id);
+
+    // 4. Apply new balance adjustment
     const newSign = newType === 'deposit' ? 1 : -1;
     const newDelta = newSign * newAmount;
     db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
       .run(newDelta, existing.account_id);
     updateAccountBalance(existing.account_id, newCurrency, newDelta);
+
+    // 5. 新联动：新类型为取出且用户确认同步时，增加券商流动金
+    if (syncBrokerCash && newType === 'withdraw' && existing.investment_account_id) {
+      addCashBalance(existing.investment_account_id, newAmount);
+    }
   });
 
   tx();

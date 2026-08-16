@@ -91,6 +91,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'fixedDeposit:delete',
   'fixedDeposit:listByAccount',
   'fixedDeposit:update',
+  'fixedDeposit:settle',
   'insurance:createPolicy',
   'insurance:deletePolicy',
   'insurance:getDuePolicies',
