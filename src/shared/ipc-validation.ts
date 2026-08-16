@@ -229,6 +229,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'auth:verifyResetCode': z.tuple([z.string().min(3).max(200), resetCodeStr]),
   'auth:resetPassword': z.tuple([z.string().min(3).max(200), resetCodeStr, authPassword]),
   'auth:setIdleMinutes': z.tuple([z.coerce.number().int()]),
+  'onboarding:complete': z.tuple([]),
   'accountTransaction:update': z.tuple([id, accountTxData.partial(), z.boolean().optional()]),
   'accountTransaction:delete': z.tuple([id]),
   'trade:record': z.tuple([tradeRecordData]),

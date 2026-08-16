@@ -118,6 +118,10 @@ function seedDefaults(database: Database.Database): void {
   // Seed default currencies
   const currencyCount = database.prepare('SELECT COUNT(*) as count FROM currencies').get() as any;
   if (currencyCount.count === 0) {
+    // v1.7.2：全新数据库标记「首次使用引导未完成」（老库无此键，不受引导打扰）
+    database.prepare(
+      "INSERT INTO app_settings (key, value) VALUES ('onboarding.done', '0') ON CONFLICT(key) DO NOTHING"
+    ).run();
     const insert = database.prepare(
       'INSERT INTO currencies (code, name, symbol, rate_to_base, is_base) VALUES (?, ?, ?, ?, ?)'
     );

@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { MIGRATIONS } from '../../src/main/database/migrations';
 import { setDatabaseForTest } from '../../src/main/database';
 import { setSetting } from '../../src/main/database/services/settings-service';
-import { requestResetCode } from '../../src/main/services/auth-service';
+import { requestResetCode, enableAuth, getAuthStatus } from '../../src/main/services/auth-service';
 
 let db: Database.Database;
 
@@ -42,5 +42,19 @@ describe('批 2 安全加固回归（v1.7.1）', () => {
     const keys = (db.prepare('SELECT key FROM app_settings').all() as any[]).map((r) => r.key);
     expect(keys).toContain('auth.recovery_email');
     expect(keys.filter((k) => k.startsWith('auth.') && k !== 'auth.recovery_email')).toHaveLength(0);
+  });
+
+  it('v1.7.2 启用密码不再强制自定义 SMTP（内置发件，仅需恢复邮箱）', () => {
+    setSetting('auth.recovery_email', 'user@example.com');
+    expect(() => enableAuth('secret123')).not.toThrow();
+    expect(db.prepare("SELECT value FROM app_settings WHERE key = 'auth.enabled'").get() as any).toBeTruthy();
+  });
+
+  it('v1.7.2 首次引导标记：无键视为已完成（老用户），"0" 视为未完成', () => {
+    expect(getAuthStatus().onboardingDone).toBe(true); // 老库无键 → 不打扰
+    setSetting('onboarding.done', '0');
+    expect(getAuthStatus().onboardingDone).toBe(false); // 全新库 → 显示引导
+    setSetting('onboarding.done', '1');
+    expect(getAuthStatus().onboardingDone).toBe(true);
   });
 });

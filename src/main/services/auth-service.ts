@@ -15,6 +15,18 @@ import {
 } from './auth-core';
 import * as nodemailer from 'nodemailer';
 
+/**
+ * 内置官方发件通道（v1.7.2）：用户零配置，仅需提供恢复邮箱。
+ * 专用低价值邮箱，只发送密码重置验证码；凭据被提取的后果仅是该邮箱被停用，可更换。
+ */
+const BUILTIN_SMTP = {
+  host: 'smtp.163.com',
+  port: 465,
+  secure: true,
+  user: 'personalfinanceapp@163.com',
+  pass: 'NUfVh34BeL8iiUFR',
+} as const;
+
 const KEYS = {
   enabled: 'auth.enabled',
   salt: 'auth.salt',
@@ -74,6 +86,7 @@ export interface AuthStatus {
   idleMinutes: number;
   recoveryEmailMasked: string | null;
   smtpConfigured: boolean;
+  onboardingDone: boolean;
 }
 
 export function getAuthStatus(): AuthStatus {
@@ -84,6 +97,8 @@ export function getAuthStatus(): AuthStatus {
     idleMinutes: parseInt(getSetting(KEYS.idleMinutes) || '10', 10) || 10,
     recoveryEmailMasked: email ? maskEmail(email) : null,
     smtpConfigured: !!(getSetting(KEYS.smtpHost) && getSetting(KEYS.smtpUser) && getSetting(KEYS.smtpPassEnc)),
+    // v1.7.2：首次使用引导标记；仅全新库为 '0'（老库无键视为已完成，不打扰老用户）
+    onboardingDone: getSetting('onboarding.done') !== '0',
   };
 }
 
@@ -105,13 +120,22 @@ export function setupSmtp(data: { host: string; port: number; secure: boolean; u
 }
 
 function buildTransporter(): nodemailer.Transporter {
+  // v1.7.2：优先使用用户自定义 SMTP（高级选项）；未配置时使用内置官方发件通道（用户零配置）
   const host = getSetting(KEYS.smtpHost);
-  const port = parseInt(getSetting(KEYS.smtpPort) || '0', 10);
-  const secure = getSetting(KEYS.smtpSecure) === '1';
-  const user = getSetting(KEYS.smtpUser) || '';
-  const pass = decryptText(getSetting(KEYS.smtpPassEnc)) || '';
-  if (!host || !user || !pass) throw new Error('发件邮箱尚未配置，请先在设置页完成 SMTP 配置');
-  return nodemailer.createTransport({ host, port: port || (secure ? 465 : 587), secure, auth: { user, pass } });
+  const user = getSetting(KEYS.smtpUser);
+  const passEnc = getSetting(KEYS.smtpPassEnc);
+  if (host && user && passEnc) {
+    const port = parseInt(getSetting(KEYS.smtpPort) || '0', 10);
+    const secure = getSetting(KEYS.smtpSecure) === '1';
+    const pass = decryptText(passEnc) || '';
+    return nodemailer.createTransport({ host, port: port || (secure ? 465 : 587), secure, auth: { user, pass } });
+  }
+  return nodemailer.createTransport({
+    host: BUILTIN_SMTP.host,
+    port: BUILTIN_SMTP.port,
+    secure: BUILTIN_SMTP.secure,
+    auth: { user: BUILTIN_SMTP.user, pass: BUILTIN_SMTP.pass },
+  });
 }
 
 async function sendMail(subject: string, text: string): Promise<void> {
@@ -119,7 +143,7 @@ async function sendMail(subject: string, text: string): Promise<void> {
   if (!to) throw new Error('恢复邮箱尚未设置');
   const transporter = buildTransporter();
   await transporter.sendMail({
-    from: getSetting(KEYS.smtpUser) || undefined,
+    from: getSetting(KEYS.smtpUser) || BUILTIN_SMTP.user,
     to,
     subject,
     text,
@@ -135,9 +159,7 @@ export async function sendTestEmail(): Promise<void> {
 
 export function enableAuth(password: string): void {
   if (password.length < 6) throw new Error('密码至少 6 位');
-  if (!getSetting(KEYS.smtpHost) || !getSetting(KEYS.smtpUser) || !getSetting(KEYS.smtpPassEnc)) {
-    throw new Error('请先配置发件邮箱并测试发送成功，再启用启动密码');
-  }
+  // v1.7.2：内置官方发件通道，无需用户配置 SMTP；仍要求先设置恢复邮箱
   if (!getSetting(KEYS.recoveryEmail)) throw new Error('请先设置恢复邮箱');
   const { salt, hash } = hashPassword(password);
   setSetting(KEYS.salt, salt);
@@ -192,6 +214,11 @@ export function verifyAuth(password: string): void {
 
 export function lockAuth(): void {
   unlocked = false;
+}
+
+/** 完成首次使用引导（v1.7.2）：写入完成标记（跳过与完成都调用） */
+export function completeOnboarding(): void {
+  setSetting('onboarding.done', '1');
 }
 
 // ── 忘记密码（邮箱验证码） ──

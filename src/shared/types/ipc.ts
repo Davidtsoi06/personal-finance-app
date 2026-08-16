@@ -18,6 +18,7 @@ export type IpcChannel =
   | 'auth:verifyResetCode'
   | 'auth:resetPassword'
   | 'auth:setIdleMinutes'
+  | 'onboarding:complete'
   | 'account:allAssetsSummary'
   | 'account:balances'
   | 'account:create'

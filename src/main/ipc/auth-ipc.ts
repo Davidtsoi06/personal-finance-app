@@ -83,4 +83,9 @@ export function registerAuthIpcHandlers(callbacks: AuthIpcCallbacks): void {
     authService.setIdleMinutes(minutes);
     return { ok: true };
   });
+
+  handleValidated('onboarding:complete', () => {
+    authService.completeOnboarding();
+    return { ok: true };
+  });
 }

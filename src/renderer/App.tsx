@@ -1,8 +1,10 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LockScreen } from './pages/LockScreen';
+import { Welcome } from './pages/Welcome';
+import { invoke } from './hooks/useIpc';
 
 // ── 路由级代码分割：每个页面独立 chunk，首屏只加载当前路由（修复单包 1.5MB 告警）──
 // 页面为命名导出，lazy 需要 default → .then 适配
@@ -29,9 +31,27 @@ function PageFallback() {
 }
 
 function App() {
+  // 首次使用引导（v1.7.2）：仅全新库显示；老库无标记视为已完成
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  useEffect(() => {
+    invoke<{ onboardingDone: boolean }>('auth:status')
+      .then((s) => setOnboardingDone(s?.onboardingDone !== false))
+      .catch(() => setOnboardingDone(true));
+  }, []);
+
   // 锁屏窗口（#/lock）独立渲染：不经 Layout、不加载业务数据（v1.7.0）
   if (window.location.hash.startsWith('#/lock') || window.location.hash === '#lock') {
     return <LockScreen />;
+  }
+
+  // 首次引导未完成 → 显示引导页（不经 Layout）
+  if (onboardingDone === false) {
+    return <Welcome onDone={() => setOnboardingDone(true)} />;
+  }
+
+  // 引导状态加载中 → 短暂占位
+  if (onboardingDone === null) {
+    return <div className="page-loading" style={{ padding: 'var(--spacing-xxl)' }}>加载中...</div>;
   }
 
   return (

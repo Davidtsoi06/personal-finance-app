@@ -34,6 +34,7 @@ export function SecurityCard() {
   const [oldPassword, setOldPassword] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
   const [testSent, setTestSent] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const load = () => {
     invoke<AuthStatus>('auth:status')
@@ -49,13 +50,25 @@ export function SecurityCard() {
     if (!err) setNotice(ok);
   };
 
+  // v1.7.2：保存恢复邮箱（发件默认走官方内置邮箱，零配置）
+  const handleSaveRecoveryEmail = async () => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await invoke('auth:setRecoveryEmail', recoveryEmail);
+      setTestSent(false);
+      setNotice('✅ 恢复邮箱已保存');
+    } catch (err: any) { msg(err, ''); }
+    setBusy(false);
+    load();
+  };
+
+  // 高级：自定义 SMTP（可选，覆盖官方内置发件通道）
   const handleSaveSmtp = async () => {
     setBusy(true); setError(''); setNotice('');
     try {
       await invoke('auth:setupSmtp', { host: smtpHost, port: parseInt(smtpPort) || 465, secure: smtpSecure, user: smtpUser, pass: smtpPass });
-      await invoke('auth:setRecoveryEmail', recoveryEmail);
       setTestSent(false);
-      setNotice('✅ SMTP 与恢复邮箱已保存，请发送测试邮件');
+      setNotice('✅ 自定义发件邮箱已保存，请发送测试邮件');
     } catch (err: any) { msg(err, ''); }
     setBusy(false);
     load();
@@ -170,42 +183,58 @@ export function SecurityCard() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
           <div style={{ fontSize: 'var(--font-size-sm)', background: 'var(--color-bg-secondary)', padding: 'var(--spacing-sm) var(--spacing-md)', borderRadius: 'var(--radius-sm)' }}>
-            启用前请完成 3 步：① 配置发件邮箱（SMTP 授权码）与恢复邮箱 → ② 发送测试邮件并收到 → ③ 设置启动密码。
-            <br />⚠️ 找回密码完全依赖邮箱验证码，请确保邮箱配置正确；离线时将无法找回。
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">SMTP 服务器</label>
-              <input className="form-input" placeholder="如 smtp.qq.com" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">端口</label>
-              <input className="form-input" type="number" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">发件邮箱</label>
-              <input className="form-input" placeholder="如 xxx@qq.com" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">SMTP 授权码</label>
-              <input className="form-input" type="password" placeholder="邮箱设置里获取的授权码" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} />
-            </div>
-          </div>
-          <div className="form-group">
-            <label style={{ fontSize: 'var(--font-size-sm)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <input type="checkbox" checked={smtpSecure} onChange={(e) => setSmtpSecure(e.target.checked)} />
-              使用 SSL（465 端口；部分邮箱 587 端口请取消勾选）
-            </label>
+            启用只需 3 步：① 填写恢复邮箱 → ② 发送测试邮件并收到（由官方邮箱自动发送，无需任何服务器配置）→ ③ 设置启动密码。
+            <br />⚠️ 找回密码完全依赖邮箱验证码，请确保邮箱可正常收信；离线时将无法找回。
           </div>
           <div className="form-group">
             <label className="form-label">恢复邮箱（收验证码的邮箱）</label>
             <input className="form-input" type="email" placeholder="如 xxx@qq.com" value={recoveryEmail} onChange={(e) => setRecoveryEmail(e.target.value)} />
           </div>
           <div className="form-row">
-            <Button variant="secondary" onClick={handleSaveSmtp} disabled={busy}>保存配置</Button>
-            <Button variant="secondary" onClick={handleTestEmail} disabled={busy || !status?.smtpConfigured}>发送测试邮件</Button>
+            <Button variant="secondary" onClick={handleSaveRecoveryEmail} disabled={busy}>保存恢复邮箱</Button>
+            <Button variant="secondary" onClick={handleTestEmail} disabled={busy}>发送测试邮件</Button>
+          </div>
+          <div style={{ borderTop: '1px dashed var(--color-border)', paddingTop: 'var(--spacing-sm)' }}>
+            <Button variant="secondary" size="sm" onClick={() => setShowAdvanced(!showAdvanced)}>
+              {showAdvanced ? '▾ 收起高级设置' : '▸ 高级：自定义发件邮箱（可选）'}
+            </Button>
+            {status?.smtpConfigured && (
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginLeft: 8 }}>已自定义发件邮箱</span>
+            )}
+            {showAdvanced && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', marginTop: 'var(--spacing-md)' }}>
+                <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', margin: 0 }}>
+                  默认使用官方内置发件邮箱，无需配置。仅当你想用自己的邮箱发送验证码时才填写以下内容（填写并保存后覆盖官方通道）。
+                </p>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">SMTP 服务器</label>
+                    <input className="form-input" placeholder="如 smtp.qq.com" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">端口</label>
+                    <input className="form-input" type="number" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">发件邮箱</label>
+                    <input className="form-input" placeholder="如 xxx@qq.com" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">SMTP 授权码</label>
+                    <input className="form-input" type="password" placeholder="邮箱设置里获取的授权码" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: 'var(--font-size-sm)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={smtpSecure} onChange={(e) => setSmtpSecure(e.target.checked)} />
+                    使用 SSL（465 端口；部分邮箱 587 端口请取消勾选）
+                  </label>
+                </div>
+                <Button variant="secondary" onClick={handleSaveSmtp} disabled={busy}>保存自定义发件配置</Button>
+              </div>
+            )}
           </div>
           {testSent && (
             <div style={{ borderTop: '1px dashed var(--color-border)', paddingTop: 'var(--spacing-md)' }}>
