@@ -330,6 +330,7 @@ export function registerSettingsIpcHandlers(): void {
         { sheet: '投资账户', sql: 'SELECT * FROM investment_accounts ORDER BY id' },
         { sheet: '资产持仓', sql: 'SELECT * FROM assets ORDER BY id' },
         { sheet: '投资交易', sql: 'SELECT * FROM transactions ORDER BY date DESC, id DESC' },
+        { sheet: '券商现金流水', sql: 'SELECT * FROM investment_cash_flows ORDER BY id' },
         { sheet: '存取记录', sql: 'SELECT * FROM account_transactions ORDER BY date DESC, id DESC' },
         { sheet: '多币种余额', sql: 'SELECT * FROM account_balances ORDER BY account_id, currency' },
         { sheet: '定期存款', sql: 'SELECT * FROM fixed_deposits ORDER BY id' },
@@ -352,9 +353,9 @@ export function registerSettingsIpcHandlers(): void {
       const workbook = xlsx.utils.book_new();
       for (const t of tables) {
         let rows = db.prepare(t.sql).all() as any[];
-        // 敏感配置（AI API Key）不随备份导出，恢复后需在设置中重新配置
+        // v1.7.1：敏感配置不随备份导出（AI Key / 启动密码 / SMTP 凭据），恢复后需在设置中重新配置
         if (t.sheet === '应用设置') {
-          rows = rows.filter((r: any) => r.key !== 'ai.apiKey');
+          rows = rows.filter((r: any) => !r.key.startsWith('ai.') && !r.key.startsWith('auth.') && !r.key.startsWith('smtp.'));
         }
         if (rows.length > 0) {
           const ws = xlsx.utils.json_to_sheet(rows);
@@ -415,7 +416,7 @@ export function registerSettingsIpcHandlers(): void {
 
       const sheetToTable: Record<string, string> = {
         '账户': 'accounts', '投资账户': 'investment_accounts', '资产持仓': 'assets',
-        '投资交易': 'transactions', '存取记录': 'account_transactions', '收支记账': 'ledgers',
+        '投资交易': 'transactions', '券商现金流水': 'investment_cash_flows', '存取记录': 'account_transactions', '收支记账': 'ledgers',
         '收支分类': 'categories', '货币汇率': 'currencies', '汇率历史': 'exchange_rates',
         '价格历史': 'asset_prices', '净值历史': 'net_worth_history', '预算': 'budgets',
         '提醒配置': 'alert_config', '自定义格式': 'custom_statement_formats',
@@ -429,7 +430,7 @@ export function registerSettingsIpcHandlers(): void {
       const importOrder = [
         '货币汇率', '收支分类', '账户', '多币种余额', '定期存款', '投资账户',
         '自定义格式', '银行自定义格式',
-        '资产持仓', '投资交易', '存取记录', '收支记账',
+        '资产持仓', '投资交易', '券商现金流水', '存取记录', '收支记账',
         '汇率历史', '价格历史', '净值历史', '预算', '提醒配置',
         '人情债', '保单', '保费缴纳', '应用设置',
       ];

@@ -5,6 +5,7 @@
  */
 import { getDatabase } from '../database';
 import { normalizeDate, normalizeCurrency } from './data-normalizer';
+import { parseAmount } from '../../shared/utils/amount-parse';
 
 /** Safely convert a cell value (string/number from xlsx or CSV) to a trimmed string. */
 function safeTrim(v: unknown): string {
@@ -178,8 +179,8 @@ function detectType(raw: string, amount: number): 'deposit' | 'withdraw' {
 
 function parseStandardLine(cols: string[]): ParsedBankRecord | null {
   const [date, amountStr, typeStr, description, currency] = cols;
-  let amount = parseFloat(amountStr);
-  if (isNaN(amount)) return null;
+  let amount = parseAmount(amountStr);
+  if (amount === null) return null;
   // Amount may be absolute — direction comes from type field
   const absAmount = Math.abs(amount);
   const type = detectType(safeTrim(typeStr), amount);
@@ -241,8 +242,8 @@ function mapRowToBankRecord(cols: string[], colMap: Record<string, number>): Par
   if (cols.length < 3) return null;
 
   const date = normalizeDate(colMap['date'] !== undefined ? safeTrim(cols[colMap['date']]) : '');
-  const rawAmount = colMap['amount'] !== undefined ? parseFloat(cols[colMap['amount']]) : NaN;
-  if (isNaN(rawAmount) || !date) return null;
+  const rawAmount = colMap['amount'] !== undefined ? parseAmount(cols[colMap['amount']]) : null;
+  if (rawAmount === null || !date) return null;
 
   const absAmount = Math.abs(rawAmount);
   const typeRaw = colMap['type'] !== undefined ? safeTrim(cols[colMap['type']]) : '';
@@ -253,8 +254,8 @@ function mapRowToBankRecord(cols: string[], colMap: Record<string, number>): Par
     colMap['currency'] !== undefined ? safeTrim(cols[colMap['currency']]) : '',
     'CNY'
   );
-  const balance = colMap['balance'] !== undefined ? parseFloat(cols[colMap['balance']]) : undefined;
-  const validBalance = balance !== undefined && !isNaN(balance) ? balance : undefined;
+  const balance = colMap['balance'] !== undefined ? parseAmount(cols[colMap['balance']]) : undefined;
+  const validBalance = balance !== undefined && balance !== null ? balance : undefined;
 
   return { date, amount: absAmount, type, description, currency, balance: validBalance };
 }
@@ -348,21 +349,21 @@ function tryGenericDetection(lines: string[]): BankParseResult {
     let amount: number;
     let type: 'deposit' | 'withdraw';
     if (incomeIdx !== -1 && expenseIdx !== -1) {
-      const inc = parseFloat(cols[incomeIdx]) || 0;
-      const exp = parseFloat(cols[expenseIdx]) || 0;
+      const inc = parseAmount(cols[incomeIdx]) || 0;
+      const exp = parseAmount(cols[expenseIdx]) || 0;
       if (inc > 0) { amount = inc; type = 'deposit'; }
       else if (exp > 0) { amount = exp; type = 'withdraw'; }
       else continue;
     } else if (incomeIdx !== -1) {
-      amount = parseFloat(cols[incomeIdx]) || 0;
+      amount = parseAmount(cols[incomeIdx]) || 0;
       type = 'deposit';
       if (amount === 0) continue;
     } else if (expenseIdx !== -1) {
-      amount = parseFloat(cols[expenseIdx]) || 0;
+      amount = parseAmount(cols[expenseIdx]) || 0;
       type = 'withdraw';
       if (amount === 0) continue;
     } else {
-      amount = parseFloat(cols[combinedAmountIdx]);
+      amount = parseAmount(cols[combinedAmountIdx]) ?? NaN;
       if (isNaN(amount) || amount === 0) continue;
       const typeRaw = typeIdx !== -1 ? cols[typeIdx]?.trim() : '';
       type = detectType(typeRaw, amount);

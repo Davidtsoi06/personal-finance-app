@@ -180,6 +180,11 @@ export function getDatabase(): Database.Database {
   return db;
 }
 
+/** 测试专用：注入内存数据库（集成测试使用 :memory:，生产代码不得调用）。 */
+export function setDatabaseForTest(database: Database.Database): void {
+  db = database;
+}
+
 /** Close the database connection */
 export function closeDatabase(): void {
   if (db) {

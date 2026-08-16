@@ -155,17 +155,41 @@ export function updateAccount(id: number, data: Partial<AccountRow> & {
 
   const merged = { ...existing, ...data, id, updated_at: new Date().toISOString() };
   merged.card_number = normalizeCardNumber(merged.card_number);
-  db.prepare(`
-    UPDATE accounts SET name=?, type=?, asset_type=?, currency=?, balance=?, bank_name=?, card_number=?,
-      parent_account_id=?, is_active=?, sort_order=?, updated_at=?
-    WHERE id=?
-  `).run(
-    merged.name, merged.type, merged.asset_type, merged.currency, merged.balance,
-    merged.bank_name, merged.card_number,
-    merged.parent_account_id ?? null,
-    merged.is_active, merged.sort_order, merged.updated_at, id
-  );
 
+  const balanceChanged = data.balance !== undefined && data.balance !== existing.balance;
+  const currencyChanged = data.currency !== undefined && data.currency !== existing.currency;
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE accounts SET name=?, type=?, asset_type=?, currency=?, balance=?, bank_name=?, card_number=?,
+        parent_account_id=?, is_active=?, sort_order=?, updated_at=?
+      WHERE id=?
+    `).run(
+      merged.name, merged.type, merged.asset_type, merged.currency, merged.balance,
+      merged.bank_name, merged.card_number,
+      merged.parent_account_id ?? null,
+      merged.is_active, merged.sort_order, merged.updated_at, id
+    );
+
+    // v1.7.1 修复：编辑余额/币种必须同步 account_balances（此前只改 accounts.balance，
+    // 总览以 account_balances 为准，导致两表漂移、编辑后数字不变）
+    if (balanceChanged || currencyChanged) {
+      const newCurrency = merged.currency || existing.currency || 'CNY';
+      const newBalance = merged.balance ?? existing.balance ?? 0;
+      const oldBucket = db.prepare(
+        'SELECT * FROM account_balances WHERE account_id = ? AND currency = ?'
+      ).get(id, existing.currency) as { id: number; balance: number } | undefined;
+      const oldVal = oldBucket ? oldBucket.balance : 0;
+      if (currencyChanged) {
+        if (oldBucket) db.prepare('DELETE FROM account_balances WHERE id = ?').run(oldBucket.id);
+        updateAccountBalance(id, newCurrency, newBalance);
+      } else {
+        updateAccountBalance(id, existing.currency, newBalance - oldVal);
+      }
+    }
+  });
+
+  tx();
   return getAccount(id);
 }
 

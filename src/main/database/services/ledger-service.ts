@@ -176,12 +176,13 @@ export function getMonthlySummary(year: number, month: number): { income: number
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
   const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
 
+  // v1.7.1：按币种折算 CNY 汇总（此前混币直接相加）
   const income = db.prepare(
-    "SELECT COALESCE(SUM(amount), 0) as total FROM ledgers WHERE type = 'income' AND date >= ? AND date <= ?"
+    "SELECT COALESCE(SUM(l.amount * COALESCE(c.rate_to_base, 1)), 0) as total FROM ledgers l LEFT JOIN currencies c ON l.currency = c.code WHERE l.type = 'income' AND l.date >= ? AND l.date <= ?"
   ).get(startDate, endDate) as any;
 
   const expense = db.prepare(
-    "SELECT COALESCE(SUM(amount), 0) as total FROM ledgers WHERE type = 'expense' AND date >= ? AND date <= ?"
+    "SELECT COALESCE(SUM(l.amount * COALESCE(c.rate_to_base, 1)), 0) as total FROM ledgers l LEFT JOIN currencies c ON l.currency = c.code WHERE l.type = 'expense' AND l.date >= ? AND l.date <= ?"
   ).get(startDate, endDate) as any;
 
   return { income: income.total, expense: expense.total };

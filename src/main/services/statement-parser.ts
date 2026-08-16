@@ -4,6 +4,7 @@
  * Supports built-in formats, custom user-defined formats, and generic auto-detection.
  */
 import { getDatabase } from '../database';
+import { parseAmount } from '../../shared/utils/amount-parse';
 import { normalizeDate, normalizeCurrency, normalizeCode, normalizeTradeType } from './data-normalizer';
 
 /** Safely convert a cell value (string/number from xlsx or CSV) to a trimmed string. */
@@ -208,10 +209,10 @@ function tryStandardFormat(lines: string[]): ParsedTrade[] | null {
 
 function parseStandardLine(cols: string[]): ParsedTrade | null {
   const [date, code, name, typeStr, qtyStr, priceStr, feeStr, currency] = cols;
-  const quantity = parseFloat(qtyStr);
-  const price = parseFloat(priceStr);
-  const fee = parseFloat(feeStr) || 0;
-  if (isNaN(quantity) || isNaN(price)) return null;
+  const quantity = parseAmount(qtyStr);
+  const price = parseAmount(priceStr);
+  const fee = parseAmount(feeStr) || 0;
+  if (quantity === null || price === null) return null;
 
   const sDate = safeTrim(date) || new Date().toISOString().slice(0, 10);
   const sCode = safeTrim(code);
@@ -253,12 +254,12 @@ function mapRowToTrade(cols: string[], colMap: Record<string, number>): ParsedTr
   const code = normalizeCode(colMap['code'] !== undefined ? safeTrim(cols[colMap['code']]) : '');
   const name = colMap['name'] !== undefined ? safeTrim(cols[colMap['name']]) : code;
   const typeRaw = colMap['type'] !== undefined ? safeTrim(cols[colMap['type']]) : '';
-  const qty = parseFloat(cols[colMap['quantity']]);
-  const price = parseFloat(cols[colMap['price']]);
-  const rawAmount = colMap['amount'] !== undefined ? parseFloat(cols[colMap['amount']]) : NaN;
-  const rawNetAmount = colMap['net_amount'] !== undefined ? parseFloat(cols[colMap['net_amount']]) : NaN;
-  let fee = colMap['fee'] !== undefined ? parseFloat(cols[colMap['fee']]) || 0 : 0;
-  if (!isNaN(rawAmount) && !isNaN(rawNetAmount)) {
+  const qty = parseAmount(cols[colMap['quantity']]);
+  const price = parseAmount(cols[colMap['price']]);
+  const rawAmount = colMap['amount'] !== undefined ? parseAmount(cols[colMap['amount']]) : null;
+  const rawNetAmount = colMap['net_amount'] !== undefined ? parseAmount(cols[colMap['net_amount']]) : null;
+  let fee = colMap['fee'] !== undefined ? (parseAmount(cols[colMap['fee']]) || 0) : 0;
+  if (rawAmount !== null && rawNetAmount !== null) {
     fee = Math.abs(Math.abs(rawNetAmount) - Math.abs(rawAmount));
   }
   const currency = normalizeCurrency(
@@ -266,18 +267,18 @@ function mapRowToTrade(cols: string[], colMap: Record<string, number>): ParsedTr
     'HKD'
   );
 
-  if (isNaN(qty) || isNaN(price)) return null;
+  if (qty === null || price === null) return null;
   if (!date) return null;
 
   let type = normalizeTradeType(typeRaw);
   // Fallback: use net_amount sign when text-based type detection fails
-  if (type === 'other' && !isNaN(rawNetAmount)) {
+  if (type === 'other' && rawNetAmount !== null) {
     if (rawNetAmount < 0) type = 'buy';
     else if (rawNetAmount > 0) type = 'sell';
   }
 
   const trade: ParsedTrade = { date, code, name, type, quantity: qty, price, fee, currency };
-  if (!isNaN(rawNetAmount)) trade.net_amount = rawNetAmount;
+  if (rawNetAmount !== null) trade.net_amount = rawNetAmount;
   return trade;
 }
 
@@ -352,20 +353,20 @@ function tryGenericDetection(lines: string[]): ParseResult {
     if (cols.length < Math.max(dateIdx, qtyIdx, priceIdx) + 1) continue;
 
     const date = normalizeDate(cols[dateIdx]?.trim());
-    const qty = parseFloat(cols[qtyIdx]);
-    const price = parseFloat(cols[priceIdx]);
-    if (isNaN(qty) || isNaN(price) || !date) continue;
+    const qty = parseAmount(cols[qtyIdx]);
+    const price = parseAmount(cols[priceIdx]);
+    if (qty === null || price === null || !date) continue;
 
-    const rawAmount = amountIdx !== -1 ? parseFloat(cols[amountIdx]) : NaN;
-    const rawNetAmount = netAmountIdx !== -1 ? parseFloat(cols[netAmountIdx]) : NaN;
-    let fee = feeIdx !== -1 ? parseFloat(cols[feeIdx]) || 0 : 0;
-    if (!isNaN(rawAmount) && !isNaN(rawNetAmount)) {
+    const rawAmount = amountIdx !== -1 ? parseAmount(cols[amountIdx]) : null;
+    const rawNetAmount = netAmountIdx !== -1 ? parseAmount(cols[netAmountIdx]) : null;
+    let fee = feeIdx !== -1 ? (parseAmount(cols[feeIdx]) || 0) : 0;
+    if (rawAmount !== null && rawNetAmount !== null) {
       fee = Math.abs(Math.abs(rawNetAmount) - Math.abs(rawAmount));
     }
 
     const typeRaw = typeIdx !== -1 ? cols[typeIdx]?.trim() : '';
     let type = normalizeTradeType(typeRaw);
-    if (type === 'other' && !isNaN(rawNetAmount)) {
+    if (type === 'other' && rawNetAmount !== null) {
       if (rawNetAmount < 0) type = 'buy';
       else if (rawNetAmount > 0) type = 'sell';
     }
@@ -385,7 +386,7 @@ function tryGenericDetection(lines: string[]): ParseResult {
       fee,
       currency,
     };
-    if (!isNaN(rawNetAmount)) trade.net_amount = rawNetAmount;
+    if (rawNetAmount !== null) trade.net_amount = rawNetAmount;
     trades.push(trade);
   }
 

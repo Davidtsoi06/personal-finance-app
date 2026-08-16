@@ -3,6 +3,9 @@
  * and old data cleanup. Archives data older than the configured retention period.
  */
 import { getDatabase } from '../database/index';
+import { reverseAssetAdjustment } from '../database/services/transaction-service';
+import { removeFlowsForTransactionInDb } from '../database/services/cash-flow-core';
+import { updateAccountBalance } from '../database/services/account-service';
 import { getSetting, setSetting } from '../database/services/settings-service';
 import path from 'path';
 import fs from 'fs';
@@ -342,37 +345,68 @@ export function executeArchive(months: string[]): ArchiveResult[] {
       fs.writeFileSync(fullPath, buffer);
       result.filePath = fullPath;
 
-      // Delete data
+      // Delete data（v1.7.1：先反冲余额/持仓/现金流，再删除，全程事务）
       const db = getDatabase();
-      const monthStart = `${month}-01`;
+      const monthStart = month + '-01';
       const [y, m] = month.split('-').map(Number);
       const lastDay = new Date(y, m, 0).getDate();
-      const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
+      const monthEnd = month + '-' + String(lastDay).padStart(2, '0');
 
-      const delTx = db.prepare(
-        'DELETE FROM transactions WHERE date >= ? AND date <= ?'
-      ).run(monthStart, monthEnd);
-      result.transactionsArchived = delTx.changes;
+      const run = db.transaction(() => {
+        // 1. 反冲该月交易对持仓的影响，并删除关联现金流（外键必须先清）
+        const monthTx = db.prepare(
+          'SELECT * FROM transactions WHERE date >= ? AND date <= ? ORDER BY date DESC, id DESC'
+        ).all(monthStart, monthEnd) as any[];
+        for (const t of monthTx) {
+          reverseAssetAdjustment(t);
+          removeFlowsForTransactionInDb(db, t.id);
+        }
 
-      const delLedger = db.prepare(
-        'DELETE FROM ledgers WHERE date >= ? AND date <= ?'
-      ).run(monthStart, monthEnd);
-      result.ledgersArchived = delLedger.changes;
+        // 2. 反冲存取记录对账户余额的影响
+        const monthAt = db.prepare(
+          'SELECT * FROM account_transactions WHERE date >= ? AND date <= ?'
+        ).all(monthStart, monthEnd) as any[];
+        for (const at of monthAt) {
+          // 取出曾扣减余额 → 加回；存入曾增加 → 减回
+          updateAccountBalance(at.account_id, at.currency || 'CNY', at.type === 'withdraw' ? at.amount : -at.amount);
+        }
 
-      const delAt = db.prepare(
-        'DELETE FROM account_transactions WHERE date >= ? AND date <= ?'
-      ).run(monthStart, monthEnd);
-      result.accountTxnsArchived = delAt.changes;
+        // 3. 反冲记账对账户余额的影响
+        const monthLedger = db.prepare(
+          'SELECT * FROM ledgers WHERE date >= ? AND date <= ?'
+        ).all(monthStart, monthEnd) as any[];
+        for (const lg of monthLedger) {
+          if (!lg.account_id) continue;
+          updateAccountBalance(lg.account_id, lg.currency || 'CNY', lg.type === 'income' ? -lg.amount : lg.amount);
+        }
 
-      // Clean up asset_prices and exchange_rates for this month
-      db.prepare(
-        'DELETE FROM asset_prices WHERE date >= ? AND date <= ?'
-      ).run(monthStart, monthEnd);
+        // 4. 删除
+        const delTx = db.prepare(
+          'DELETE FROM transactions WHERE date >= ? AND date <= ?'
+        ).run(monthStart, monthEnd);
+        result.transactionsArchived = delTx.changes;
 
-      db.prepare(
-        'DELETE FROM exchange_rates WHERE date >= ? AND date <= ?'
-      ).run(monthStart, monthEnd);
+        const delLedger = db.prepare(
+          'DELETE FROM ledgers WHERE date >= ? AND date <= ?'
+        ).run(monthStart, monthEnd);
+        result.ledgersArchived = delLedger.changes;
 
+        const delAt = db.prepare(
+          'DELETE FROM account_transactions WHERE date >= ? AND date <= ?'
+        ).run(monthStart, monthEnd);
+        result.accountTxnsArchived = delAt.changes;
+
+        // Clean up asset_prices and exchange_rates for this month
+        db.prepare(
+          'DELETE FROM asset_prices WHERE date >= ? AND date <= ?'
+        ).run(monthStart, monthEnd);
+
+        db.prepare(
+          'DELETE FROM exchange_rates WHERE date >= ? AND date <= ?'
+        ).run(monthStart, monthEnd);
+      });
+
+      run();
       result.success = true;
     } catch (err: any) {
       result.error = err.message;

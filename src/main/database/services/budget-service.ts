@@ -79,9 +79,10 @@ export function getBudgetStatus(month: string): BudgetStatus {
 
   // Total expenses for this month
   const row = db.prepare(
-    `SELECT COALESCE(SUM(amount), 0) as total
-     FROM ledgers
-     WHERE type = 'expense' AND strftime('%Y-%m', date) = ?`
+    `SELECT COALESCE(SUM(l.amount * COALESCE(c.rate_to_base, 1)), 0) as total
+     FROM ledgers l
+     LEFT JOIN currencies c ON l.currency = c.code
+     WHERE l.type = 'expense' AND strftime('%Y-%m', l.date) = ?`
   ).get(month) as { total: number };
 
   const totalSpent = row.total;

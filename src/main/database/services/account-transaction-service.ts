@@ -223,18 +223,17 @@ export function importWalletBills(accountId: number, records: BillRecord[]): { i
 
         insertLedger.run(ledgerType, amount, currency, accountId, date, rec.description, categoryId);
 
+        // v1.7.1 修复：同步账户余额（此前导入完全不更新余额）
+        updateAccountBalance(accountId, currency, rec.type === 'income' ? amount : -amount);
+
         imported++;
       } catch (err: any) {
         errors.push(`${rec.description || '未知记录'}：${err.message}`);
       }
     }
 
-    // Sync account balance
-    const totalRow = db.prepare(
-      'SELECT COALESCE(SUM(balance), 0) as total FROM account_balances WHERE account_id = ?'
-    ).get(accountId) as { total: number };
-    db.prepare("UPDATE accounts SET balance = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(totalRow.total, accountId);
+    // v1.7.1：余额已由逐条 updateAccountBalance 同步（内部含 CNY 等值重算），
+    // 删除旧的「无汇率换算 SUM 覆盖」逻辑。
 
     return imported;
   });

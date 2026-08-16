@@ -3,6 +3,7 @@
  * Manages policies, premium payments, and due-date reminders.
  */
 import { getDatabase } from '../index';
+import { updateAccountBalance } from './account-service';
 
 export interface InsurancePolicyRow {
   id: number;
@@ -158,10 +159,9 @@ export function payPremium(data: {
 
     // 3. If a bank account is specified, create withdrawal record
     if (data.account_id) {
-      const { updateAccountBalance } = require('./account-service');
+      // v1.7.1 修复：updateAccountBalance 内部已同步 account_balances 并重算 accounts.balance，
+      // 不得再 raw 减一次（此前双重扣减）。
       updateAccountBalance(data.account_id, currency, -data.amount);
-      db.prepare("UPDATE accounts SET balance = balance - ?, updated_at = datetime('now') WHERE id = ?")
-        .run(data.amount, data.account_id);
 
       db.prepare(`
         INSERT INTO account_transactions (account_id, type, amount, currency, date, notes)
@@ -194,8 +194,12 @@ export function listPayments(policyId: number): PremiumPaymentRow[] {
 /** Get total cash value across all active policies. */
 export function getTotalCashValue(): number {
   const db = getDatabase();
+  // v1.7.1：按保单币种折算 CNY（此前外币保单按 1:1 混加）
   const row = db.prepare(
-    'SELECT COALESCE(SUM(cash_value), 0) as total FROM insurance_policies WHERE is_active = 1'
+    `SELECT COALESCE(SUM(p.cash_value * COALESCE(c.rate_to_base, 1)), 0) as total
+     FROM insurance_policies p
+     LEFT JOIN currencies c ON p.cash_value_currency = c.code
+     WHERE p.is_active = 1`
   ).get() as any;
   return row.total;
 }

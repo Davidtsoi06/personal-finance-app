@@ -2,7 +2,7 @@
  * Transaction service — CRUD for investment transaction records.
  */
 import { getDatabase } from '../index';
-import { updateCurrentPrice } from './asset-service';
+import { updateCurrentPrice, recomputeDerivedFields } from './asset-service';
 import { addPosition, removePosition } from '../../../shared/utils/investment';
 import { roundMoney } from '../../../shared/utils/money';
 import { syncFlowForTransactionInDb, removeFlowsForTransactionInDb } from './cash-flow-core';
@@ -50,7 +50,10 @@ export function createTransaction(data: {
 }): TransactionRow {
   const db = getDatabase();
   const fee = data.fee || 0;
-  const totalAmount = roundMoney(data.quantity * data.price + fee);
+  // v1.7.1 修复：卖出净额 = 数量×价格 − 手续费（买入才加手续费）
+  const totalAmount = roundMoney(data.type === 'sell'
+    ? data.quantity * data.price - fee
+    : data.quantity * data.price + fee);
 
   const run = db.transaction(() => {
     const stmt = db.prepare(`
@@ -114,7 +117,10 @@ export function updateTransaction(id: number, data: {
   const newQuantity = data.quantity ?? existing.quantity;
   const newPrice = data.price ?? existing.price;
   const newFee = data.fee !== undefined ? data.fee : existing.fee;
-  const newTotalAmount = newQuantity * newPrice + newFee;
+  // v1.7.1 修复：卖出 − 手续费，并统一舍入
+  const newTotalAmount = roundMoney(newType === 'sell'
+    ? newQuantity * newPrice - newFee
+    : newQuantity * newPrice + newFee);
   const newCurrency = data.currency || existing.currency;
   const newDate = data.date || existing.date;
   const newNotes = data.notes !== undefined ? data.notes : existing.notes;
@@ -143,8 +149,8 @@ export function updateTransaction(id: number, data: {
   return getTransaction(id);
 }
 
-/** Reverse the asset quantity/cost changes from a transaction. */
-function reverseAssetAdjustment(tx: TransactionRow): void {
+/** Reverse the asset quantity/cost changes from a transaction.（v1.7.1 起导出，供归档冲销复用） */
+export function reverseAssetAdjustment(tx: TransactionRow): void {
   const db = getDatabase();
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(tx.asset_id) as any;
   if (!asset) return;
@@ -154,15 +160,18 @@ function reverseAssetAdjustment(tx: TransactionRow): void {
   if (tx.type === 'buy') {
     next = removePosition(state, tx.quantity, tx.total_amount);
   } else if (tx.type === 'sell') {
-    next = addPosition(state, tx.quantity, tx.total_amount);
+    // v1.7.1 修复：反转卖出应回加「卖出时的成本基数」（均价×数量），而非卖出净额；
+    // 均价清仓丢失时退化为 total_amount（净收）。
+    const costBasis = asset.cost_price > 0 ? roundMoney(asset.cost_price * tx.quantity) : tx.total_amount;
+    next = addPosition(state, tx.quantity, costBasis);
   } else {
     return;
   }
   db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
     .run(next.quantity, next.totalCost, next.costPrice, tx.asset_id);
 
-  // Recalculate derived fields
-  updateCurrentPrice(tx.asset_id, asset.current_price || 0);
+  // v1.7.1 修复：只重算派生字段，不写价格历史（避免删除/编辑交易污染走势图）
+  recomputeDerivedFields(tx.asset_id, asset.current_price || 0);
 }
 
 /** Apply a new transaction's asset adjustment. */

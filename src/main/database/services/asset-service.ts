@@ -204,11 +204,17 @@ export function updateAsset(id: number, data: Partial<AssetRow>): AssetRow | und
 
 export function deleteAsset(id: number): boolean {
   const db = getDatabase();
-  // Also delete related transactions and price history
-  db.prepare('DELETE FROM transactions WHERE asset_id = ?').run(id);
-  db.prepare('DELETE FROM asset_prices WHERE asset_id = ?').run(id);
-  const result = db.prepare('DELETE FROM assets WHERE id = ?').run(id);
-  return result.changes > 0;
+  // v1.7.1 修复：先删现金流（外键引用交易/持仓），再删交易与价格历史，全程事务
+  const run = db.transaction(() => {
+    db.prepare('DELETE FROM investment_cash_flows WHERE asset_id = ?').run(id);
+    db.prepare('DELETE FROM investment_cash_flows WHERE transaction_id IN (SELECT id FROM transactions WHERE asset_id = ?)').run(id);
+    db.prepare('DELETE FROM transactions WHERE asset_id = ?').run(id);
+    db.prepare('DELETE FROM asset_prices WHERE asset_id = ?').run(id);
+    const result = db.prepare('DELETE FROM assets WHERE id = ?').run(id);
+    return result.changes > 0;
+  });
+
+  return run();
 }
 
 /** 全部持仓市值（按持仓币种换算 CNY 后聚合，v1.5.6 修正混币口径） */
@@ -226,6 +232,15 @@ export function getAssetCnyTotals(whereClause = '', args: any[] = []) {
 
 export function updateCurrentPrice(id: number, price: number): void {
   const db = getDatabase();
+  recomputeDerivedFields(id, price);
+
+  // Record price history
+  db.prepare('INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date(\'now\'))').run(id, price);
+}
+
+/** 只重算市值/盈亏派生字段，不写价格历史（v1.7.1：反转交易等场景使用，避免污染走势图） */
+export function recomputeDerivedFields(id: number, price: number): void {
+  const db = getDatabase();
   const asset = getAsset(id);
   if (!asset) return;
 
@@ -235,7 +250,4 @@ export function updateCurrentPrice(id: number, price: number): void {
     UPDATE assets SET current_price=?, market_value=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
     WHERE id=?
   `).run(price, v.marketValue, v.profitLoss, v.profitLossPct, id);
-
-  // Record price history
-  db.prepare('INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date(\'now\'))').run(id, price);
 }
