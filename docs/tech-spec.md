@@ -48,13 +48,15 @@ Electron App
 │   ├── database/
 │   │   ├── index.ts               # 数据库初始化 + WAL 模式 + 迁移执行（支持 SQL + JS 迁移）
 │   │   ├── migrations.ts          # 版本化建表 SQL + JS 数据迁移（v1 ~ v12）
-│   │   └── services/              # 数据服务层（17 个）
+│   │   └── services/              # 数据服务层（20 个）
 │   │       ├── account-service.ts          # 账户 CRUD + 树形结构 + 统一资产汇总（四层架构）
+│   │       ├── asset-cny-core.ts           # 跨币种 CNY 换算纯 DB 函数（无 electron 依赖）
 │   │       ├── account-transaction-service.ts  # 存取记录 CRUD + 钱包账单导入
 │   │       ├── alert-service.ts            # 提醒配置 + 价格检查
 │   │       ├── asset-service.ts            # 资产持仓 CRUD + 价格/盈亏计算
 │   │       ├── bank-format-service.ts      # 银行日结单自定义格式 CRUD
 │   │       ├── budget-service.ts           # 预算 CRUD + 状态计算
+│   │       ├── cash-flow-core.ts           # 券商现金流水纯 DB 操作（余额=Σ流水）
 │   │       ├── category-service.ts          # 收支分类 CRUD
 │   │       ├── currency-service.ts          # 货币 + 汇率转换 + 汇率历史
 │   │       ├── custom-format-service.ts     # 券商日结单自定义格式 CRUD
@@ -62,7 +64,8 @@ Electron App
 │   │       ├── insurance-service.ts         # 保单 CRUD + 保费缴纳 + 到期查询（v1.5.0 新增）
 │   │       ├── investment-account-service.ts # 投资账户 CRUD + 持仓汇总 + 日统计 + 现金余额
 │   │       ├── ledger-service.ts            # 收支记账 CRUD + 月度汇总（支持 accountId 过滤）
-│   │       ├── net-worth-service.ts         # 净值记录 + 历史
+│   │       ├── net-worth-core.ts           # 净资产快照纯 DB 操作（口径复用 asset-totals，v1.6.1）
+│   │       ├── net-worth-service.ts         # 净值记录 + 历史（薄封装）
 │   │       ├── settings-service.ts          # KV 设置（AI/归档/自定义名称）
 │   │       ├── social-obligation-service.ts  # 人情债 CRUD
 │   │       └── transaction-service.ts       # 交易记录 CRUD + 当日查询
@@ -152,6 +155,7 @@ Electron App
         ├── money.ts               # 金额舍入（roundMoney/roundPct）
         ├── investment.ts          # 加权平均成本/盈亏纯函数
         ├── market.ts              # 股票代码智能市场检测
+        ├── asset-totals.ts        # 总资产口径汇总纯函数（现金/流动金/投资/总资产，v1.6.1）
         ├── card.ts                # 卡号仅存后 4 位
         └── markdown.ts            # AI 回复安全渲染（先转义后转换）
 ```

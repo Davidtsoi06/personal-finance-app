@@ -335,11 +335,15 @@
 - [x] 定期存款资金询问式（迁移 v16：deduct_mode/deduct_account_id；创建弹窗扣款/纯记录选择；标记与删除文案）
 - [x] 打包发布 v1.6.0
 
-## 第 29 阶段：v1.6.1 总资产口径修复 🔄（代码完成，待演示数据验证后发布）
+## 第 29 阶段：v1.6.1 总资产口径修复 🔄（代码+端到端验证完成，待用户 GUI 验证后打包发布）
 
 - [x] 概览「总资产」行补齐券商流动金（netWorth 与 totalAssets 同口径）
 - [x] 保险现金价值按保单币种换算 CNY
-- [x] 演示数据脚本 `scripts/seed-demo-data.js`（多类资产/多币种，可重复执行，预期总资产 ¥713,350）
+- [x] 修复银行组内嵌券商漏计：投资市值/总资产卡/净资产快照三处少 ¥225,400（演示数据实测 487,950 → 713,350）
+- [x] 净值历史窗口修复：取最近 N 天（原为升序取最早 N 天，真实库 >30 天时走势图窗口错误）
+- [x] 单一口径纯函数 `src/shared/utils/asset-totals.ts`（Dashboard 与净资产记录共用）+ `net-worth-core.ts` 纯 DB 层
+- [x] 测试：`tests/unit/asset-totals.test.ts` + `tests/integration/net-worth-core.test.ts`（71/71 通过，IPC 145 频道一致）
+- [x] 端到端验证脚本 `scripts/verify-demo-totals.js`：演示数据全项通过（总资产 ¥713,350）
 - [ ] 用户以演示数据核对四个总资产数字一致后打包发布
 
 ## 第 27 阶段：v1.5.9 券商流动金 + 银行卡创建修复 ✅

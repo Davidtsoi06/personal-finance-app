@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { NetAmount, Amount } from '../components/ui/Amount';
 import { Table } from '../components/ui/Table';
 import { invoke } from '../hooks/useIpc';
+import { computeAssetTotals } from '../../shared/utils/asset-totals';
 import { NetWorthTrendChart } from '../components/charts/NetWorthTrendChart';
 import { BudgetCard } from '../components/cards/BudgetCard';
 import './Dashboard.css';
@@ -116,35 +117,18 @@ export function Dashboard() {
         'ledger:monthlySummary', now.getFullYear(), now.getMonth() + 1
       );
 
-      // 投资市值递归汇总：银行组已内嵌关联券商，需从银行总额中扣除内嵌投资部分，避免重复计算
-      const sumInvestments = (item: AssetSummaryItem): number =>
-        (item.is_investment ? item.market_value_cny || 0 : 0) +
-        (item.children || []).reduce((s, c) => s + sumInvestments(c), 0);
-      let totalBank = 0;
-      let totalInvestment = 0;
-      let totalBrokerCash = 0;
-      for (const item of (summaryData || [])) {
-        // 券商流动金为独立类别（v1.5.8），不并入现金及存款
-        if (item.asset_type === 'broker_cash') {
-          totalBrokerCash += item.market_value_cny || 0;
-          continue;
-        }
-        if (item.is_investment) {
-          totalInvestment += item.market_value_cny || 0;
-        } else {
-          totalBank += (item.market_value_cny || 0) - (item.children || []).reduce((s, c) => s + sumInvestments(c), 0);
-        }
-      }
+      // 总资产口径唯一来源（v1.6.1）：银行组内嵌券商计入投资市值，避免漏计
+      const totals = computeAssetTotals(summaryData || []);
 
       setSummary({
-        totalCash: totalBank,
-        totalInvestments: totalInvestment,
-        brokerCash: totalBrokerCash,
-        totalAssets: totalBank + totalBrokerCash + totalInvestment,
+        totalCash: totals.totalCash,
+        totalInvestments: totals.totalInvestments,
+        brokerCash: totals.totalBrokerCash,
+        totalAssets: totals.totalAssets,
         monthlyIncome: monthlySummary?.income || 0,
         monthlyExpense: monthlySummary?.expense || 0,
         // 总资产统一口径（v1.6.1）：含券商流动金，与顶部「总资产」卡完全一致
-        netWorth: totalBank + totalBrokerCash + totalInvestment,
+        netWorth: totals.totalAssets,
       });
       setAssetSummary(summaryData || []);
       setNwHistory(nwData || []);
