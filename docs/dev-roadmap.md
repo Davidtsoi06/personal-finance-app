@@ -344,6 +344,8 @@
 - [x] 单一口径纯函数 `src/shared/utils/asset-totals.ts`（Dashboard 与净资产记录共用）+ `net-worth-core.ts` 纯 DB 层
 - [x] 测试：`tests/unit/asset-totals.test.ts` + `tests/integration/net-worth-core.test.ts`（71/71 通过，IPC 145 频道一致）
 - [x] 端到端验证脚本 `scripts/verify-demo-totals.js`：演示数据全项通过（总资产 ¥713,350）
+- [x] 汇率更新广播（v1.6.1）：`fetchExchangeRates` 更新后向所有窗口发 `currency:updated`，`useCurrencyRefresh` 让总览/资产管理/投资管理自动重载——修复启动时汇率刷新导致的页面数据分叉（实测：总览 713,350 vs 资产管理 676,570.38 系旧/新汇率差异，资产管理页与库内数据完全一致）
+- [x] 只读诊断脚本 `scripts/inspect-summary.js`：打印任意库的资产总览口径（验证改为一致性核对，种子汇率会被实时汇率覆盖）
 - [ ] 用户以演示数据核对四个总资产数字一致后打包发布
 
 ## 第 27 阶段：v1.5.9 券商流动金 + 银行卡创建修复 ✅

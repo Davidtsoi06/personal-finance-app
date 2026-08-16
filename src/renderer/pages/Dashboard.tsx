@@ -6,6 +6,7 @@ import { NetAmount, Amount } from '../components/ui/Amount';
 import { Table } from '../components/ui/Table';
 import { invoke } from '../hooks/useIpc';
 import { computeAssetTotals } from '../../shared/utils/asset-totals';
+import { useCurrencyRefresh } from '../hooks/useCurrencyRefresh';
 import { NetWorthTrendChart } from '../components/charts/NetWorthTrendChart';
 import { BudgetCard } from '../components/cards/BudgetCard';
 import './Dashboard.css';
@@ -141,6 +142,8 @@ export function Dashboard() {
   }, []);
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
+  // 汇率更新后自动刷新（v1.6.1：避免总览/资产管理页数据分叉）
+  useCurrencyRefresh(loadDashboard);
 
   // ── Pie chart with drill-down ──
   useEffect(() => {

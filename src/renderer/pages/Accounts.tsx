@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Amount } from '../components/ui/Amount';
 import { invoke } from '../hooks/useIpc';
+import { useCurrencyRefresh } from '../hooks/useCurrencyRefresh';
 import { AccountEditModal, EditableAccount } from '../components/account/AccountEditModal';
 import './Accounts.css';
 
@@ -64,6 +65,8 @@ export function Accounts() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // 汇率更新后自动刷新（v1.6.1：避免总览/资产管理页数据分叉）
+  useCurrencyRefresh(load);
 
   const toggleBank = (bankName: string) => {
     setExpandedBanks(prev => {

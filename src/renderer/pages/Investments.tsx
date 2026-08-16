@@ -6,6 +6,7 @@ import { Modal } from '../components/ui/Modal';
 import { Table } from '../components/ui/Table';
 import { Amount } from '../components/ui/Amount';
 import { invoke } from '../hooks/useIpc';
+import { useCurrencyRefresh } from '../hooks/useCurrencyRefresh';
 
 interface OrphanAsset {
   id: number; name: string; code: string; type: string; currency: string;
@@ -83,6 +84,8 @@ export function Investments() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // 汇率更新后自动刷新（v1.6.1：CNY 换算金额与总览一致）
+  useCurrencyRefresh(load);
 
   // ── Add ──
   const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {

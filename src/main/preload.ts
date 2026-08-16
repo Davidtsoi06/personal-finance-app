@@ -177,6 +177,14 @@ electron.contextBridge.exposeInMainWorld('electronAPI', {
     electron.ipcRenderer.removeAllListeners('update:status');
   },
 
+  // ── Currency rate update events (main → renderer, v1.6.1) ──
+  onCurrencyUpdated: (callback: (data: any) => void) => {
+    electron.ipcRenderer.on('currency:updated', (_event, data) => callback(data));
+  },
+  removeCurrencyUpdatedListener: () => {
+    electron.ipcRenderer.removeAllListeners('currency:updated');
+  },
+
   // ── AI stream events (main → renderer) ──
   onAiStreamChunk: (callback: (text: string) => void) => {
     electron.ipcRenderer.on('ai:streamChunk', (_event, text) => callback(text));

@@ -89,7 +89,8 @@ Electron App
 │   ├── index.tsx                  # React 入口（createRoot）
 │   ├── App.tsx                    # 根组件（12 个页面路由）
 │   ├── hooks/
-│   │   └── useIpc.ts              # IPC 调用封装（泛型 invoke）
+│   │   ├── useIpc.ts              # IPC 调用封装（泛型 invoke）
+│   │   └── useCurrencyRefresh.ts   # 汇率更新事件订阅 → 页面自动重载（v1.6.1）
 │   ├── pages/                     # 页面组件（12 个）
 │   │   ├── Dashboard.tsx          # 仪表盘（饼图下钻 + 概览可展开分组[银行内嵌关联券商] + 资产查询 + 走势 + 预算）
 │   │   ├── Accounts.tsx           # 资产管理（Layer 2 四层架构卡片 + 银行分组可展开）

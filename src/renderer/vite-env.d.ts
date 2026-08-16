@@ -9,6 +9,9 @@ declare global {
       /** Listen for update status events from main process */
       onUpdateStatus: (callback: (data: UpdateStatusEvent) => void) => void;
       removeUpdateStatusListener: () => void;
+      /** Listen for currency rate update events (v1.6.1) */
+      onCurrencyUpdated: (callback: (data: CurrencyUpdatedEvent) => void) => void;
+      removeCurrencyUpdatedListener: () => void;
       /** Listen for AI streaming response chunks */
       onAiStreamChunk: (callback: (text: string) => void) => void;
       /** Listen for AI streaming completion */
@@ -16,6 +19,12 @@ declare global {
       /** Remove all AI stream listeners */
       removeAiStreamListeners: () => void;
     };
+  }
+
+  /** Currency rate update event sent from main → renderer (v1.6.1) */
+  interface CurrencyUpdatedEvent {
+    updatedAt: string;
+    updated: number;
   }
 
   /** Update status event sent from main → renderer */

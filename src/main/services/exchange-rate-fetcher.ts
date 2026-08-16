@@ -2,10 +2,23 @@
  * Exchange rate fetcher — fetches latest rates from exchangerate-api.com.
  * Free tier: ~1500 req/month, caches results to minimize requests.
  */
+import { BrowserWindow } from 'electron';
 import { getDatabase } from '../database';
 import { updateRate } from '../database/services/currency-service';
 
 const API_BASE = 'https://api.exchangerate-api.com/v4/latest';
+
+/** 汇率更新成功后广播给所有窗口，供页面自动刷新（v1.6.1：修复总览/资产管理页数据分叉） */
+export function broadcastCurrencyUpdated(updated: number): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('currency:updated', {
+        updatedAt: new Date().toISOString(),
+        updated,
+      });
+    }
+  }
+}
 
 /** Fetch and update all supported currency rates */
 export async function fetchExchangeRates(): Promise<{ success: boolean; updated: number; error?: string }> {
@@ -38,6 +51,9 @@ export async function fetchExchangeRates(): Promise<{ success: boolean; updated:
         updated++;
       }
     }
+
+    // 通知渲染端刷新展示（启动抓取/每 6 小时/手动更新都会走到这里）
+    if (updated > 0) broadcastCurrencyUpdated(updated);
 
     return { success: true, updated };
   } catch (err: any) {
