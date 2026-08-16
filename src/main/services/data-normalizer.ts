@@ -15,7 +15,8 @@ const CURRENCY_NORMALIZE_MAP: Record<string, string> = {
 
 /**
  * Normalize a date string to YYYY-MM-DD format.
- * Accepts: YYYYMMDD, YYYY/MM/DD, YYYY-MM-DD, YYYY.MM.DD
+ * Accepts: YYYYMMDD, YYYY/MM/DD, YYYY-MM-DD, YYYY.MM.DD,
+ *   美式 M/D/YYYY（银行日结单常用，可带时间）, M/D/YY（2 位年）, Excel 日期序列号.
  * Falls back to today if no valid date provided.
  */
 export function normalizeDate(raw: string | undefined | null): string {
@@ -35,18 +36,58 @@ export function normalizeDate(raw: string | undefined | null): string {
   const slashMatch = trimmed.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
   if (slashMatch) {
     const [, y, m, d] = slashMatch;
-    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    const valid = toValidDate(y, m, d);
+    if (valid) return valid;
   }
 
   // YYYY.MM.DD → YYYY-MM-DD
   const dotMatch = trimmed.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
   if (dotMatch) {
     const [, y, m, d] = dotMatch;
-    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    const valid = toValidDate(y, m, d);
+    if (valid) return valid;
+  }
+
+  // 美式月/日/年：M/D/YYYY（可带时间，如 8/16/2026 或 8/16/2026 14:30:05）
+  const usMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  if (usMatch) {
+    const [, m, d, y] = usMatch;
+    const valid = toValidDate(y, m, d);
+    if (valid) return valid;
+  }
+
+  // 美式月/日/年（2 位年）：M/D/YY → 2000+YY（>=70 视为 19YY）
+  const usShortMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  if (usShortMatch) {
+    const [, m, d, yy] = usShortMatch;
+    const y = Number(yy) >= 70 ? `19${yy}` : `20${yy}`;
+    const valid = toValidDate(y, m, d);
+    if (valid) return valid;
+  }
+
+  // Excel 日期序列号（数字单元格转字符串，如 46080 → 2026-02-27；可带时间小数）
+  const serialMatch = trimmed.match(/^(\d{5})(?:\.\d+)?$/);
+  if (serialMatch) {
+    const serial = parseInt(serialMatch[1], 10);
+    if (serial >= 20000 && serial <= 80000) {
+      const date = new Date((serial - 25569) * 86400000);
+      return date.toISOString().slice(0, 10);
+    }
   }
 
   // Unrecognized format — return as-is
   return trimmed;
+}
+
+/** 组装并校验日期：月 1~12、日 1~31 且与构造结果一致；无效返回 null。 */
+function toValidDate(y: string, m: string, d: string): string | null {
+  const year = Number(y);
+  const month = Number(m);
+  const day = Number(d);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2200) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 /**
