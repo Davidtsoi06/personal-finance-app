@@ -143,6 +143,7 @@ dev-logs/          # 每次开发会话的日志
 | [docs/design-spec.md](docs/design-spec.md) | 设计令牌与页面布局 |
 | [docs/dev-roadmap.md](docs/dev-roadmap.md) | 分阶段开发计划（含 v1.8.0 前端交互升级规划） |
 | [docs/api-reference.md](docs/api-reference.md) | 外部数据源 API 与降级策略 |
+| [docs/frontend-interaction.md](docs/frontend-interaction.md) | 前端交互逻辑（页面/流程/联动/机制） |
 | [RELEASE_NOTES.md](RELEASE_NOTES.md) | 最新版本更新说明 |
 | [CLAUDE.md](CLAUDE.md) | 项目工作规则（代码风格/安全要求/文档同步） |
 

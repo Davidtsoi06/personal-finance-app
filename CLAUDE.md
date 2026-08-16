@@ -24,6 +24,7 @@
 | 数据模型 | [docs/data-model.md](docs/data-model.md) | 数据库表结构定义 |
 | 开发路线图 | [docs/dev-roadmap.md](docs/dev-roadmap.md) | 分阶段开发计划和步骤 |
 | API 参考 | [docs/api-reference.md](docs/api-reference.md) | 数据源 API 使用说明 |
+| 前端交互 | [docs/frontend-interaction.md](docs/frontend-interaction.md) | 全部页面交互流程与全局机制 |
 
 ---
 
