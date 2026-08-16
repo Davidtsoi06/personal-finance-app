@@ -102,7 +102,7 @@ function createLockWindow() {
   if (process.env.ELECTRON_DEV === '1') {
     lockWindow.loadURL(devServerUrl + '#/lock');
   } else if (fs.existsSync(builtHtml)) {
-    lockWindow.loadFile(builtHtml, { hash: 'lock' });
+    lockWindow.loadFile(builtHtml, { hash: '/lock' });
   } else {
     lockWindow.loadURL(devServerUrl + '#/lock');
   }
@@ -112,15 +112,15 @@ function createLockWindow() {
   });
 }
 
-/** 解锁成功：关锁屏窗、开主窗 */
+/** 解锁成功：先开主窗、再关锁屏窗（避免瞬间零窗口触发 window-all-closed 退出） */
 function showMainAfterUnlock() {
-  if (lockWindow && !lockWindow.isDestroyed()) lockWindow.close();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
     mainWindow.focus();
   } else {
     createMainWindow();
   }
+  if (lockWindow && !lockWindow.isDestroyed()) lockWindow.close();
 }
 
 /** 锁定：隐藏主窗、显示锁屏窗（主窗状态保留，解锁后恢复现场） */

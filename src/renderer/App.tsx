@@ -30,7 +30,7 @@ function PageFallback() {
 
 function App() {
   // 锁屏窗口（#/lock）独立渲染：不经 Layout、不加载业务数据（v1.7.0）
-  if (window.location.hash.startsWith('#/lock')) {
+  if (window.location.hash.startsWith('#/lock') || window.location.hash === '#lock') {
     return <LockScreen />;
   }
 
