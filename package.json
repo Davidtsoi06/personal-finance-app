@@ -1,6 +1,6 @@
 {
   "name": "personal-finance",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "个人理财投资管理软件",
   "main": "dist/main/main/index.js",
   "scripts": {
@@ -31,6 +31,8 @@
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "yauzl": "^3.4.0",
+    "yazl": "^3.3.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -40,6 +42,8 @@
     "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
     "@vitejs/plugin-react": "^6.0.5",
     "concurrently": "^10.0.4",
     "cross-env": "^10.1.0",

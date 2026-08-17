@@ -142,6 +142,21 @@ describe('定期存款联动询问式（v1.6.1）', () => {
     db.close();
   });
 
+  it('v1.8.1 已结算定存不可逆：禁止编辑与删除', () => {
+    const db = freshDb();
+    const acc = seedAccount(db, '卡A');
+    const fd = createFixedDepositInDb(db, {
+      account_id: acc, amount: 10000, currency: 'CNY',
+      start_date: '2026-08-01', maturity_date: '2026-08-16',
+      deductMode: 'deduct', deductAccountId: acc,
+    });
+    settleFixedDepositInDb(db, fd.id, { amount: 10150, toAccountId: acc, currency: 'CNY' });
+    expect(() => updateFixedDepositInDb(db, fd.id, { amount: 500 }, 'sync')).toThrow('已结算');
+    expect(() => deleteFixedDepositInDb(db, fd.id, true)).toThrow('已结算');
+    expect(getFixedDepositInDb(db, fd.id)!.status).toBe('settled');
+    db.close();
+  });
+
   it('到期结算：回款入账 + 写记录 + 标记 settled（幂等）', () => {
     const db = freshDb();
     const acc = seedAccount(db, '卡A');

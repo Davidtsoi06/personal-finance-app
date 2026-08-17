@@ -58,10 +58,12 @@ export function Settings() {
       return;
     }
     try {
-      await invoke('settings:setAppName', name);
+      const res = await invoke<{ success: boolean; syncedShortcuts?: number }>('settings:setAppName', name);
       setAppName(name);
-      setAppNameStatus('✅ 应用名称已更新');
-      setTimeout(() => setAppNameStatus(null), 3000);
+      // v1.8.1：提示快捷方式同步结果
+      const synced = res?.syncedShortcuts ?? 0;
+      setAppNameStatus(synced > 0 ? `✅ 应用名称已更新，已同步 ${synced} 个桌面/开始菜单快捷方式` : '✅ 应用名称已更新（未找到需要同步的快捷方式）');
+      setTimeout(() => setAppNameStatus(null), 5000);
     } catch (err: any) {
       setAppNameStatus('❌ 保存失败：' + err.message);
     }

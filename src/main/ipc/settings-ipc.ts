@@ -260,13 +260,21 @@ export function registerSettingsIpcHandlers(): void {
     return settingsService.testAiConnection(config);
   });
   ipcMain.handle('settings:getAppName', () => settingsService.getAppName());
-  handleValidated('settings:setAppName', (name: string) => {
+  handleValidated('settings:setAppName', async (name: string) => {
     settingsService.setAppName(name);
     // Dynamically update window title
     const { BrowserWindow } = require('electron');
     const win = BrowserWindow.getAllWindows()[0];
     if (win) win.setTitle(name.trim() || '个人理财投资软件');
-    return { success: true };
+    // v1.8.1：同步桌面/开始菜单快捷方式名称（失败非致命）
+    const { syncShortcutNames } = require('../services/shortcut-sync') as typeof import('../services/shortcut-sync');
+    const trimmed = name.trim();
+    let synced = 0;
+    if (trimmed) {
+      const { app } = require('electron') as typeof import('electron');
+      synced = await syncShortcutNames(app.getPath('exe'), trimmed);
+    }
+    return { success: true, syncedShortcuts: synced };
   });
 
   // ── AI Chat ──
@@ -520,6 +528,56 @@ export function registerSettingsIpcHandlers(): void {
   ipcMain.handle('archive:setRetentionMonths', (_e, months: number) => {
     archiveService.setRetentionMonths(months);
     return { success: true };
+  });
+
+  // ── 完整数据包导出/导入（v1.8.1：跨设备迁移，.pfbak = zip(DB+密钥)） ──
+  handleValidated('data:exportPackage', async () => {
+    const { dialog, app } = require('electron') as typeof import('electron');
+    const result = await dialog.showSaveDialog({
+      title: '导出完整数据包',
+      defaultPath: `个人理财数据包_${new Date().toISOString().slice(0, 10)}.pfbak`,
+      filters: [{ name: '数据包', extensions: ['pfbak'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, canceled: true };
+    const { exportPackage } = require('../services/data-package') as typeof import('../services/data-package');
+    await exportPackage(app.getPath('userData'), result.filePath, app.getVersion());
+    return { success: true, filePath: result.filePath };
+  });
+
+  handleValidated('data:importPackage', async () => {
+    const { dialog, app } = require('electron') as typeof import('electron');
+    const result = await dialog.showOpenDialog({
+      title: '导入完整数据包',
+      filters: [{ name: '数据包', extensions: ['pfbak'] }],
+      properties: ['openFile'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return { success: false, canceled: true };
+    const confirm = await dialog.showMessageBox({
+      type: 'warning',
+      title: '确认导入',
+      message: '导入数据包将覆盖本机全部数据！',
+      detail: '当前数据会自动备份到数据目录 backups 文件夹。导入完成后应用将自动重启。',
+      buttons: ['取消', '我已了解，开始导入'],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (confirm.response !== 1) return { success: false, canceled: true };
+    const { importPackage } = require('../services/data-package') as typeof import('../services/data-package');
+    const backupPath = await importPackage(app.getPath('userData'), result.filePaths[0]);
+    // 重启应用加载新数据
+    setTimeout(() => { app.relaunch(); app.exit(0); }, 800);
+    return { success: true, backupPath };
+  });
+
+  handleValidated('settings:getUserDataPath', () => {
+    const { app } = require('electron') as typeof import('electron');
+    return app.getPath('userData');
+  });
+
+  handleValidated('settings:openUserDataDir', () => {
+    const { shell, app } = require('electron') as typeof import('electron');
+    shell.openPath(app.getPath('userData'));
+    return { ok: true };
   });
 
   // ── One-click Data Clear（v1.7.1：handleValidated 校验 + 密码锁门禁 + 主进程二次确认） ──

@@ -55,7 +55,10 @@ function Layout({ children }: LayoutProps) {
     if (window.electronAPI?.onPricesUpdated) {
       window.electronAPI.onPricesUpdated(() => showStale('行情价格已更新'));
     }
-    invoke<string>('update:getVersion').then((v) => { if (v) setAppVersion(v); }).catch(() => {});
+    // v1.8.1：getVersion 返回对象，取 version 字段
+    invoke<{ version: string }>('update:getVersion')
+      .then((r) => { if (r?.version) setAppVersion(r.version); })
+      .catch(() => {});
     return () => {
       window.electronAPI?.removeCurrencyUpdatedListener?.();
       window.electronAPI?.removePricesUpdatedListener?.();

@@ -15,6 +15,38 @@ export function DataBackupCard() {
   const [preview, setPreview] = useState<{ sheet: string; count: number }[]>([]);
   const [filePath, setFilePath] = useState('');
   const [confirming, setConfirming] = useState(false);
+  // v1.8.1：完整数据包（跨设备迁移）与数据目录
+  const [pkgStatus, setPkgStatus] = useState<string | null>(null);
+  const [userDataPath, setUserDataPath] = useState('');
+  const [loadingPath, setLoadingPath] = useState(false);
+
+  const loadUserDataPath = () => {
+    setLoadingPath(true);
+    invoke<string>('settings:getUserDataPath')
+      .then((p) => setUserDataPath(p || ''))
+      .catch(() => {})
+      .finally(() => setLoadingPath(false));
+  };
+
+  const handleExportPackage = async () => {
+    setPkgStatus(null);
+    try {
+      const r = await invoke<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }>('data:exportPackage');
+      if (r.canceled) return;
+      if (r.success) setPkgStatus(`✅ 数据包已导出：${r.filePath}（含数据库与加密密钥，可拷贝到新电脑一键导入）`);
+      else setPkgStatus(`❌ 导出失败：${r.error}`);
+    } catch (err: any) { setPkgStatus(`❌ 导出失败：${err.message}`); }
+  };
+
+  const handleImportPackage = async () => {
+    setPkgStatus(null);
+    try {
+      const r = await invoke<{ success: boolean; canceled?: boolean; error?: string }>('data:importPackage');
+      if (r.canceled) return;
+      if (r.success) setPkgStatus('✅ 导入完成，应用即将重启...');
+      else setPkgStatus(`❌ 导入失败：${r.error}`);
+    } catch (err: any) { setPkgStatus(`❌ 导入失败：${err.message}`); }
+  };
 
   const handleExport = async () => {
     setExporting(true); setStatus(null);
@@ -77,6 +109,38 @@ export function DataBackupCard() {
             {status}
           </div>
         )}
+
+        <div style={{ borderTop: '1px dashed var(--color-border)', marginTop: 'var(--spacing-md)', paddingTop: 'var(--spacing-md)' }}>
+          <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>📦 完整数据包（推荐换电脑时使用）</div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-sm)' }}>
+            包含数据库与加密密钥的单文件（.pfbak），在新电脑安装本软件后「导入数据包」即可完整迁移，包括启动密码等全部设置。
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
+            <Button variant="primary" onClick={handleExportPackage}>📦 导出数据包</Button>
+            <Button variant="secondary" onClick={handleImportPackage}>📥 导入数据包</Button>
+          </div>
+          {pkgStatus && (
+            <div style={{ marginTop: 'var(--spacing-sm)', padding: 'var(--spacing-sm)', background: pkgStatus.startsWith('✅') ? '#F6FFED' : '#FFF2F0', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)' }}>
+              {pkgStatus}
+            </div>
+          )}
+        </div>
+
+        <div style={{ borderTop: '1px dashed var(--color-border)', marginTop: 'var(--spacing-md)', paddingTop: 'var(--spacing-md)' }}>
+          <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>☁️ 网盘同步（可选）</div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-sm)' }}>
+            可用 OneDrive / 坚果云等网盘同步下方数据目录实现自动备份。⚠️ 请勿在两台电脑同时打开本软件，否则可能产生数据冲突。
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
+            <Button variant="secondary" size="sm" onClick={loadUserDataPath}>{loadingPath ? '读取中...' : '显示数据目录'}</Button>
+            {userDataPath && (
+              <>
+                <code style={{ fontSize: 'var(--font-size-xs)', background: 'var(--color-bg-secondary)', padding: '2px 8px', borderRadius: 'var(--radius-sm)' }}>{userDataPath}</code>
+                <Button variant="secondary" size="sm" onClick={() => invoke('settings:openUserDataDir')}>打开目录</Button>
+              </>
+            )}
+          </div>
+        </div>
       </Card>
 
       {/* Import preview modal */}

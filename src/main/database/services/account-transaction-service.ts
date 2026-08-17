@@ -85,6 +85,10 @@ export function deleteAccountTransaction(id: number): boolean {
   const db = getDatabase();
   const existing = getAccountTransaction(id);
   if (!existing) return false;
+  // v1.8.1：定期存款自动生成的联动记录不可直接删除（否则余额与定存状态口径撕裂）
+  if (existing.notes && existing.notes.startsWith('定期存款')) {
+    throw new Error('该记录由定期存款自动生成，请在定期存款模块处理');
+  }
 
   const tx = db.transaction(() => {
     // Reverse the balance adjustment

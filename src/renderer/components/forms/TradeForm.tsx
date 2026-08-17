@@ -83,11 +83,30 @@ export function TradeForm({ investmentAccountId, onClose, onSaved }: Props) {
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">股票名称 *</label>
-          <input className="form-input" name="name" required placeholder="如：腾讯控股" />
+          <input className="form-input" name="name" required placeholder="如：腾讯控股（输入代码后自动匹配，可修改）" />
         </div>
         <div className="form-group">
           <label className="form-label">代码 *</label>
-          <input className="form-input" name="code" required placeholder="如：00700" />
+          <input
+            className="form-input"
+            name="code"
+            required
+            placeholder="如：00700（失焦自动匹配名称）"
+            onBlur={async (e) => {
+              // v1.8.1：股票名称自动填充（失败静默，用户可手动输入）
+              const code = e.target.value.trim();
+              if (!code) return;
+              const form = (e.target.closest('form') as HTMLFormElement | null);
+              const nameInput = form?.querySelector('input[name="name"]') as HTMLInputElement | null;
+              if (!nameInput || nameInput.value.trim()) return; // 已手动填写则不覆盖
+              const market = (form?.querySelector('input[name="market"]') as HTMLInputElement | null)?.value || undefined;
+              const found = await invoke<string | null>('asset:lookupName', code, market).catch(() => null);
+              if (found) {
+                nameInput.value = found;
+                nameInput.placeholder = '已自动匹配：' + found + '（可修改）';
+              }
+            }}
+          />
         </div>
       </div>
 

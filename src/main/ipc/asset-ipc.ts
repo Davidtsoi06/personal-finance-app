@@ -14,6 +14,11 @@ export function registerAssetIpcHandlers(): void {
   // ── Assets ──
   ipcMain.handle('asset:list', (_e, type?: string) => assetService.listAssets(type));
   handleValidated('asset:listAll', () => assetService.listAllAssets());
+  // v1.8.1：股票名称自动匹配（东方财富行情，失败返回 null 由前端静默降级）
+  handleValidated('asset:lookupName', async (code: string, market?: string) => {
+    const { lookupStockName } = require('../services/stock-name-lookup') as typeof import('../services/stock-name-lookup');
+    return (await lookupStockName(code, market)) || null;
+  });
   handleValidated('asset:listOrphaned', () => assetService.listOrphanedAssets());
   handleValidated('asset:reassignOrphaned', (assetId: number, investmentAccountId: number) =>
     assetService.reassignOrphanedAsset(assetId, investmentAccountId)

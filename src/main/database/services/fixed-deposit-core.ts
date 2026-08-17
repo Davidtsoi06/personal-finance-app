@@ -152,6 +152,10 @@ export function updateFixedDepositInDb(
 ): FixedDepositRow | undefined {
   const existing = getFixedDepositInDb(db, id);
   if (!existing) return undefined;
+  // v1.8.1：已结算定存状态不可逆，禁止再编辑
+  if (existing.status === 'settled') {
+    throw new Error('已结算的定期存款不可修改');
+  }
 
   const newAmount = data.amount ?? existing.amount;
   const newCurrency = data.currency || existing.currency;
@@ -201,6 +205,10 @@ export function updateFixedDepositInDb(
 export function deleteFixedDepositInDb(db: Database.Database, id: number, restoreBalance: boolean = true): boolean {
   const existing = getFixedDepositInDb(db, id);
   if (!existing) return false;
+  // v1.8.1：已结算定存状态不可逆，禁止删除（防回滚）
+  if (existing.status === 'settled') {
+    throw new Error('已结算的定期存款不可删除');
+  }
 
   const tx = db.transaction(() => {
     if (existing.deduct_mode === 'deduct' && restoreBalance) {

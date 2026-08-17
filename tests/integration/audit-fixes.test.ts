@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { MIGRATIONS } from '../../src/main/database/migrations';
 import { setDatabaseForTest } from '../../src/main/database';
 import { payPremium, getTotalCashValue } from '../../src/main/database/services/insurance-service';
-import { importWalletBills } from '../../src/main/database/services/account-transaction-service';
+import { importWalletBills, createAccountTransaction, deleteAccountTransaction } from '../../src/main/database/services/account-transaction-service';
 import { deleteAsset, getAsset } from '../../src/main/database/services/asset-service';
 import { createTransaction, getTransaction } from '../../src/main/database/services/transaction-service';
 import { updateAccount, getAccount, getAllAssetsSummary } from '../../src/main/database/services/account-service';
@@ -167,6 +167,14 @@ describe('批 1 数据正确性回归（v1.7.1）', () => {
     // 重开 → 清空
     updateObligation(id, { status: 'pending' });
     expect(db.prepare('SELECT completed_at FROM social_obligations WHERE id = ?').get(id).completed_at).toBeNull();
+  });
+
+  it('v1.8.1 定存联动存取记录不可直接删除', () => {
+    const acc = seedAccount(100000);
+    const linked = createAccountTransaction({ account_id: acc, type: 'withdraw', amount: 5000, currency: 'CNY', notes: '定期存款 · #1' });
+    expect(() => deleteAccountTransaction(linked.id)).toThrow('定期存款');
+    const normal = createAccountTransaction({ account_id: acc, type: 'withdraw', amount: 100, currency: 'CNY', notes: '取现' });
+    expect(deleteAccountTransaction(normal.id)).toBe(true);
   });
 
   it('v1.7.4 资产汇总报表包含债务债权 sheet 与总览行', () => {
