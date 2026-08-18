@@ -652,4 +652,60 @@ export const MIGRATIONS: Migration[] = [
       "ALTER TABLE fixed_deposits ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','settled'));",
     ].join('\n'),
   },
+  {
+    version: 20,
+    sql: [
+      "-- ============================================",
+      "-- Migration v20: v1.9.0 定期全自动体系（日结单驱动）",
+      "-- fixed_deposits: source 来源(manual/statement)、linked_tx_id 转出流水关联、settle_tx_id 回款流水关联",
+      "-- account_transactions: transfer_type 内部转账(fd_out/fd_in)、linked_fd_id 关联定期、statement_hash 防重复指纹",
+      "-- fixed_deposit_flows: 定存流水（存入本金/派息/支取本金/到期本金/到期利息）",
+      "-- ============================================",
+      "ALTER TABLE fixed_deposits ADD COLUMN source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual','statement'));",
+      "ALTER TABLE fixed_deposits ADD COLUMN linked_tx_id INTEGER;",
+      "ALTER TABLE fixed_deposits ADD COLUMN settle_tx_id INTEGER;",
+      "ALTER TABLE account_transactions ADD COLUMN transfer_type TEXT CHECK(transfer_type IN ('fd_out','fd_in'));",
+      "ALTER TABLE account_transactions ADD COLUMN linked_fd_id INTEGER;",
+      "ALTER TABLE account_transactions ADD COLUMN statement_hash TEXT;",
+      "CREATE INDEX IF NOT EXISTS idx_acctx_hash ON account_transactions(account_id, statement_hash);",
+      "CREATE TABLE IF NOT EXISTS fixed_deposit_flows (",
+      "  id INTEGER PRIMARY KEY AUTOINCREMENT,",
+      "  fd_id INTEGER NOT NULL REFERENCES fixed_deposits(id) ON DELETE CASCADE,",
+      "  type TEXT NOT NULL CHECK(type IN ('principal_in','interest','principal_out','settle_principal','settle_interest')),",
+      "  amount REAL NOT NULL,",
+      "  currency TEXT NOT NULL DEFAULT 'CNY',",
+      "  date TEXT NOT NULL,",
+      "  notes TEXT,",
+      "  created_at TEXT NOT NULL DEFAULT (datetime('now'))",
+      ");",
+      "CREATE INDEX IF NOT EXISTS idx_fd_flows_fd ON fixed_deposit_flows(fd_id);",
+    ].join('\n'),
+    migrate: (db) => {
+      // 回填 1：手动扣款型定存的转出流水 → 打标 fd_out + 关联定期编号
+      db.prepare(`
+        UPDATE account_transactions
+        SET transfer_type = 'fd_out',
+            linked_fd_id = CAST(substr(notes, instr(notes, '#') + 1) AS INTEGER)
+        WHERE notes LIKE '定期存款 · #%'
+      `).run();
+      // 回填 2：到期回款流水 → 打标 fd_in + 关联定期编号
+      db.prepare(`
+        UPDATE account_transactions
+        SET transfer_type = 'fd_in',
+            linked_fd_id = CAST(substr(notes, instr(notes, '#') + 1) AS INTEGER)
+        WHERE notes LIKE '定期存款到期回款 · #%'
+      `).run();
+      // 回填 3：每笔定存补 principal_in 流水；已结算补 settle_principal（存量无利息明细）
+      const fds = db.prepare('SELECT id, amount, currency, start_date, maturity_date, status FROM fixed_deposits').all() as any[];
+      const insertFlow = db.prepare(
+        'INSERT INTO fixed_deposit_flows (fd_id, type, amount, currency, date, notes) VALUES (?, ?, ?, ?, ?, ?)'
+      );
+      for (const fd of fds) {
+        insertFlow.run(fd.id, 'principal_in', fd.amount, fd.currency, fd.start_date, '存入本金');
+        if (fd.status === 'settled') {
+          insertFlow.run(fd.id, 'settle_principal', fd.amount, fd.currency, fd.maturity_date, '到期本金回款');
+        }
+      }
+    },
+  },
 ];

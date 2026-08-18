@@ -11,6 +11,8 @@ import * as currencyService from '../database/services/currency-service';
 import * as cfService from '../database/services/custom-format-service';
 import * as bfService from '../database/services/bank-format-service';
 import * as bankParser from '../services/bank-statement-parser';
+import { classifyBankRecord } from '../services/statement-classifier';
+import { txFingerprint, findTxByHashInDb, findFdForOutRowInDb, findFdForInRowInDb } from '../database/services/statement-pairing';
 
 export function registerSettingsIpcHandlers(): void {
   // ── Investment Accounts ──
@@ -71,6 +73,14 @@ export function registerSettingsIpcHandlers(): void {
   handleValidated('fixedDeposit:settle', (id: number, data: any) =>
     fdService.settleFixedDeposit(id, data)
   );
+  // v1.9.0：删除联动（both=流水与定期一起删；fd_only=仅删定期、流水脱钩保留）
+  handleValidated('fixedDeposit:deleteWithMode', (id: number, mode: 'both' | 'fd_only') =>
+    fdService.deleteFixedDepositWithMode(id, mode)
+  );
+  // v1.9.0：手动创建定期前的反向配对检测（金额+日期 ±3 天）
+  handleValidated('fixedDeposit:findMatchingTx', (accountId: number, amount: number, date: string) =>
+    fdService.findMatchingTx(accountId, amount, date) || null
+  );
 
   // ── Custom Statement Formats ──
   ipcMain.handle('customFormat:list', () => cfService.listCustomFormats());
@@ -87,16 +97,64 @@ export function registerSettingsIpcHandlers(): void {
   // ── Bank Statement Import ──
   ipcMain.handle('bank:listFormats', () => bankParser.getBankFormats());
   ipcMain.handle('bank:parseStatement', (_e, csvText: string, formatName?: string) => {
-    return bankParser.parseBankStatement(csvText, formatName);
+    const result = bankParser.parseBankStatement(csvText, formatName);
+    // v1.9.0：每行附加分类（fd_out/fd_in/normal）
+    result.records = result.records.map((r) => ({ ...r, classification: classifyBankRecord(r) }));
+    return result;
   });
+  // v1.9.0：预览智能建议——每行分类/重复检测/定期配对 + 默认动作
+  handleValidated('bank:suggestActions', (records: any[], accountId: number) => {
+    const db = getDatabase();
+    return records.map((rec, index) => {
+      const classification: string = rec.classification || classifyBankRecord(rec);
+      const hash = txFingerprint(rec);
+      const duplicate = !!findTxByHashInDb(db, accountId, hash);
+      let matchFdId: number | null = null;
+      let note = '';
+      let defaultAction: 'import' | 'skip' | 'create_fd' | 'settle_fd' = 'import';
+      if (duplicate) {
+        defaultAction = 'skip';
+        note = '重复行（同一笔已导入过，自动跳过）';
+      } else if (classification === 'fd_out' && rec.type === 'withdraw') {
+        const fd = findFdForOutRowInDb(db, accountId, Number(rec.amount), rec.date);
+        if (fd) {
+          matchFdId = fd.id;
+          defaultAction = 'skip';
+          note = `已配对定期 #${fd.id}（跳过避免重复扣款）`;
+        } else {
+          defaultAction = 'create_fd';
+          note = '将自动创建定期（到期日待定，回款后自动结清）';
+        }
+      } else if (classification === 'fd_in' && rec.type === 'deposit') {
+        const fd = findFdForInRowInDb(db, accountId, Number(rec.amount), rec.date);
+        if (fd) {
+          matchFdId = fd.id;
+          defaultAction = 'settle_fd';
+          const interest = Math.round((Number(rec.amount) - fd.amount) * 100) / 100;
+          note = `将结算定期 #${fd.id}（本金 ${fd.amount.toLocaleString()}，利息 ${interest >= 0 ? '+' : ''}${interest.toFixed(2)}）`;
+        } else {
+          defaultAction = 'import';
+          note = '未找到对应定期，按普通存入导入';
+        }
+      }
+      return { index, classification, duplicate, matchFdId, note, defaultAction };
+    });
+  });
+
+  // v1.9.0：导入执行——行级动作驱动定期生命周期 + 防重复指纹 + 内部转账打标
   handleValidated('bank:importParsed', (records: any[], accountId: number) => {
     const db = getDatabase();
+    const fdCore = require('../database/services/fixed-deposit-core');
     let imported = 0;
+    let skipped = 0;
+    let duplicates = 0;
     const errors: string[] = [];
+    const createdFds: { id: number; amount: number; date: string }[] = [];
+    const settledFds: { id: number; principal: number; interest: number }[] = [];
 
     const insertTx = db.prepare(`
-      INSERT INTO account_transactions (account_id, type, amount, currency, date, notes)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO account_transactions (account_id, type, amount, currency, date, notes, transfer_type, linked_fd_id, statement_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const getBalance = db.prepare(
@@ -116,21 +174,54 @@ export function registerSettingsIpcHandlers(): void {
           const date = rec.date || new Date().toISOString().slice(0, 10);
           const currency = rec.currency || 'CNY';
           const amount = Math.abs(Number(rec.amount) || 0);
-          const type = rec.type || 'deposit';
+          const type = rec.type === 'withdraw' ? 'withdraw' : 'deposit';
           const notes = rec.description || '银行日结单导入';
+          const action: string = rec.action || 'import';
+          const hash = txFingerprint({ date, amount, type, description: rec.description || '', currency });
 
           if (amount <= 0) { errors.push(`金额无效：${JSON.stringify(rec)}`); continue; }
 
-          // Insert transaction record
-          insertTx.run(accountId, type, amount, currency, date, notes);
+          // 防重复导入：指纹已存在 → 跳过
+          if (findTxByHashInDb(db, accountId, hash)) { duplicates++; continue; }
+          if (action === 'skip') { skipped++; continue; }
+
+          let txId: number | null = null;
+
+          if (action === 'create_fd' && type === 'withdraw') {
+            // 自动创建定期：流水即银行扣款，定存不再扣
+            const r = insertTx.run(accountId, type, amount, currency, date, notes, 'fd_out', null, hash);
+            txId = Number(r.lastInsertRowid);
+            const fd = fdCore.createFixedDepositFromStatementInDb(db, {
+              account_id: accountId, amount, currency, start_date: date, linked_tx_id: txId, notes,
+            });
+            db.prepare('UPDATE account_transactions SET linked_fd_id = ? WHERE id = ?').run(fd.id, txId);
+            createdFds.push({ id: fd.id, amount, date });
+            imported++;
+          } else if (action === 'settle_fd' && type === 'deposit') {
+            const fd = findFdForInRowInDb(db, accountId, amount, date);
+            if (!fd) {
+              // 无匹配定期 → 降级为普通存入
+              insertTx.run(accountId, type, amount, currency, date, notes, null, null, hash);
+              imported++;
+            } else {
+              const r = insertTx.run(accountId, type, amount, currency, date, notes, 'fd_in', fd.id, hash);
+              txId = Number(r.lastInsertRowid);
+              const settled = fdCore.settleFixedDepositFromStatementInDb(db, fd.id, {
+                creditAmount: amount, date, linked_tx_id: txId,
+              });
+              if (settled) settledFds.push({ id: fd.id, principal: settled.principal, interest: settled.interest });
+              imported++;
+            }
+          } else {
+            insertTx.run(accountId, type, amount, currency, date, notes, null, null, hash);
+            imported++;
+          }
 
           // Update balance
           const delta = type === 'deposit' ? amount : -amount;
           const existing = getBalance.get(accountId, currency) as any;
           const newBalance = (existing?.balance || 0) + delta;
           upsertBalance.run(accountId, currency, newBalance);
-
-          imported++;
         } catch (err: any) {
           errors.push(`${rec.description || '未知记录'}：${err.message}`);
         }
@@ -147,7 +238,7 @@ export function registerSettingsIpcHandlers(): void {
     });
 
     transaction();
-    return { imported, errors };
+    return { imported, skipped, duplicates, errors, createdFds, settledFds };
   });
 
   ipcMain.handle('bank:importExcel', async (_e, formatName?: string) => {
@@ -177,6 +268,7 @@ export function registerSettingsIpcHandlers(): void {
       if (ext === 'csv') {
         const csvText = fs.readFileSync(filePath, 'utf-8');
         const parseResult = bankParser.parseBankStatement(csvText, formatName);
+        parseResult.records = parseResult.records.map((r) => ({ ...r, classification: classifyBankRecord(r) }));
         return {
           canceled: false,
           fileName: filePath.split(/[\\/]/).pop() || filePath,
@@ -193,6 +285,7 @@ export function registerSettingsIpcHandlers(): void {
       const sheet = workbook.Sheets[sheetName];
       const rows: string[][] = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       const parseResult = bankParser.parseBankRows(rows, formatName);
+      parseResult.records = parseResult.records.map((r) => ({ ...r, classification: classifyBankRecord(r) }));
       return {
         canceled: false,
         fileName: filePath.split(/[\\/]/).pop() || filePath,

@@ -111,10 +111,12 @@ const fixedDepositData = z.object({
   currency: optStr,
   interest_rate: z.coerce.number().min(0).optional(),
   start_date: z.string().min(1),
-  maturity_date: z.string().min(1),
+  maturity_date: z.string().nullish(), // v1.9.0：可空（日结单自动创建时待定）
   notes: z.string().nullish(),
   deductMode: z.enum(['deduct', 'record_only']).optional(),
   deductAccountId: id.nullish(),
+  source: z.enum(['manual', 'statement']).optional(),
+  linkedTxId: id.nullish(), // v1.9.0：关联已有流水（反向配对/日结单）
 }).passthrough();
 
 const fdSettleData = z.object({
@@ -197,6 +199,8 @@ const recordItem = z.object({
   type: z.string().optional(),
   description: z.string().optional(),
   currency: z.string().optional(),
+  classification: z.string().optional(), // v1.9.0：fd_out/fd_in/normal
+  action: z.enum(['import', 'skip', 'create_fd', 'settle_fd']).optional(), // v1.9.0：行级动作
 }).passthrough();
 
 const aiConfigData = z.object({
@@ -234,6 +238,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'onboarding:complete': z.tuple([z.enum(['done', 'skipped']).optional()]),
   'accountTransaction:update': z.tuple([id, accountTxData.partial(), z.boolean().optional()]),
   'accountTransaction:delete': z.tuple([id]),
+  'accountTransaction:deleteWithMode': z.tuple([id, z.enum(['tx_only', 'both'])]),
   'trade:record': z.tuple([tradeRecordData]),
   'asset:listAll': z.tuple([]),
   'asset:lookupName': z.tuple([z.string().min(1).max(20), z.string().max(10).optional()]),
@@ -259,6 +264,8 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'fixedDeposit:create': z.tuple([fixedDepositData]),
   'fixedDeposit:update': z.tuple([id, fixedDepositData.partial(), z.enum(['sync', 'record_only']).optional()]),
   'fixedDeposit:delete': z.tuple([id, z.boolean().optional()]),
+  'fixedDeposit:deleteWithMode': z.tuple([id, z.enum(['both', 'fd_only'])]),
+  'fixedDeposit:findMatchingTx': z.tuple([id, z.coerce.number().positive(), z.string().min(1)]),
   'fixedDeposit:settle': z.tuple([id, fdSettleData]),
   'insurance:createPolicy': z.tuple([insurancePolicyData]),
   'insurance:updatePolicy': z.tuple([id, insurancePolicyData.partial()]),
@@ -292,6 +299,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'report:realizedPnl': z.tuple([z.coerce.number().int().positive()]),
   'trade:importParsed': z.tuple([z.array(recordItem), id]),
   'bank:importParsed': z.tuple([z.array(recordItem), id]),
+  'bank:suggestActions': z.tuple([z.array(recordItem), id]),
   'wallet:importBills': z.tuple([id, z.array(recordItem)]),
 };
 

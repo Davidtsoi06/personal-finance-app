@@ -16,6 +16,8 @@ interface DailyTradeRow {
   created_at: string; name: string; code: string;
   /** v1.8.2：单笔已实现盈亏（卖出有值，买入 null） */
   realized_pnl: number | null;
+  /** v1.8.4：成本价（卖出=成本基础，买入=本笔含费均价；无则 null） */
+  cost_price: number | null;
 }
 
 interface DailyTradesResult {
@@ -24,6 +26,7 @@ interface DailyTradesResult {
   summary: {
     totalCount: number; buyCount: number; sellCount: number;
     buyAmount: number; sellAmount: number; realizedPnl: number;
+    unknownPnlCount: number;
   };
 }
 
@@ -86,6 +89,13 @@ export function DailyTradesReport() {
     )},
     { key: 'quantity', title: '数量', align: 'right', render: (r) => r.quantity.toLocaleString() },
     { key: 'price', title: '价格', align: 'right', render: (r) => (r.price || 0).toFixed(2) },
+    { key: 'cost_price', title: '成本价', align: 'right', render: (r) => {
+      // v1.8.4：无成本价显示 —（不显示 0 避免误导）
+      if (r.cost_price === null || r.cost_price === undefined || !isFinite(r.cost_price)) {
+        return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
+      }
+      return <span>{r.cost_price.toFixed(2)}</span>;
+    }},
     { key: 'fee', title: '手续费', align: 'right', render: (r) => (r.fee || 0).toFixed(2) },
     { key: 'total_amount', title: '金额', align: 'right', render: (r) => (
       <NetAmount value={r.total_amount} currency={r.currency} />
@@ -182,6 +192,14 @@ export function DailyTradesReport() {
                 {s!.realizedPnl >= 0 ? '+' : ''}¥{s!.realizedPnl.toLocaleString()}
               </div>
             </div>
+          </div>
+        )}
+        {hasTrades && (s!.unknownPnlCount || 0) > 0 && (
+          <div style={{
+            fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)',
+            background: '#FFFBE6', padding: '6px 12px', borderRadius: 'var(--radius-sm)',
+          }}>
+            ⚠️ {s!.unknownPnlCount} 笔卖出缺少成本价，已实现盈亏未计入；可在持仓中补充该资产成本价后回看。
           </div>
         )}
 

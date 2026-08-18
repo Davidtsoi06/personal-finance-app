@@ -281,6 +281,8 @@ export function forceDeleteAccount(id: number): DeleteResult {
     db.prepare('DELETE FROM ledgers WHERE account_id = ?').run(id);
 
     // Delete fixed deposits（定期存款属于账户数据，强制删除时一并清理）
+    // v1.9.0：定存流水一并清理（FK 级联之外显式删除，防外键关闭时残留）
+    db.prepare('DELETE FROM fixed_deposit_flows WHERE fd_id IN (SELECT id FROM fixed_deposits WHERE account_id = ?)').run(id);
     db.prepare('DELETE FROM fixed_deposits WHERE account_id = ?').run(id);
 
     // Nullify asset links (keep the assets, just remove account linkage)

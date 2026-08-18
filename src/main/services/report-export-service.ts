@@ -15,6 +15,8 @@ export interface DailyTradesSummary {
   buyAmount: number;
   sellAmount: number;
   realizedPnl: number;
+  /** v1.8.4：卖出但无成本价、盈亏未计入的笔数 */
+  unknownPnlCount: number;
 }
 
 export interface DailyTradesResult {
@@ -23,35 +25,86 @@ export interface DailyTradesResult {
   summary: DailyTradesSummary;
 }
 
+/** v1.8.4：买入加权平均成本（Σ净额 ÷ Σ数量）；无有效买入返回 null（纯函数，可单测） */
+export function weightedAvgCost(buys: { total_amount: number; quantity: number }[]): number | null {
+  let amt = 0;
+  let qty = 0;
+  for (const b of buys) {
+    const a = Number(b.total_amount) || 0;
+    const q = Number(b.quantity) || 0;
+    if (q <= 0) continue;
+    amt += a;
+    qty += q;
+  }
+  if (qty <= 0) return null;
+  const avg = amt / qty;
+  return Number.isFinite(avg) ? Math.round(avg * 10000) / 10000 : null;
+}
+
 /** Trades for a single day, joined with asset name/code, plus summary stats. */
 export function getDailyTrades(date: string): DailyTradesResult {
   const db = getDatabase();
-  // v1.8.2：一次 JOIN 持仓成本价，为每笔卖出计算单笔已实现盈亏（消除 N+1）
   const rows = db.prepare(`
     SELECT t.id, t.date, t.type, t.quantity, t.price, t.fee, t.total_amount,
-      t.currency, t.notes, t.created_at, a.name, a.code, a.cost_price
+      t.currency, t.notes, t.created_at, t.asset_id, a.name, a.code, a.cost_price
     FROM transactions t
     JOIN assets a ON t.asset_id = a.id
     WHERE t.date = ?
     ORDER BY t.created_at ASC, t.id ASC
   `).all(date) as any[];
 
+  // v1.8.4：一次性取当日(含)前全部买入（按时间排序），逐行推进加权成本，消除 N+1
+  const buys = db.prepare(`
+    SELECT asset_id, total_amount, quantity, date, id FROM transactions
+    WHERE type = 'buy' AND date <= ?
+    ORDER BY date ASC, id ASC
+  `).all(date) as { asset_id: number; total_amount: number; quantity: number; date: string; id: number }[];
+  const buysByAsset = new Map<number, { total_amount: number; quantity: number; date: string; id: number }[]>();
+  for (const b of buys) {
+    const arr = buysByAsset.get(b.asset_id) || [];
+    arr.push(b);
+    buysByAsset.set(b.asset_id, arr);
+  }
+  const cursor = new Map<number, number>(); // asset_id -> 已并入成本基础的买入下标
+
   const summary: DailyTradesSummary = {
     totalCount: rows.length, buyCount: 0, sellCount: 0,
-    buyAmount: 0, sellAmount: 0, realizedPnl: 0,
+    buyAmount: 0, sellAmount: 0, realizedPnl: 0, unknownPnlCount: 0,
   };
   for (const r of rows) {
     if (r.type === 'buy') {
       summary.buyCount++;
       summary.buyAmount += r.total_amount;
       r.realized_pnl = null;
+      // 买入行成本价 = 本笔含费均价（总金额 ÷ 数量）
+      r.cost_price = r.quantity > 0
+        ? Math.round((r.total_amount / r.quantity) * 10000) / 10000
+        : (Number(r.cost_price) > 0 ? Number(r.cost_price) : null);
     } else {
       summary.sellCount++;
       summary.sellAmount += r.total_amount;
-      // 单笔已实现盈亏 = 卖出净额 − 成本价×数量
-      const pnl = Math.round((r.total_amount - r.cost_price * r.quantity) * 100) / 100;
-      r.realized_pnl = pnl;
-      summary.realizedPnl = Math.round((summary.realizedPnl + pnl) * 100) / 100;
+      // 卖出成本基础：推进到该笔为止（date,id 均不超过）的买入加权平均
+      const seq = buysByAsset.get(r.asset_id) || [];
+      let idx = cursor.get(r.asset_id) || 0;
+      const acc = { total_amount: 0, quantity: 0 };
+      while (idx < seq.length && (seq[idx].date < r.date || (seq[idx].date === r.date && seq[idx].id <= r.id))) {
+        acc.total_amount += seq[idx].total_amount;
+        acc.quantity += seq[idx].quantity;
+        idx++;
+      }
+      cursor.set(r.asset_id, idx);
+      let basis: number | null = weightedAvgCost([acc]);
+      if (basis === null && Number(r.cost_price) > 0) basis = Number(r.cost_price);
+      r.cost_price = basis;
+      if (basis === null) {
+        // 无任何成本价 → 盈亏显示 —，不参与汇总（修复 NaN 污染）
+        r.realized_pnl = null;
+        summary.unknownPnlCount++;
+      } else {
+        const pnl = Math.round((r.total_amount - basis * r.quantity) * 100) / 100;
+        r.realized_pnl = pnl;
+        summary.realizedPnl = Math.round((summary.realizedPnl + pnl) * 100) / 100;
+      }
     }
   }
   return { date, rows, summary };
@@ -312,6 +365,7 @@ const H: Record<string, ExportHeader[]> = {
     { key: 'date', label: '日期' }, { key: 'name', label: '股票名称' },
     { key: 'code', label: '代码' }, { key: 'type', label: '买卖方向' },
     { key: 'quantity', label: '数量' }, { key: 'price', label: '成交价' },
+    { key: 'cost_price', label: '成本价' },
     { key: 'fee', label: '手续费' }, { key: 'total_amount', label: '总金额' },
     { key: 'currency', label: '币种' }, { key: 'notes', label: '备注' },
   ],

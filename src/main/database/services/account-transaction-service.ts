@@ -85,6 +85,16 @@ export function deleteAccountTransaction(id: number): boolean {
   const db = getDatabase();
   const existing = getAccountTransaction(id);
   if (!existing) return false;
+  // v1.9.0：关联定期 → 需走联动删除（tx_only/both）；已结算定期回款流水不可删
+  const linkedFd = (existing as any).linked_fd_id != null
+    ? db.prepare('SELECT * FROM fixed_deposits WHERE id = ?').get((existing as any).linked_fd_id) as any
+    : undefined;
+  if (linkedFd && linkedFd.status === 'settled') {
+    throw new Error('该记录为已结算定期的回款流水，不可删除');
+  }
+  if (linkedFd) {
+    throw new Error(`该记录已关联定期存款 #${linkedFd.id}，请选择联动删除方式`);
+  }
   // v1.8.1：定期存款自动生成的联动记录不可直接删除（否则余额与定存状态口径撕裂）
   if (existing.notes && existing.notes.startsWith('定期存款')) {
     throw new Error('该记录由定期存款自动生成，请在定期存款模块处理');
@@ -114,6 +124,48 @@ export function deleteAccountTransaction(id: number): boolean {
 }
 
 /**
+ * v1.9.0：定期联动流水删除。
+ * tx_only：仅删流水（余额回滚），定期脱钩保留为纯记录型；
+ * both：流水与定期一起删（流水删除即退回资金，定期不再退回）。
+ */
+export function deleteAccountTransactionWithMode(id: number, mode: 'tx_only' | 'both'): boolean {
+  const db = getDatabase();
+  const existing = getAccountTransaction(id) as any;
+  if (!existing) return false;
+  const fd = existing.linked_fd_id != null
+    ? db.prepare('SELECT * FROM fixed_deposits WHERE id = ?').get(existing.linked_fd_id) as any
+    : undefined;
+  if (!fd) return deleteAccountTransaction(id);
+  if (fd.status === 'settled') {
+    throw new Error('该记录为已结算定期的回款流水，不可删除');
+  }
+
+  const tx = db.transaction(() => {
+    // 撤销流水余额影响
+    const sign = existing.type === 'deposit' ? -1 : 1;
+    const reversed = sign * existing.amount;
+    db.prepare("UPDATE accounts SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
+      .run(reversed, existing.account_id);
+    updateAccountBalance(existing.account_id, existing.currency, reversed);
+    if (existing.type === 'withdraw' && existing.investment_account_id) {
+      withdrawCashBalance(existing.investment_account_id, existing.amount);
+    }
+    db.prepare('DELETE FROM account_transactions WHERE id = ?').run(id);
+
+    if (mode === 'both') {
+      db.prepare('DELETE FROM fixed_deposit_flows WHERE fd_id = ?').run(fd.id);
+      db.prepare('DELETE FROM fixed_deposits WHERE id = ?').run(fd.id);
+    } else {
+      // tx_only：定期保留，转为纯记录型（资金变动已随流水回滚）
+      db.prepare("UPDATE fixed_deposits SET linked_tx_id = NULL, deduct_mode = 'record_only', deduct_account_id = NULL WHERE id = ?").run(fd.id);
+    }
+  });
+
+  tx();
+  return true;
+}
+
+/**
  * Update a transaction, recalculating balances for both old and new values.
  * v1.6.1：联动询问式——syncBrokerCash=true（用户确认）时同步调整券商流动金：
  *   撤销旧联动（withdraw 扣回）+ 应用新联动（新类型为 withdraw 时增加）；
@@ -129,6 +181,10 @@ export function updateAccountTransaction(
   const db = getDatabase();
   const existing = getAccountTransaction(id);
   if (!existing) return undefined;
+  // v1.9.0：已关联定期的流水禁止直接改（防口径撕裂，请到定期模块修改）
+  if ((existing as any).linked_fd_id != null) {
+    throw new Error('该记录已关联定期存款，请在定期存款模块修改');
+  }
 
   const newType = (data.type || existing.type) as 'deposit' | 'withdraw';
   const newAmount = data.amount ?? existing.amount;

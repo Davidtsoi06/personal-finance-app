@@ -13,7 +13,8 @@ export interface FixedDeposit {
   id: number; account_id: number; amount: number; currency: string;
   interest_rate: number; start_date: string; maturity_date: string;
   notes: string | null; deduct_mode: string; deduct_account_id: number | null;
-  status: string; created_at: string; updated_at: string;
+  status: string; source: string; linked_tx_id: number | null; settle_tx_id: number | null;
+  interest_earned?: number; created_at: string; updated_at: string;
 }
 
 interface BankAccount { id: number; name: string; bank_name: string | null; card_number: string | null; display_alias: string | null; currency: string; }
@@ -51,6 +52,9 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
   const [settleAmount, setSettleAmount] = useState('');
   const [settleAccountId, setSettleAccountId] = useState('');
 
+  // ── v1.9.0：反向配对（先导日结单、后手动建 → 建议关联而非重复扣款） ──
+  const [pendingLink, setPendingLink] = useState<{ txId: number; amount: number; date: string; data: Record<string, unknown> } | null>(null);
+
   const loadFds = useCallback(() => {
     invoke<FixedDeposit[]>('fixedDeposit:listByAccount', accountId)
       .then((fds) => setFixedDeposits(fds || []))
@@ -58,6 +62,13 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
   }, [accountId]);
 
   useEffect(() => { loadFds(); }, [loadFds]);
+
+  // v1.9.0：日结单导入成功后刷新（BankStatementImportModal 派发自定义事件）
+  useEffect(() => {
+    const handler = () => loadFds();
+    window.addEventListener('fixed-deposits:changed', handler);
+    return () => window.removeEventListener('fixed-deposits:changed', handler);
+  }, [loadFds]);
 
   // 打开资金处理方式弹窗时加载银行账户列表
   useEffect(() => {
@@ -116,9 +127,20 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
           onChanged();
         }
       } else {
-        // 新建：先询问资金处理方式
+        // 新建：v1.9.0 先检测疑似已有日结单流水（反向配对）
         setShowFdForm(false);
-        setPendingCreate(data);
+        try {
+          const tx = await invoke<{ id: number; date: string; notes: string | null; amount: number } | null>(
+            'fixedDeposit:findMatchingTx', accountId, amount, String(data.start_date)
+          );
+          if (tx) {
+            setPendingLink({ txId: tx.id, amount, date: String(data.start_date), data });
+          } else {
+            setPendingCreate(data);
+          }
+        } catch {
+          setPendingCreate(data);
+        }
       }
     } catch (err: any) { setFdError(err.message || '操作失败'); }
     setFdSaving(false);
@@ -148,6 +170,34 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
     setFdSaving(false);
   };
 
+  const handleLinkConfirm = async (link: boolean) => {
+    if (!pendingLink) return;
+    setFdSaving(true);
+    setFdError('');
+    try {
+      const row = await invoke<FixedDeposit>('fixedDeposit:create', {
+        ...pendingLink.data,
+        deductMode: 'deduct',
+        deductAccountId: parseInt(deductAccountId) || accountId,
+        linkedTxId: link ? pendingLink.txId : null,
+      });
+      setPendingLink(null);
+      loadFds();
+      onChanged();
+      if (link) {
+        showToast('已创建定期存款并关联日结单流水（未重复扣款）');
+      } else {
+        // v1.8.0：操作后撤销——扣款型可一键撤销（删除定存并退回金额）
+        showToast('已创建定期存款并写扣款记录', '撤销', async () => {
+          await invoke('fixedDeposit:delete', row.id, true).catch(() => {});
+          loadFds();
+          onChanged();
+        });
+      }
+    } catch (err: any) { setFdError(err.message || '创建失败'); }
+    setFdSaving(false);
+  };
+
   const handleEditConfirm = async (balanceMode: 'sync' | 'record_only') => {
     if (!pendingEdit || !editingFd) return;
     setFdSaving(true);
@@ -165,6 +215,17 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
     if (!deletingFd) return;
     try {
       await invoke('fixedDeposit:delete', deletingFd.id, restoreBalance);
+      setDeletingFd(null);
+      loadFds();
+      onChanged();
+    } catch (err: any) { console.error(err); }
+  };
+
+  // v1.9.0：带关联流水的定存删除——both 流水一起删；fd_only 仅删定存保留流水
+  const handleDeleteLinkedFd = async (mode: 'both' | 'fd_only') => {
+    if (!deletingFd) return;
+    try {
+      await invoke('fixedDeposit:deleteWithMode', deletingFd.id, mode);
       setDeletingFd(null);
       loadFds();
       onChanged();
@@ -215,11 +276,13 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
                     {fd.status === 'settled' ? (
                       <Badge label="✅ 已结算" color="success" />
                     ) : (() => {
-                      const matured = fd.maturity_date <= new Date().toISOString().slice(0, 10);
+                      const matured = fd.maturity_date !== '' && fd.maturity_date <= new Date().toISOString().slice(0, 10);
                       return (
                         <>
                           {matured && <Badge label="🔔 已到期" color="warning" />}
-                          {fd.deduct_mode === 'record_only' ? (
+                          {fd.source === 'statement' ? (
+                            <Badge label="📄 日结单" color="primary" />
+                          ) : fd.deduct_mode === 'record_only' ? (
                             <Badge label="📝 纯记录" color="default" />
                           ) : (
                             <Badge label="💳 已扣款" color="info" />
@@ -229,12 +292,14 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
                     })()}
                   </div>
                   <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-                    年利率 {fd.interest_rate}% · {fd.start_date} ~ {fd.maturity_date}
+                    年利率 {fd.interest_rate}% · {fd.start_date} ~ {fd.maturity_date || '待定（回款后自动确定）'}
+                    {fd.status === 'settled' && (fd.interest_earned || 0) > 0 &&
+                      ' · 已结利息 ' + fdCurrencySymbol(fd.currency) + (fd.interest_earned || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     {fd.notes && ' · ' + fd.notes}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '4px' }}>
-                  {fd.status === 'active' && fd.maturity_date <= new Date().toISOString().slice(0, 10) && (
+                  {fd.status === 'active' && fd.maturity_date !== '' && fd.maturity_date <= new Date().toISOString().slice(0, 10) && (
                     <Button variant="primary" size="sm" onClick={() => { setSettlingFd(fd); setFdError(''); }}>💰 到期处理</Button>
                   )}
                   {fd.status === 'active' && (
@@ -289,8 +354,9 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
                 defaultValue={editingFd?.start_date || new Date().toISOString().slice(0, 10)} />
             </div>
             <div className="form-group">
-              <label className="form-label">到期日期 *</label>
-              <input className="form-input" name="maturity_date" type="date" required
+              <label className="form-label">到期日期</label>
+              <input className="form-input" name="maturity_date" type="date"
+                placeholder="可留空（待定，回款后自动确定）"
                 defaultValue={editingFd?.maturity_date || ''} />
             </div>
           </div>
@@ -400,6 +466,16 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
             <input className="form-input" type="number" step="0.01" value={settleAmount}
               onChange={(e) => setSettleAmount(e.target.value)} />
           </div>
+          {settlingFd && (() => {
+            const back = parseFloat(settleAmount) || 0;
+            const interest = Math.round((back - settlingFd.amount) * 100) / 100;
+            return (
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', background: '#F6FFED', padding: 'var(--spacing-sm)', borderRadius: 'var(--radius-sm)' }}>
+                v1.9.0 自动拆分：本金 {settlingFd.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {' + '}利息 {interest >= 0 ? '+' : ''}{interest.toFixed(2)}（利息将记为「投资收入」）
+              </div>
+            );
+          })()}
           <div className="form-group">
             <label className="form-label">回款存入账户</label>
             <select className="form-select" value={settleAccountId} onChange={(e) => setSettleAccountId(e.target.value)}>
@@ -437,21 +513,62 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
-            {deletingFd?.deduct_mode === 'deduct' && (
-              <Button variant="primary" onClick={() => handleDeleteFd(true)}>
-                ✅ 退回 {fdCurrencySymbol(deletingFd.currency)}{deletingFd.amount.toLocaleString()} 到扣款账户，并写存取记录
-              </Button>
-            )}
-            {deletingFd?.deduct_mode === 'deduct' && (
-              <Button variant="secondary" onClick={() => handleDeleteFd(false)}>
-                📝 仅删除记录（余额原封不动，由你自行调整）
-              </Button>
-            )}
-            {deletingFd?.deduct_mode !== 'deduct' && (
-              <Button variant="danger" onClick={() => handleDeleteFd(false)}>确认删除（不影响余额）</Button>
+            {deletingFd?.linked_tx_id != null ? (
+              <>
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', background: '#FFFBE6', padding: 'var(--spacing-sm)', borderRadius: 'var(--radius-sm)' }}>
+                  此定存关联了银行存取流水（可能来自日结单导入）。请选择删除方式：
+                </div>
+                <Button variant="danger" onClick={() => handleDeleteLinkedFd('both')}>
+                  🗑 流水与定期一起删除（资金退回账户）
+                </Button>
+                <Button variant="secondary" onClick={() => handleDeleteLinkedFd('fd_only')}>
+                  📝 仅删定期（银行流水保留为普通记录）
+                </Button>
+              </>
+            ) : (
+              <>
+                {deletingFd?.deduct_mode === 'deduct' && (
+                  <Button variant="primary" onClick={() => handleDeleteFd(true)}>
+                    ✅ 退回 {fdCurrencySymbol(deletingFd.currency)}{deletingFd.amount.toLocaleString()} 到扣款账户，并写存取记录
+                  </Button>
+                )}
+                {deletingFd?.deduct_mode === 'deduct' && (
+                  <Button variant="secondary" onClick={() => handleDeleteFd(false)}>
+                    📝 仅删除记录（余额原封不动，由你自行调整）
+                  </Button>
+                )}
+                {deletingFd?.deduct_mode !== 'deduct' && (
+                  <Button variant="danger" onClick={() => handleDeleteFd(false)}>确认删除（不影响余额）</Button>
+                )}
+              </>
             )}
             <Button variant="secondary" onClick={() => setDeletingFd(null)}>取消</Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* ── 反向配对弹窗（v1.9.0：先导日结单、后手动建） ── */}
+      <Modal open={!!pendingLink} title="🔗 检测到疑似对应的日结单流水" onClose={() => setPendingLink(null)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', minWidth: 420 }}>
+          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
+            检测到一笔金额与日期（±3 天）匹配的银行存取流水
+            （{pendingLink?.date} · {pendingLink?.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}），
+            很可能就是这笔定期的日结单记录。若关联，本次创建将<b>不再重复扣款</b>。
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+            <Button variant="primary" onClick={() => handleLinkConfirm(true)} disabled={fdSaving}>
+              ✅ 关联该流水，不重复扣款（推荐）
+            </Button>
+            <Button variant="secondary" onClick={() => handleLinkConfirm(false)} disabled={fdSaving}>
+              💳 不关联，仍新建并扣款
+            </Button>
+            <Button variant="secondary" onClick={() => setPendingLink(null)}>取消</Button>
+          </div>
+          {fdError && (
+            <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)', background: '#FFF2F0', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-danger)' }}>
+              {fdError}
+            </div>
+          )}
         </div>
       </Modal>
     </>

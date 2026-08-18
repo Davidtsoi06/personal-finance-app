@@ -189,7 +189,7 @@ export function registerReportIpcHandlers(): void {
         ? [String(params.year), String(params.month).padStart(2, '0')]
         : [String(params.year)];
       rows = db.prepare(`
-        SELECT t.date, a.name, a.code, t.type, t.quantity, t.price, t.fee, t.total_amount, t.currency, t.notes
+        SELECT t.date, a.name, a.code, t.type, t.quantity, t.price, a.cost_price, t.fee, t.total_amount, t.currency, t.notes
         FROM transactions t
         JOIN assets a ON t.asset_id = a.id
         WHERE 1=1 ${dateFilter}

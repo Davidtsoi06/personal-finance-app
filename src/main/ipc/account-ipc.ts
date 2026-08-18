@@ -42,4 +42,8 @@ export function registerAccountIpcHandlers(): void {
   handleValidated('accountTransaction:delete', (id: number) =>
     atService.deleteAccountTransaction(id)
   );
+  // v1.9.0：联动删除——tx_only 仅删流水（定期脱钩保留）；both 流水与定期一起删
+  handleValidated('accountTransaction:deleteWithMode', (id: number, mode: 'tx_only' | 'both') =>
+    atService.deleteAccountTransactionWithMode(id, mode)
+  );
 }

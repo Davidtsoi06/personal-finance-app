@@ -15,6 +15,9 @@ export interface AccountTransaction {
   id: number; account_id: number; type: 'deposit' | 'withdraw';
   amount: number; currency: string; date: string; notes: string | null;
   investment_account_id?: number | null;
+  /** v1.9.0：内部转账标记（fd_out 转定期 / fd_in 定期回款）与定期关联 */
+  transfer_type?: string | null;
+  linked_fd_id?: number | null;
 }
 
 interface Props {
@@ -115,15 +118,34 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
     } catch (err: any) { console.error(err); }
   };
 
+  // v1.9.0：联动删除——tx_only 仅删流水（定期脱钩保留）；both 流水与定期一起删
+  const handleDeleteLinkedTx = async (mode: 'tx_only' | 'both') => {
+    if (!deletingTx) return;
+    try {
+      await invoke('accountTransaction:deleteWithMode', deletingTx.id, mode);
+      setDeletingTx(null);
+      loadTxs();
+      onChanged();
+      // 通知定期区块刷新
+      window.dispatchEvent(new CustomEvent('fixed-deposits:changed'));
+    } catch (err: any) { console.error(err); }
+  };
+
   const columns: Column<AccountTransaction>[] = [
     { key: 'date', title: '日期', render: (r) => r.date },
     {
       key: 'type', title: '类型', align: 'center',
       render: (r) => (
-        <Badge
-          label={r.type === 'deposit' ? '📥 存入' : '📤 取出'}
-          color={r.type === 'deposit' ? 'success' : 'danger'}
-        />
+        r.transfer_type === 'fd_out' ? (
+          <Badge label="🔁 转定期" color="primary" />
+        ) : r.transfer_type === 'fd_in' ? (
+          <Badge label="💰 定期回款" color="warning" />
+        ) : (
+          <Badge
+            label={r.type === 'deposit' ? '📥 存入' : '📤 取出'}
+            color={r.type === 'deposit' ? 'success' : 'danger'}
+          />
+        )
       ),
     },
     {
@@ -146,7 +168,13 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
       key: 'actions', title: '操作', align: 'center',
       render: (r) => (
         <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-          <Button variant="secondary" size="sm" onClick={() => setEditingTx(r)}>✏️</Button>
+          <span title={r.linked_fd_id != null ? '已关联定期存款，请在定期模块修改' : ''}>
+            <Button
+              variant="secondary" size="sm"
+              disabled={r.linked_fd_id != null}
+              onClick={() => setEditingTx(r)}
+            >✏️</Button>
+          </span>
           <Button variant="secondary" size="sm" onClick={() => setDeletingTx(r)}>🗑</Button>
         </div>
       ),
@@ -253,10 +281,25 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
               ⚠️ 此记录曾转入券商，删除将同步扣回券商流动金 {deletingTx.currency} {deletingTx.amount.toLocaleString()}。
             </p>
           )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)' }}>
-            <Button variant="secondary" onClick={() => setDeletingTx(null)}>取消</Button>
-            <Button variant="danger" onClick={handleDeleteTx}>确认删除</Button>
-          </div>
+          {deletingTx?.linked_fd_id != null ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', background: '#FFFBE6', padding: 'var(--spacing-sm)', borderRadius: 'var(--radius-sm)' }}>
+                此记录已关联定期存款 #{deletingTx.linked_fd_id}，请选择删除方式：
+              </div>
+              <Button variant="danger" onClick={() => handleDeleteLinkedTx('both')}>
+                🗑 流水与定期一起删除
+              </Button>
+              <Button variant="secondary" onClick={() => handleDeleteLinkedTx('tx_only')}>
+                📝 仅删流水（定期保留为纯记录）
+              </Button>
+              <Button variant="secondary" onClick={() => setDeletingTx(null)}>取消</Button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)' }}>
+              <Button variant="secondary" onClick={() => setDeletingTx(null)}>取消</Button>
+              <Button variant="danger" onClick={handleDeleteTx}>确认删除</Button>
+            </div>
+          )}
         </div>
       </Modal>
     </>
