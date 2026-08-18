@@ -190,6 +190,20 @@ npm run release
 
 以后你改了代码，要发新版本时：
 
+### 7.0 更新文档（每次发布必做，README 最容易忘）
+
+打包发布前，先同步两份文档，版本号与功能描述要和实际一致：
+
+1. **`README.md`**（项目首页）：
+   - 「最新版本」行改成新版本号与日期
+   - 「🆕 近期更新」最上面加一条新版本摘要（保留最近 3 条即可）
+   - 「技术栈」表格里的数据同步（测试数量、迁移版本号、IPC 频道数）
+   - 「版本历史」表格加一行新版本
+2. **`RELEASE_NOTES.md`**：写新版本的更新说明（新功能/修复 + 版本信息表）
+3. 可选：`docs/dev-roadmap.md` 阶段状态、`dev-logs/YYYY-MM-DD.md` 发布记录
+
+> ⚠️ 历次发布最容易漏掉的就是 README——先更新文档，再改版本号打包。
+
 ### 7.1 修改版本号
 打开 `package.json`，把 `"version": "1.0.0"` 改成新版本号，比如 `"1.0.1"` 或 `"1.1.0"`。
 
@@ -240,6 +254,6 @@ npm run release
 | 要做的事 | 命令/操作 |
 |---------|----------|
 | 第一次发布 | `git init` → `git add .` → `git commit` → `git remote add` → `git push` → `npm run release` |
-| 之后发新版 | 改版本号 → `git add .` → `git commit` → `git push` → `npm run release` |
+| 之后发新版 | 更新 README + RELEASE_NOTES → 改版本号 → `git add .` → `git commit` → `git push` → `npm run release` |
 | 只打包不发布 | `npm run release:local` |
 | 运行测试 | `npm run start` |

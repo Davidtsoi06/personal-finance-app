@@ -53,6 +53,11 @@
 4. 修改涉及金额计算/数据转换/解析逻辑时，必须在 `tests/` 下补充或更新测试；提交前运行 `npm test` 与 `npx tsc -p tsconfig.main.json --noEmit`、`npx tsc -p tsconfig.json --noEmit`（vite 构建不做类型检查）
 5. 新增可变操作（写库）IPC 频道时，必须在 `src/shared/ipc-validation.ts` 定义 zod schema 并用 `handleValidated` 注册（`npm run check:ipc` 会检查未接入的 schema）
 
+### 发布流程（打包发布新版本时，必须逐项执行）
+1. 更新 `RELEASE_NOTES.md`（新版本更新说明）+ **更新 `README.md`**（最新版本号与日期、🆕 近期更新、技术栈数据[测试数/迁移版本/频道数]、版本历史）——README 是历次发布最容易漏掉的一项
+2. `docs/dev-roadmap.md` 阶段标记 ✅ 已发布 + `dev-logs/YYYY-MM-DD.md` 补发布记录
+3. `npm run release:local` → `node scripts/upload-release.js` → `git push origin master`（+ 本地标签与远端同步）
+
 ### ⚠️ 文档同步更新（必须执行）
 
 **每次代码修改完成后，必须检查并同步更新以下所有文档**，确保文档与代码现状一致。这不是可选项——就像写代码要编译通过一样，改代码就要更新文档。
@@ -66,6 +71,7 @@
 | [docs/dev-roadmap.md](docs/dev-roadmap.md) | 完成新阶段/功能、版本号更新、后续迭代优先级调整 |
 | [docs/api-reference.md](docs/api-reference.md) | 新增/修改外部数据源 API、备用源变更、定时策略调整、降级策略变更 |
 | [CLAUDE.md](CLAUDE.md) | 项目定位变化、工作规则调整、新增标准文档 |
+| [README.md](README.md) | 打包发布新版本时：最新版本号与日期、🆕 近期更新、技术栈数据（测试数/迁移版本/频道数）、版本历史 |
 
 **检查清单**（每次开发会话结束前逐项确认）：
 
@@ -76,6 +82,7 @@
 - [ ] 功能完成或状态改变？→ 更新 `requirements.md` 状态标记
 - [ ] 新增功能需求？→ 更新 `requirements.md` 功能列表
 - [ ] 版本号更新？→ 更新 `dev-roadmap.md` 阶段状态
+- [ ] 打包发布新版本？→ 更新 `README.md`（版本号/近期更新/技术栈数据/版本历史）+ `RELEASE_NOTES.md`
 - [ ] 外部 API 或数据源变更？→ 更新 `api-reference.md`
 - [ ] 设计令牌或组件样式变更？→ 更新 `design-spec.md`
 - [ ] 开发会话结束？→ 更新 `dev-logs/YYYY-MM-DD.md`
