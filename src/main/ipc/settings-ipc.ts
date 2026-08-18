@@ -633,7 +633,8 @@ export function registerSettingsIpcHandlers(): void {
     });
     if (result.canceled || !result.filePath) return { success: false, canceled: true };
     const { exportPackage } = require('../services/data-package') as typeof import('../services/data-package');
-    await exportPackage(app.getPath('userData'), result.filePath, app.getVersion());
+    // v1.9.1：在线备份自洽快照（WAL 已合并），避免导出缺数据
+    await exportPackage(app.getPath('userData'), result.filePath, app.getVersion(), getDatabase());
     return { success: true, filePath: result.filePath };
   });
 
@@ -656,7 +657,17 @@ export function registerSettingsIpcHandlers(): void {
     });
     if (confirm.response !== 1) return { success: false, canceled: true };
     const { importPackage } = require('../services/data-package') as typeof import('../services/data-package');
-    const backupPath = await importPackage(app.getPath('userData'), result.filePaths[0]);
+    const { closeDatabase, initDatabase } = require('../database');
+    // v1.9.1：关闭连接并清理残留 WAL/SHM 后再替换，重开失败自动回滚
+    const backupPath = await importPackage(app.getPath('userData'), result.filePaths[0], getDatabase(), {
+      close: () => closeDatabase(),
+      reopen: () => {
+        try { initDatabase(); return true; } catch (e) {
+          console.error('[data:importPackage] 重新打开失败:', e);
+          return false;
+        }
+      },
+    });
     // 重启应用加载新数据
     setTimeout(() => { app.relaunch(); app.exit(0); }, 800);
     return { success: true, backupPath };

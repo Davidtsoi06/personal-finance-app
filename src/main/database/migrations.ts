@@ -4,6 +4,8 @@
  * Optional migrate(db) function runs after the SQL for JS-based data migration.
  */
 import type Database from 'better-sqlite3';
+import { recomputeCostBasisFromTrades } from '../../shared/utils/investment';
+import { roundMoney, roundPct } from '../../shared/utils/money';
 
 export interface Migration {
   version: number;
@@ -705,6 +707,75 @@ export const MIGRATIONS: Migration[] = [
         if (fd.status === 'settled') {
           insertFlow.run(fd.id, 'settle_principal', fd.amount, fd.currency, fd.maturity_date, '到期本金回款');
         }
+      }
+    },
+  },
+  {
+    version: 21,
+    sql: [
+      '-- ============================================',
+      '-- Migration v21: 成本价历史重放修复（v1.9.1）',
+      '-- 历次迭代中加权平均成本逐步累计产生漂移；交易记录完好，',
+      '-- 按 (日期,id) 重放买卖历史重算每只持仓的成本价并刷新资产表。',
+      '-- 数量与历史净额不一致（拆分/分红/手工调整）的资产保留现数量，仅刷新成本价并留痕。',
+      '-- 被修改资产的旧值写入 app_settings[cost_recalc.snapshot] 供对照。',
+      '-- ============================================',
+      'SELECT 1;',
+    ].join('\n'),
+    migrate: (db) => {
+      const assets = db.prepare('SELECT id, quantity FROM assets').all() as { id: number; quantity: number }[];
+      const tradesStmt = db.prepare(`
+        SELECT id, asset_id, type, quantity, price, fee, total_amount, date
+        FROM transactions WHERE asset_id = ? AND type IN ('buy','sell')
+        ORDER BY date ASC, id ASC
+      `);
+      const upd = db.prepare(`
+        UPDATE assets SET quantity=?, cost_price=?, total_cost=?, market_value=?,
+          profit_loss=?, profit_loss_pct=?, updated_at=datetime('now') WHERE id=?
+      `);
+      const snapshot: { id: number; old: Record<string, number> }[] = [];
+      const mismatchIds: number[] = [];
+      let changed = 0;
+
+      for (const a of assets) {
+        const trades = tradesStmt.all(a.id) as any[];
+        if (trades.length === 0) continue; // 无交易记录：手工成本价不动
+        const { quantity, costPrice } = recomputeCostBasisFromTrades(
+          trades.map((t) => ({
+            id: t.id, assetId: t.asset_id, code: '', name: '', currency: '',
+            type: t.type, quantity: t.quantity, price: t.price, fee: t.fee,
+            totalAmount: t.total_amount, date: t.date,
+          }))
+        );
+        if (quantity <= 0) continue; // 历史已清仓
+
+        const current = db.prepare('SELECT * FROM assets WHERE id = ?').get(a.id) as any;
+        let q = quantity;
+        if (Math.abs(quantity - a.quantity) > 0.01) {
+          // 数量不一致（拆分/分红/手工调整）→ 保留现数量，仅刷新成本价
+          q = a.quantity;
+          mismatchIds.push(a.id);
+        }
+        const totalCost = roundMoney(q * costPrice);
+        const marketValue = roundMoney(q * current.current_price);
+        const profitLoss = roundMoney(marketValue - totalCost);
+        const profitLossPct = totalCost > 0 ? roundPct((profitLoss / totalCost) * 100) : 0;
+
+        snapshot.push({
+          id: a.id,
+          old: {
+            quantity: current.quantity, cost_price: current.cost_price,
+            total_cost: current.total_cost, profit_loss: current.profit_loss,
+          },
+        });
+        upd.run(q, costPrice, totalCost, marketValue, profitLoss, profitLossPct, a.id);
+        changed++;
+      }
+
+      if (changed > 0) {
+        db.prepare(
+          "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('cost_recalc.snapshot', ?, datetime('now'))"
+        ).run(JSON.stringify({ count: changed, assets: snapshot, qtyMismatchIds: mismatchIds }));
       }
     },
   },

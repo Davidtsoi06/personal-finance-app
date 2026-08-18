@@ -217,6 +217,10 @@ export function Reports() {
       </span>
     )},
     { key: 'type', title: '类型', render: (r) => ASSET_TYPE_LABELS[r.type] || r.type },
+    // v1.9.1：成本价（历史重放修复后）、交易价（现价）、成交数量
+    { key: 'quantity', title: '成交数量', align: 'right', render: (r) => r.quantity.toLocaleString() },
+    { key: 'cost_price', title: '成本价', align: 'right', render: (r) => (r.cost_price || 0).toFixed(3) },
+    { key: 'current_price', title: '交易价', align: 'right', render: (r) => (r.current_price || 0).toFixed(3) },
     { key: 'market_value', title: '市值', align: 'right', render: (r) => (
       <NetAmount value={r.market_value} currency={r.currency} />
     )},

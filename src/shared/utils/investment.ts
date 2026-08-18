@@ -48,6 +48,36 @@ export function applySell(state: AssetState, quantity: number, price: number): A
   return removePosition(state, quantity, costBasis);
 }
 
+// ── 成本基价重算（v1.9.1：迁移 v21 用，按历史交易重放修复漂移的成本价） ──
+
+export interface CostBasisResult {
+  quantity: number;
+  totalCost: number;
+  costPrice: number;
+}
+
+/**
+ * 由完整买卖历史重放持仓成本：按 (日期, id) 顺序，买入加仓（含费）、卖出按当时均价冲销。
+ * 中间均价保留全精度（不逐步舍入均价，防冲销漂移），最终金额出口 roundMoney。
+ * split/dividend 不参与（与持仓调整语义一致）。
+ */
+export function recomputeCostBasisFromTrades(trades: RealizedPnlTrade[]): CostBasisResult {
+  const list = trades
+    .filter((t) => t.type === 'buy' || t.type === 'sell')
+    .sort((a, b) => (a.date === b.date ? a.id - b.id : a.date < b.date ? -1 : 1));
+
+  let state: AssetState = { quantity: 0, totalCost: 0, costPrice: 0 };
+  for (const t of list) {
+    if (t.type === 'buy') {
+      state = addPosition(state, t.quantity, t.totalAmount);
+    } else {
+      const basis = state.costPrice > 0 ? state.costPrice * t.quantity : t.quantity * t.price;
+      state = removePosition(state, t.quantity, basis);
+    }
+  }
+  return { quantity: state.quantity, totalCost: state.totalCost, costPrice: state.costPrice };
+}
+
 // ── 已实现盈亏（重放法） ──
 
 export interface RealizedPnlTrade {
