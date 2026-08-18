@@ -214,11 +214,19 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
                     {' '}
                     {fd.status === 'settled' ? (
                       <Badge label="✅ 已结算" color="success" />
-                    ) : fd.deduct_mode === 'record_only' ? (
-                      <Badge label="📝 纯记录" color="default" />
-                    ) : (
-                      <Badge label="💳 已扣款" color="info" />
-                    )}
+                    ) : (() => {
+                      const matured = fd.maturity_date <= new Date().toISOString().slice(0, 10);
+                      return (
+                        <>
+                          {matured && <Badge label="🔔 已到期" color="warning" />}
+                          {fd.deduct_mode === 'record_only' ? (
+                            <Badge label="📝 纯记录" color="default" />
+                          ) : (
+                            <Badge label="💳 已扣款" color="info" />
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                   <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
                     年利率 {fd.interest_rate}% · {fd.start_date} ~ {fd.maturity_date}

@@ -248,7 +248,7 @@ export function getForceDeleteImpact(id: number) {
     childCount: count('SELECT COUNT(*) as c FROM accounts WHERE parent_account_id = ? AND is_active = 1'),
     transactionCount: count('SELECT COUNT(*) as c FROM account_transactions WHERE account_id = ?'),
     ledgerCount: count('SELECT COUNT(*) as c FROM ledgers WHERE account_id = ?'),
-    fixedDepositCount: count('SELECT COUNT(*) as c FROM fixed_deposits WHERE account_id = ?'),
+    fixedDepositCount: count("SELECT COUNT(*) as c FROM fixed_deposits WHERE account_id = ? AND status = 'active'"),
     bankAssetCount: count('SELECT COUNT(*) as c FROM assets WHERE account_id = ?'),
     insuranceCount: count('SELECT COUNT(*) as c FROM insurance_policies WHERE account_id = ?'),
     premiumCount: count('SELECT COUNT(*) as c FROM premium_payments WHERE account_id = ?'),
@@ -543,7 +543,7 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
     FROM fixed_deposits fd
     JOIN accounts a ON fd.account_id = a.id
     LEFT JOIN currencies c ON fd.currency = c.code
-    WHERE a.is_active = 1
+    WHERE a.is_active = 1 AND fd.status = 'active'
   `).all() as any[];
 
   const fdsByAccount = new Map<number, any[]>();

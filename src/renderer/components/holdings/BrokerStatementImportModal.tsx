@@ -37,6 +37,8 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
   const [importing, setImporting] = useState(false);
   const [brokerFormats, setBrokerFormats] = useState<string[]>([]);
   const [selectedBroker, setSelectedBroker] = useState('');
+  // v1.8.2：买卖方向反转开关（部分券商符号约定相反）
+  const [flipDirection, setFlipDirection] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -114,8 +116,11 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
     setImporting(true);
     setImportStatus('正在导入...');
     try {
+      const finalTrades = flipDirection
+        ? parsedTrades.map((t) => ({ ...t, type: t.type === 'buy' ? 'sell' : 'buy' }))
+        : parsedTrades;
       const result = await invoke<{ imported: number; errors: string[] }>(
-        'trade:importParsed', parsedTrades, accountId
+        'trade:importParsed', finalTrades, accountId
       );
       let msg = '✅ 成功导入 ' + result.imported + ' 条交易记录';
       if (result.errors.length > 0) {
@@ -194,6 +199,10 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
               fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)',
             }}>
               已识别格式：<b>{parseFormat}</b>，共 <b>{parsedTrades.length}</b> 条交易
+              <label style={{ marginLeft: 16, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={flipDirection} onChange={(e) => setFlipDirection(e.target.checked)} />
+                🔁 反转买卖方向（部分券商的买入/卖出符号约定相反）
+              </label>
             </div>
             <div style={{ maxHeight: '300px', overflow: 'auto', marginBottom: 'var(--spacing-md)' }}>
               <table style={{ width: '100%', fontSize: 'var(--font-size-xs)', borderCollapse: 'collapse' }}>
@@ -217,10 +226,10 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
                       <td style={{ padding: '6px 8px' }}>{t.name}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                         <span style={{
-                          color: t.type === 'buy' ? 'var(--color-success)' : 'var(--color-danger)',
+                          color: (flipDirection ? t.type !== 'buy' : t.type === 'buy') ? 'var(--color-success)' : 'var(--color-danger)',
                           fontWeight: 500,
                         }}>
-                          {t.type === 'buy' ? '买入' : '卖出'}
+                          {flipDirection ? (t.type === 'buy' ? '卖出' : '买入') : (t.type === 'buy' ? '买入' : '卖出')}
                         </span>
                       </td>
                       <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-family-number)' }}>{t.quantity.toLocaleString()}</td>

@@ -14,6 +14,8 @@ interface DailyTradeRow {
   id: number; date: string; type: string; quantity: number; price: number;
   fee: number; total_amount: number; currency: string; notes: string | null;
   created_at: string; name: string; code: string;
+  /** v1.8.2：单笔已实现盈亏（卖出有值，买入 null） */
+  realized_pnl: number | null;
 }
 
 interface DailyTradesResult {
@@ -88,6 +90,17 @@ export function DailyTradesReport() {
     { key: 'total_amount', title: '金额', align: 'right', render: (r) => (
       <NetAmount value={r.total_amount} currency={r.currency} />
     )},
+    { key: 'realized_pnl', title: '已实现盈亏', align: 'right', render: (r) => {
+      // v1.8.2：单笔盈亏拆解（买入无盈亏显示 —）
+      if (r.realized_pnl === null || r.realized_pnl === undefined) {
+        return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
+      }
+      return (
+        <span style={{ color: r.realized_pnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
+          {r.realized_pnl >= 0 ? '+' : ''}{r.realized_pnl.toFixed(2)}
+        </span>
+      );
+    }},
   ];
 
   const s = dailyTrades?.summary;

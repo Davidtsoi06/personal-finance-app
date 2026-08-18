@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import { MIGRATIONS } from '../../src/main/database/migrations';
+import { setDatabaseForTest } from '../../src/main/database';
 import {
   createFixedDepositInDb, updateFixedDepositInDb, deleteFixedDepositInDb,
   settleFixedDepositInDb, getFixedDepositInDb,
@@ -24,6 +25,7 @@ function freshDb(): Database.Database {
       throw err;
     }
   }
+  setDatabaseForTest(db); // 供 buildAssetSummarySheets 等单例服务测试使用
   return db;
 }
 
@@ -139,6 +141,25 @@ describe('定期存款联动询问式（v1.6.1）', () => {
     deleteFixedDepositInDb(db, fd2.id, false);
     expect(accountBalance(db, acc)).toBeCloseTo(70000, 2); // 不退回
     expect(getFixedDepositInDb(db, fd2.id)).toBeUndefined();
+    db.close();
+  });
+
+  it('v1.8.2 已结算定存不再计入报表统计', async () => {
+    const { buildAssetSummarySheets } = await import('../../src/main/services/report-export-service');
+    const db = freshDb();
+    const acc = seedAccount(db, '卡A');
+    const fd = createFixedDepositInDb(db, {
+      account_id: acc, amount: 10000, currency: 'CNY',
+      start_date: '2026-08-01', maturity_date: '2026-08-16',
+      deductMode: 'deduct', deductAccountId: acc,
+    });
+    settleFixedDepositInDb(db, fd.id, { amount: 10150, toAccountId: acc, currency: 'CNY' });
+    const sheets = buildAssetSummarySheets();
+    const fdSheet = sheets.find((s) => s.name === '定期存款')!;
+    expect(fdSheet.rows).toHaveLength(0); // 已结算不再计入
+    const overview = sheets.find((s) => s.name === '总览')!;
+    const fdRow = overview.rows.find((r) => r['类别'] === '定期存款');
+    expect(fdRow['金额(CNY)']).toBe(0);
     db.close();
   });
 

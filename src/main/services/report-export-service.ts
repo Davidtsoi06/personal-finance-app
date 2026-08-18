@@ -26,9 +26,10 @@ export interface DailyTradesResult {
 /** Trades for a single day, joined with asset name/code, plus summary stats. */
 export function getDailyTrades(date: string): DailyTradesResult {
   const db = getDatabase();
+  // v1.8.2：一次 JOIN 持仓成本价，为每笔卖出计算单笔已实现盈亏（消除 N+1）
   const rows = db.prepare(`
     SELECT t.id, t.date, t.type, t.quantity, t.price, t.fee, t.total_amount,
-      t.currency, t.notes, t.created_at, a.name, a.code
+      t.currency, t.notes, t.created_at, a.name, a.code, a.cost_price
     FROM transactions t
     JOIN assets a ON t.asset_id = a.id
     WHERE t.date = ?
@@ -40,12 +41,17 @@ export function getDailyTrades(date: string): DailyTradesResult {
     buyAmount: 0, sellAmount: 0, realizedPnl: 0,
   };
   for (const r of rows) {
-    if (r.type === 'buy') { summary.buyCount++; summary.buyAmount += r.total_amount; }
-    if (r.type === 'sell') {
-      summary.sellCount++; summary.sellAmount += r.total_amount;
-      // Realized P&L: net proceeds − (asset cost_price × sold quantity)
-      const asset = db.prepare('SELECT cost_price FROM assets WHERE id = (SELECT asset_id FROM transactions WHERE id = ?)').get(r.id) as any;
-      if (asset) summary.realizedPnl += r.total_amount - asset.cost_price * r.quantity;
+    if (r.type === 'buy') {
+      summary.buyCount++;
+      summary.buyAmount += r.total_amount;
+      r.realized_pnl = null;
+    } else {
+      summary.sellCount++;
+      summary.sellAmount += r.total_amount;
+      // 单笔已实现盈亏 = 卖出净额 − 成本价×数量
+      const pnl = Math.round((r.total_amount - r.cost_price * r.quantity) * 100) / 100;
+      r.realized_pnl = pnl;
+      summary.realizedPnl = Math.round((summary.realizedPnl + pnl) * 100) / 100;
     }
   }
   return { date, rows, summary };
@@ -89,6 +95,7 @@ export function buildAssetSummarySheets(): SheetData[] {
     FROM fixed_deposits fd
     JOIN accounts a ON a.id = fd.account_id AND a.is_active = 1
     LEFT JOIN currencies c ON fd.currency = c.code
+    WHERE fd.status = 'active'
   `).get() as any;
   const insRow = db.prepare(`
     SELECT COALESCE(SUM(cash_value * COALESCE(c.rate_to_base, 1)), 0) as total
@@ -183,7 +190,7 @@ export function buildAssetSummarySheets(): SheetData[] {
       fd.start_date, fd.maturity_date, fd.notes
     FROM fixed_deposits fd
     JOIN accounts a ON fd.account_id = a.id
-    WHERE a.is_active = 1
+    WHERE a.is_active = 1 AND fd.status = 'active'
     ORDER BY fd.maturity_date, fd.id
   `).all() as any[];
 
