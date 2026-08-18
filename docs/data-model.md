@@ -163,6 +163,9 @@
 | date | TEXT | 日期 |
 | notes | TEXT | 备注 |
 | investment_account_id | INTEGER FK | 关联投资账户（v11 新增，取款转入券商时追踪现金余额） |
+| transfer_type | TEXT | 内部转账标记：fd_out 转定期 / fd_in 定期回款 / NULL 普通（v20 新增，v1.9.0） |
+| linked_fd_id | INTEGER | 关联定期存款编号（v20 新增，v1.9.0） |
+| statement_hash | TEXT | 日结单行指纹（日期|方向|金额|币种|摘要，防重复导入，v20 新增） |
 | created_at | TEXT | 创建时间 |
 
 ---
@@ -329,10 +332,30 @@
 | currency | TEXT | 币种 |
 | interest_rate | REAL | 年利率（%） |
 | start_date | TEXT | 起始日期 |
-| maturity_date | TEXT | 到期日期 |
+| maturity_date | TEXT | 到期日期（空串 = 待定，v1.9.0 日结单自动创建时为空，回款后自动补全） |
 | notes | TEXT | 备注 |
+| source | TEXT | 来源：manual 手动 / statement 日结单（v20 新增，v1.9.0） |
+| linked_tx_id | INTEGER | 关联转出银行流水（account_transactions.id，v20 新增） |
+| settle_tx_id | INTEGER | 关联回款银行流水（v20 新增，结算时写入） |
 | created_at | TEXT | 创建时间 |
 | updated_at | TEXT | 更新时间 |
+
+---
+
+## 19.1 fixed_deposit_flows — 定存流水表（v20 新增，v1.9.0）
+
+每笔定期存款的独立流水台账（虚拟定期账户的「交易明细」）：存入本金 / 派息（预留）/ 支取本金（预留）/ 到期本金 / 到期利息。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| fd_id | INTEGER FK | 关联定期存款（ON DELETE CASCADE） |
+| type | TEXT | principal_in 存入本金 / interest 派息 / principal_out 支取本金 / settle_principal 到期本金回款 / settle_interest 到期利息 |
+| amount | REAL | 金额（利息可带符号：回款额 < 本金时为负） |
+| currency | TEXT | 币种 |
+| date | TEXT | 日期 |
+| notes | TEXT | 备注 |
+| created_at | TEXT | 创建时间 |
 
 ---
 
@@ -421,6 +444,9 @@
 | v15 | 孤儿持仓检测：app_settings['orphan_assets.count'] 写入无归属持仓计数（v1.6.0，供投资页提示转挂/删除） |
 | v16 | + fixed_deposits.deduct_mode（deduct/record_only）与 deduct_account_id（资金交互询问式，存量回填，v1.6.0） |
 | v17 | + fixed_deposits.status（active/settled，到期回款询问式，存量='active'，v1.6.1） |
+| v18 | + social_obligations.amount / currency（债务债权金额，v1.7.3 计入资产） |
+| v19 | + social_obligations.completed_at（债务债权完成日期，v1.7.4） |
+| v20 | 定期全自动体系（v1.9.0）：+ fixed_deposits.source / linked_tx_id / settle_tx_id；+ account_transactions.transfer_type / linked_fd_id / statement_hash（含索引）；+ fixed_deposit_flows 定存流水表；存量扣款/回款流水自动回填打标并补本金流水 |
 
 ---
 
