@@ -447,6 +447,7 @@
 | v18 | + social_obligations.amount / currency（债务债权金额，v1.7.3 计入资产） |
 | v19 | + social_obligations.completed_at（债务债权完成日期，v1.7.4） |
 | v20 | 定期全自动体系（v1.9.0）：+ fixed_deposits.source / linked_tx_id / settle_tx_id；+ account_transactions.transfer_type / linked_fd_id / statement_hash（含索引）；+ fixed_deposit_flows 定存流水表；存量扣款/回款流水自动回填打标并补本金流水 |
+| v21 | 成本价历史重放修复（v1.9.1）：无结构变更——按 (日期,id) 重放买卖历史重算每只持仓的成本价/数量/总成本/市值/盈亏并写回 assets；旧值快照存 `app_settings['cost_recalc.snapshot']` |
 
 ---
 
