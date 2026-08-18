@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAmount } from '../../src/shared/utils/amount-parse';
+import { parseAmount, deriveTradeFee } from '../../src/shared/utils/amount-parse';
 
 describe('parseAmount（v1.7.1 日结单金额解析）', () => {
   it('千分位逗号', () => {
@@ -23,6 +23,19 @@ describe('parseAmount（v1.7.1 日结单金额解析）', () => {
     expect(parseAmount('100.5')).toBe(100.5);
     expect(parseAmount('-12.5')).toBe(-12.5);
     expect(parseAmount(0)).toBe(0);
+  });
+
+  it('deriveTradeFee（v1.8.3）：数量×价格与发生金额的绝对差推算手续费', () => {
+    // 买入：100×345=34500，发生金额 34515（或带负号）→ 费 15
+    expect(deriveTradeFee(100, 345, 34515)).toBe(15);
+    expect(deriveTradeFee(100, 345, -34515)).toBe(15);
+    // 卖出：净额 34485 → 费 15
+    expect(deriveTradeFee(100, 345, 34485)).toBe(15);
+    // 四舍五入到分
+    expect(deriveTradeFee(3, 10.125, 30.5)).toBe(0.13);
+    // 非法输入 → 0
+    expect(deriveTradeFee(0, 345, 34485)).toBe(0);
+    expect(deriveTradeFee(NaN, 345, 34485)).toBe(0);
   });
 
   it('非法输入返回 null（不静默 NaN）', () => {

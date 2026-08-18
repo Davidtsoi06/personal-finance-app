@@ -111,6 +111,26 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
     }
   };
 
+  // v1.8.3：预览可编辑——用户可在预览上修正任意字段后再导入
+  const updateTrade = (index: number, field: keyof ParsedTrade, value: string) => {
+    setParsedTrades((prev) => {
+      if (!prev) return prev;
+      const next = prev.map((t, i) => {
+        if (i !== index) return t;
+        const copy = { ...t };
+        if (field === 'quantity' || field === 'price' || field === 'fee') {
+          copy[field] = parseFloat(value) || 0;
+        } else if (field === 'type') {
+          copy.type = value === 'sell' ? 'sell' : 'buy';
+        } else {
+          (copy as any)[field] = value;
+        }
+        return copy;
+      });
+      return next;
+    });
+  };
+
   const handleImportParsed = async () => {
     if (!parsedTrades || parsedTrades.length === 0) return;
     setImporting(true);
@@ -198,7 +218,7 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
               background: '#F6FFED', borderRadius: 'var(--radius-sm)',
               fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)',
             }}>
-              已识别格式：<b>{parseFormat}</b>，共 <b>{parsedTrades.length}</b> 条交易
+              已识别格式：<b>{parseFormat}</b>，共 <b>{parsedTrades.length}</b> 条交易 · 预览表格可直接修改后再导入
               <label style={{ marginLeft: 16, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                 <input type="checkbox" checked={flipDirection} onChange={(e) => setFlipDirection(e.target.checked)} />
                 🔁 反转买卖方向（部分券商的买入/卖出符号约定相反）
@@ -221,21 +241,43 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
                 <tbody>
                   {parsedTrades.map((t, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                      <td style={{ padding: '6px 8px' }}>{t.date}</td>
-                      <td style={{ padding: '6px 8px', fontFamily: 'var(--font-family-number)' }}>{t.code}</td>
-                      <td style={{ padding: '6px 8px' }}>{t.name}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                        <span style={{
-                          color: (flipDirection ? t.type !== 'buy' : t.type === 'buy') ? 'var(--color-success)' : 'var(--color-danger)',
-                          fontWeight: 500,
-                        }}>
-                          {flipDirection ? (t.type === 'buy' ? '卖出' : '买入') : (t.type === 'buy' ? '买入' : '卖出')}
-                        </span>
+                      <td style={{ padding: '4px 4px' }}>
+                        <input className="form-input" style={{ padding: '2px 6px', fontSize: 'var(--font-size-xs)', width: 96 }}
+                          value={t.date} onChange={(e) => updateTrade(i, 'date', e.target.value)} />
                       </td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-family-number)' }}>{t.quantity.toLocaleString()}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-family-number)' }}>{t.price.toFixed(3)}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-family-number)' }}>{t.fee.toFixed(2)}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>{t.currency}</td>
+                      <td style={{ padding: '4px 4px' }}>
+                        <input className="form-input" style={{ padding: '2px 6px', fontSize: 'var(--font-size-xs)', width: 76 }}
+                          value={t.code} onChange={(e) => updateTrade(i, 'code', e.target.value)} />
+                      </td>
+                      <td style={{ padding: '4px 4px' }}>
+                        <input className="form-input" style={{ padding: '2px 6px', fontSize: 'var(--font-size-xs)', width: 110 }}
+                          value={t.name} onChange={(e) => updateTrade(i, 'name', e.target.value)} />
+                      </td>
+                      <td style={{ padding: '4px 4px', textAlign: 'center' }}>
+                        <select className="form-select" style={{ padding: '2px 4px', fontSize: 'var(--font-size-xs)', width: 72 }}
+                          value={flipDirection ? (t.type === 'buy' ? 'sell' : 'buy') : t.type}
+                          onChange={(e) => updateTrade(i, 'type', flipDirection ? (e.target.value === 'sell' ? 'buy' : 'sell') : e.target.value)}
+                        >
+                          <option value="buy">买入</option>
+                          <option value="sell">卖出</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: '4px 4px' }}>
+                        <input className="form-input" type="number" step="any" min="0" style={{ padding: '2px 6px', fontSize: 'var(--font-size-xs)', width: 76 }}
+                          value={t.quantity} onChange={(e) => updateTrade(i, 'quantity', e.target.value)} />
+                      </td>
+                      <td style={{ padding: '4px 4px' }}>
+                        <input className="form-input" type="number" step="any" min="0" style={{ padding: '2px 6px', fontSize: 'var(--font-size-xs)', width: 76 }}
+                          value={t.price} onChange={(e) => updateTrade(i, 'price', e.target.value)} />
+                      </td>
+                      <td style={{ padding: '4px 4px' }}>
+                        <input className="form-input" type="number" step="any" min="0" style={{ padding: '2px 6px', fontSize: 'var(--font-size-xs)', width: 66 }}
+                          value={t.fee} onChange={(e) => updateTrade(i, 'fee', e.target.value)} />
+                      </td>
+                      <td style={{ padding: '4px 4px', textAlign: 'center' }}>
+                        <input className="form-input" style={{ padding: '2px 6px', fontSize: 'var(--font-size-xs)', width: 56 }}
+                          value={t.currency} onChange={(e) => updateTrade(i, 'currency', e.target.value)} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

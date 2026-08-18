@@ -1,4 +1,16 @@
 /**
+ * 推算手续费（v1.8.3）：日结单仅有「发生金额」（净额）而无「成交金额」时，
+ * 由数量×价格推算成交金额，手续费 = ||发生金额| − 成交金额|（与买卖方向无关）。
+ */
+export function deriveTradeFee(quantity: number, price: number, netAmount: number): number {
+  if (!Number.isFinite(quantity) || !Number.isFinite(price) || !Number.isFinite(netAmount)) return 0;
+  if (quantity <= 0 || price < 0) return 0;
+  const gross = quantity * price;
+  const fee = Math.abs(Math.abs(netAmount) - gross);
+  return Math.round(fee * 100) / 100;
+}
+
+/**
  * amount-parse — 日结单/账单金额解析（v1.7.1）。
  * 支持：千分位逗号（1,234.56）、括号负数（(100.00)）、货币符号（¥/$/€/£）、空格。
  * 解析失败返回 null（由调用方决定跳过或报错），绝不静默返回 NaN。

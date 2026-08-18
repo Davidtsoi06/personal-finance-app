@@ -4,7 +4,7 @@
  * Supports built-in formats, custom user-defined formats, and generic auto-detection.
  */
 import { getDatabase } from '../database';
-import { parseAmount } from '../../shared/utils/amount-parse';
+import { parseAmount, deriveTradeFee } from '../../shared/utils/amount-parse';
 import { normalizeDate, normalizeCurrency, normalizeCode, normalizeTradeType } from './data-normalizer';
 
 /** Safely convert a cell value (string/number from xlsx or CSV) to a trimmed string. */
@@ -261,6 +261,9 @@ function mapRowToTrade(cols: string[], colMap: Record<string, number>): ParsedTr
   let fee = colMap['fee'] !== undefined ? (parseAmount(cols[colMap['fee']]) || 0) : 0;
   if (rawAmount !== null && rawNetAmount !== null) {
     fee = Math.abs(Math.abs(rawNetAmount) - Math.abs(rawAmount));
+  } else if (rawAmount === null && rawNetAmount !== null && qty !== null && price !== null) {
+    // v1.8.3：无成交金额列 → 数量×价格推算成交金额，与发生金额的绝对差推算手续费
+    fee = deriveTradeFee(qty, price, rawNetAmount);
   }
   const currency = normalizeCurrency(
     colMap['currency'] !== undefined ? safeTrim(cols[colMap['currency']]) : '',
@@ -362,6 +365,9 @@ function tryGenericDetection(lines: string[]): ParseResult {
     let fee = feeIdx !== -1 ? (parseAmount(cols[feeIdx]) || 0) : 0;
     if (rawAmount !== null && rawNetAmount !== null) {
       fee = Math.abs(Math.abs(rawNetAmount) - Math.abs(rawAmount));
+    } else if (rawAmount === null && rawNetAmount !== null && qty !== null && price !== null) {
+      // v1.8.3：无成交金额列 → 数量×价格推算成交金额，与发生金额的绝对差推算手续费
+      fee = deriveTradeFee(qty, price, rawNetAmount);
     }
 
     const typeRaw = typeIdx !== -1 ? cols[typeIdx]?.trim() : '';
