@@ -5,6 +5,13 @@
 import { getDatabase } from '../database';
 import { ASSET_SORT_SQL } from '../database/services/asset-service';
 import { ASSET_TYPE_LABELS, MARKET_LABELS, TRADE_TYPE_LABELS } from '../../shared/constants/labels';
+import { roundMoney, roundPct } from '../../shared/utils/money';
+import { addPosition, removePosition, type AssetState } from '../../shared/utils/investment';
+
+/** 本地时区的 YYYY-MM-DD（toISOString 是 UTC，跨时区会错一天） */
+export function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 // ─── 每日交易报表 ────────────────────────────────────────────────
 
@@ -41,31 +48,62 @@ export function weightedAvgCost(buys: { total_amount: number; quantity: number }
   return Number.isFinite(avg) ? Math.round(avg * 10000) / 10000 : null;
 }
 
-/** Trades for a single day, joined with asset name/code, plus summary stats. */
+/**
+ * Trades for a single day, joined with asset name/code, plus summary stats.
+ * v1.10.0 成本基础改版（完整重放法，与迁移 v21 同口径）：
+ *   - 每只资产按 (date, id) 顺序重放买卖：买入加仓（含费）、卖出按当时加权成本冲销；
+ *     清仓后持仓归零，重新买入从新成本开始（修复「清仓后成本价残留」）；
+ *   - 买入行成本价 = 该笔买入后的持仓加权成本（与卖出口径一致）；
+ *   - 卖出行无持仓（无买入记录或已清仓）→ 成本价 null 显示 —，不再回退资产表旧值；
+ *   - 零成本买入（total_amount=0，如送股/红股）标记 zero_cost，摊薄计算保留（财务正确）。
+ */
 export function getDailyTrades(date: string): DailyTradesResult {
   const db = getDatabase();
   const rows = db.prepare(`
     SELECT t.id, t.date, t.type, t.quantity, t.price, t.fee, t.total_amount,
-      t.currency, t.notes, t.created_at, t.asset_id, a.name, a.code, a.cost_price
+      t.currency, t.notes, t.created_at, t.asset_id, a.name, a.code
     FROM transactions t
     JOIN assets a ON t.asset_id = a.id
     WHERE t.date = ?
     ORDER BY t.created_at ASC, t.id ASC
   `).all(date) as any[];
 
-  // v1.8.4：一次性取当日(含)前全部买入（按时间排序），逐行推进加权成本，消除 N+1
-  const buys = db.prepare(`
-    SELECT asset_id, total_amount, quantity, date, id FROM transactions
-    WHERE type = 'buy' AND date <= ?
+  // 当日(含)前全部买卖（按时间排序），供逐行推进重放
+  const allTrades = db.prepare(`
+    SELECT asset_id, type, quantity, total_amount, price, date, id FROM transactions
+    WHERE type IN ('buy', 'sell') AND date <= ?
     ORDER BY date ASC, id ASC
-  `).all(date) as { asset_id: number; total_amount: number; quantity: number; date: string; id: number }[];
-  const buysByAsset = new Map<number, { total_amount: number; quantity: number; date: string; id: number }[]>();
-  for (const b of buys) {
-    const arr = buysByAsset.get(b.asset_id) || [];
-    arr.push(b);
-    buysByAsset.set(b.asset_id, arr);
+  `).all(date) as { asset_id: number; type: string; quantity: number; total_amount: number; price: number; date: string; id: number }[];
+  const tradesByAsset = new Map<number, typeof allTrades>();
+  for (const t of allTrades) {
+    const arr = tradesByAsset.get(t.asset_id) || [];
+    arr.push(t);
+    tradesByAsset.set(t.asset_id, arr);
   }
-  const cursor = new Map<number, number>(); // asset_id -> 已并入成本基础的买入下标
+  const cursor = new Map<number, number>();
+  const position = new Map<number, AssetState>();
+
+  /** 推进到指定 (date, id)：inclusive=true 包含该笔自身（买入行取「买入后」状态） */
+  const advanceTo = (assetId: number, rowDate: string, rowId: number, inclusive: boolean): AssetState => {
+    const list = tradesByAsset.get(assetId) || [];
+    let idx = cursor.get(assetId) || 0;
+    let st = position.get(assetId) || { quantity: 0, totalCost: 0, costPrice: 0 };
+    while (idx < list.length) {
+      const t = list[idx];
+      const before = t.date < rowDate || (t.date === rowDate && (inclusive ? t.id <= rowId : t.id < rowId));
+      if (!before) break;
+      if (t.type === 'buy') {
+        st = addPosition(st, t.quantity, t.total_amount);
+      } else if (t.type === 'sell') {
+        const basis = st.costPrice > 0 ? st.costPrice * t.quantity : t.quantity * t.price;
+        st = removePosition(st, t.quantity, basis);
+      }
+      idx++;
+    }
+    cursor.set(assetId, idx);
+    position.set(assetId, st);
+    return st;
+  };
 
   const summary: DailyTradesSummary = {
     totalCount: rows.length, buyCount: 0, sellCount: 0,
@@ -76,28 +114,24 @@ export function getDailyTrades(date: string): DailyTradesResult {
       summary.buyCount++;
       summary.buyAmount += r.total_amount;
       r.realized_pnl = null;
-      // 买入行成本价 = 本笔含费均价（总金额 ÷ 数量）
-      r.cost_price = r.quantity > 0
-        ? Math.round((r.total_amount / r.quantity) * 10000) / 10000
-        : (Number(r.cost_price) > 0 ? Number(r.cost_price) : null);
-    } else {
+      r.zero_cost = Number(r.total_amount) === 0 && Number(r.quantity) > 0;
+      // 买入行成本价 = 该笔买入后的持仓加权成本（清仓后重新买入 → 新成本）
+      const st = advanceTo(r.asset_id, r.date, r.id, true);
+      r.cost_price = st.quantity > 0 && st.costPrice > 0
+        ? Math.round(st.costPrice * 10000) / 10000
+        : (r.quantity > 0 ? Math.round((r.total_amount / r.quantity) * 10000) / 10000 : null);
+    } else if (r.type === 'sell') {
       summary.sellCount++;
       summary.sellAmount += r.total_amount;
-      // 卖出成本基础：推进到该笔为止（date,id 均不超过）的买入加权平均
-      const seq = buysByAsset.get(r.asset_id) || [];
-      let idx = cursor.get(r.asset_id) || 0;
-      const acc = { total_amount: 0, quantity: 0 };
-      while (idx < seq.length && (seq[idx].date < r.date || (seq[idx].date === r.date && seq[idx].id <= r.id))) {
-        acc.total_amount += seq[idx].total_amount;
-        acc.quantity += seq[idx].quantity;
-        idx++;
-      }
-      cursor.set(r.asset_id, idx);
-      let basis: number | null = weightedAvgCost([acc]);
-      if (basis === null && Number(r.cost_price) > 0) basis = Number(r.cost_price);
+      r.zero_cost = false;
+      // 卖出成本基础 = 卖出前持仓的加权成本（不含本笔）
+      const st = advanceTo(r.asset_id, r.date, r.id, false);
+      const basis: number | null = st.quantity > 0 && st.costPrice > 0
+        ? Math.round(st.costPrice * 10000) / 10000
+        : null;
       r.cost_price = basis;
       if (basis === null) {
-        // 无任何成本价 → 盈亏显示 —，不参与汇总（修复 NaN 污染）
+        // 无持仓/无成本价 → 盈亏显示 —，不参与汇总（不回退资产表旧值）
         r.realized_pnl = null;
         summary.unknownPnlCount++;
       } else {
@@ -105,9 +139,72 @@ export function getDailyTrades(date: string): DailyTradesResult {
         r.realized_pnl = pnl;
         summary.realizedPnl = Math.round((summary.realizedPnl + pnl) * 100) / 100;
       }
+    } else {
+      // dividend / split 等：不参与买卖统计与盈亏
+      r.realized_pnl = null;
+      r.cost_price = null;
+      r.zero_cost = false;
     }
   }
   return { date, rows, summary };
+}
+
+// ─── 投资收益明细（近 N 天卖出收益，v1.10.0） ──────────────────────
+
+export interface RecentSellRow {
+  id: number;
+  name: string;
+  code: string;
+  currency: string;
+  quantity: number;
+  price: number;
+  total_amount: number;
+  /** 成本价（当日(含)前买入加权平均，无则 null） */
+  cost_price: number | null;
+  /** 单笔已实现盈亏 = 卖出净额 − 成本价×数量（无成本价 null） */
+  realized_pnl: number | null;
+  /** 收益率（%） = 盈亏 ÷ 成本基数 × 100 */
+  rate_pct: number | null;
+}
+
+export interface RecentSellDay {
+  date: string;
+  sells: RecentSellRow[];
+  sellCount: number;
+  realizedPnl: number;
+  sellAmount: number;
+}
+
+/**
+ * 投资收益明细：最近 days 天（今天起往前）每天的卖出交易明细，按天分组。
+ * 只含卖出（买入不创造收益）；成本基础复用 getDailyTrades 的历史加权平均逻辑。
+ */
+export function getRecentSellPnl(days = 3): RecentSellDay[] {
+  const out: RecentSellDay[] = [];
+  const today = new Date();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const dateStr = localDateStr(d);
+    const { rows } = getDailyTrades(dateStr);
+    const sells: RecentSellRow[] = [];
+    let realizedPnl = 0;
+    let sellAmount = 0;
+    for (const r of rows) {
+      if (r.type !== 'sell') continue;
+      const basis = r.cost_price != null && r.cost_price > 0 ? r.cost_price * r.quantity : 0;
+      const rate = basis > 0 && r.realized_pnl != null ? roundPct((r.realized_pnl / basis) * 100) : null;
+      sells.push({
+        id: r.id, name: r.name, code: r.code, currency: r.currency,
+        quantity: r.quantity, price: r.price, total_amount: r.total_amount,
+        cost_price: r.cost_price, realized_pnl: r.realized_pnl, rate_pct: rate,
+      });
+      realizedPnl = roundMoney(realizedPnl + (r.realized_pnl ?? 0));
+      sellAmount = roundMoney(sellAmount + r.total_amount);
+    }
+    out.push({ date: dateStr, sells, sellCount: sells.length, realizedPnl, sellAmount });
+  }
+  return out;
 }
 
 // ─── 完整资产汇总（多 sheet 快照） ────────────────────────────────

@@ -7,6 +7,7 @@ import { Button } from '../ui/Button';
 import { Table, Column } from '../ui/Table';
 import { Modal } from '../ui/Modal';
 import { invoke } from '../../hooks/useIpc';
+import { AiFormatGeneratorModal } from '../ai/AiFormatGeneratorModal';
 
 interface CustomFormat {
   id: number;
@@ -50,6 +51,8 @@ export function BrokerFormatCard({ refreshKey = 0 }: Props) {
   const [editingCustomFormatId, setEditingCustomFormatId] = useState<number | null>(null);
   const [formatSaving, setFormatSaving] = useState(false);
   const [formatMsg, setFormatMsg] = useState<string | null>(null);
+  // v1.10.0：AI 生成模板
+  const [showAiModal, setShowAiModal] = useState(false);
 
   const loadCustomFormats = useCallback(() => {
     invoke<CustomFormat[]>('customFormat:list').then((d) => setCustomFormats(d || []));
@@ -172,11 +175,20 @@ export function BrokerFormatCard({ refreshKey = 0 }: Props) {
         )}
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
           <Button variant="primary" onClick={() => handleOpenFormatModal()}>＋ 添加自定义格式</Button>
+          <Button variant="secondary" onClick={() => setShowAiModal(true)}>🤖 AI 生成模板</Button>
           {formatMsg && (
             <span style={{ fontSize: 'var(--font-size-sm)', color: formatMsg.startsWith('✅') ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatMsg}</span>
           )}
         </div>
       </Card>
+
+      {/* v1.10.0：AI 生成模板（与手动创建并存） */}
+      <AiFormatGeneratorModal
+        open={showAiModal}
+        kind="broker"
+        onClose={() => setShowAiModal(false)}
+        onSaved={loadCustomFormats}
+      />
 
       {/* Custom format config Modal */}
       <Modal open={showFormatModal} title={editingCustomFormatId ? '📐 编辑自定义日结单格式' : '📐 添加自定义日结单格式'} onClose={() => setShowFormatModal(false)}>

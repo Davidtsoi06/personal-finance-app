@@ -297,6 +297,8 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'settings:openUserDataDir': z.tuple([]),
   'archive:execute': z.tuple([z.array(z.string())]),
   'report:realizedPnl': z.tuple([z.coerce.number().int().positive()]),
+  'report:recentSellPnl': z.tuple([z.coerce.number().int().min(1).max(7).optional()]),
+  'ai:generateFormat': z.tuple([z.string().min(1).max(20000), z.enum(['bank', 'broker'])]),
   'trade:importParsed': z.tuple([z.array(recordItem), id]),
   'bank:importParsed': z.tuple([z.array(recordItem), id]),
   'bank:suggestActions': z.tuple([z.array(recordItem), id]),

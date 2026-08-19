@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Amount } from '../components/ui/Amount';
 import { Badge } from '../components/ui/Badge';
 import { invoke } from '../hooks/useIpc';
+import { usePriceRefresh } from '../hooks/usePriceRefresh';
 import { ACCOUNT_TYPE_LABELS, ASSET_TYPE_LABELS } from '@shared/constants/labels';
 import { AccountTransactionsSection, AccountTransaction } from '../components/account/AccountTransactionsSection';
 import { FixedDepositsSection } from '../components/account/FixedDepositsSection';
@@ -53,6 +54,7 @@ export function AccountDetail() {
   }, [accountId]);
 
   useEffect(() => { load(); }, [load]);
+  usePriceRefresh(load); // v1.10.0：股价更新后账户详情自动同步
 
   if (loading) return <div className="page-loading">加载中...</div>;
   if (!account) return <div className="page-loading">账户不存在</div>;

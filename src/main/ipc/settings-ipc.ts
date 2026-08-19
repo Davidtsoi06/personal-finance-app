@@ -381,6 +381,12 @@ export function registerSettingsIpcHandlers(): void {
     }
   });
 
+  // v1.10.0：AI 生成日结单模板（bank=银行 / broker=券商）
+  handleValidated('ai:generateFormat', async (sample: string, kind: 'bank' | 'broker') => {
+    const result = await aiService.generateStatementFormat(sample, kind);
+    return { success: true, format: result };
+  });
+
   ipcMain.handle('ai:dailySummary', async (_e, date?: string) => {
     const targetDate = date || new Date().toISOString().slice(0, 10);
     // Check cache first

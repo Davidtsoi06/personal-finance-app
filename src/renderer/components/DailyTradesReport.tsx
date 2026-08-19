@@ -16,8 +16,10 @@ interface DailyTradeRow {
   created_at: string; name: string; code: string;
   /** v1.8.2：单笔已实现盈亏（卖出有值，买入 null） */
   realized_pnl: number | null;
-  /** v1.8.4：成本价（卖出=成本基础，买入=本笔含费均价；无则 null） */
+  /** v1.8.4：成本价（卖出=成本基础，买入=持仓加权成本；无则 null） */
   cost_price: number | null;
+  /** v1.10.0：零成本买入（送股/红股等，金额=0） */
+  zero_cost?: boolean;
 }
 
 interface DailyTradesResult {
@@ -94,7 +96,16 @@ export function DailyTradesReport() {
       if (r.cost_price === null || r.cost_price === undefined || !isFinite(r.cost_price)) {
         return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
       }
-      return <span>{r.cost_price.toFixed(2)}</span>;
+      return (
+        <span>
+          {r.cost_price.toFixed(2)}
+          {r.zero_cost && (
+            <span style={{ color: 'var(--color-warning, #E6A23C)', fontSize: 'var(--font-size-xs)', marginLeft: 4 }}>
+              ⚠️ 0成本
+            </span>
+          )}
+        </span>
+      );
     }},
     { key: 'fee', title: '手续费', align: 'right', render: (r) => (r.fee || 0).toFixed(2) },
     { key: 'total_amount', title: '金额', align: 'right', render: (r) => (

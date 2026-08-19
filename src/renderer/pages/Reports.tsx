@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import * as echarts from 'echarts';
 import { Card } from '../components/ui/Card';
 import { NetAmount } from '../components/ui/Amount';
@@ -8,6 +8,8 @@ import { NetWorthTrendChart } from '../components/charts/NetWorthTrendChart';
 import { ASSET_TYPE_LABELS } from '@shared/constants/labels';
 import { DailyTradesReport } from '../components/DailyTradesReport';
 import { RealizedPnlCard } from '../components/cards/RealizedPnlCard';
+import { RecentSellPnlCard } from '../components/cards/RecentSellPnlCard';
+import { usePriceRefresh } from '../hooks/usePriceRefresh';
 import { CHART_PALETTE, INCOME_EXPENSE_COLORS, CATEGORY_GRADIENT } from '@shared/constants/chart-colors';
 import './Dashboard.css';
 
@@ -55,28 +57,30 @@ export function Reports() {
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [stats, catData, assetData, nwData] = await Promise.all([
-          invoke<YearlyStats>('report:yearlyStats', selectedYear),
-          invoke<CategoryItem[]>('report:categoryBreakdown', { type: 'expense', year: selectedYear }),
-          invoke<AssetPerformance[]>('report:assetPerformance'),
-          invoke<any[]>('netWorth:history', 180),
-        ]);
-        setYearlyStats(stats);
-        setCategories(catData || []);
-        setAssets(assetData || []);
-        setNwHistory(nwData || []);
-        setLoading(false);
-      } catch (err) {
-        console.error('Failed to load report data:', err);
-        setLoading(false);
-      }
+  const loadData = useCallback(async () => {
+    try {
+      const [stats, catData, assetData, nwData] = await Promise.all([
+        invoke<YearlyStats>('report:yearlyStats', selectedYear),
+        invoke<CategoryItem[]>('report:categoryBreakdown', { type: 'expense', year: selectedYear }),
+        invoke<AssetPerformance[]>('report:assetPerformance'),
+        invoke<any[]>('netWorth:history', 180),
+      ]);
+      setYearlyStats(stats);
+      setCategories(catData || []);
+      setAssets(assetData || []);
+      setNwHistory(nwData || []);
+      setLoading(false);
+    } catch (err) {
+      console.error('Failed to load report data:', err);
+      setLoading(false);
     }
+  }, [selectedYear]);
+
+  useEffect(() => {
     setLoading(true);
     loadData();
-  }, [selectedYear]);
+  }, [loadData]);
+  usePriceRefresh(loadData); // v1.10.0：股价更新后报表自动同步
 
   // ── Monthly income/expense bar + line chart ──
   useEffect(() => {
@@ -208,36 +212,7 @@ export function Reports() {
     return () => { chart.dispose(); window.removeEventListener('resize', handleResize); };
   }, [assets]);
 
-  // ── Asset performance table columns ──
-  const assetColumns: Column<AssetPerformance>[] = [
-    { key: 'name', title: '名称', render: (r) => (
-      <span>
-        <span>{r.name}</span>
-        <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)', marginLeft: 6 }}>{r.code}</span>
-      </span>
-    )},
-    { key: 'type', title: '类型', render: (r) => ASSET_TYPE_LABELS[r.type] || r.type },
-    // v1.9.1：成本价（历史重放修复后）、交易价（现价）、成交数量
-    { key: 'quantity', title: '成交数量', align: 'right', render: (r) => r.quantity.toLocaleString() },
-    { key: 'cost_price', title: '成本价', align: 'right', render: (r) => (r.cost_price || 0).toFixed(3) },
-    { key: 'current_price', title: '交易价', align: 'right', render: (r) => (r.current_price || 0).toFixed(3) },
-    { key: 'market_value', title: '市值', align: 'right', render: (r) => (
-      <NetAmount value={r.market_value} currency={r.currency} />
-    )},
-    { key: 'total_cost', title: '成本', align: 'right', render: (r) => (
-      <NetAmount value={r.total_cost} currency={r.currency} />
-    )},
-    { key: 'profit_loss', title: '盈亏', align: 'right', render: (r) => (
-      <span style={{ color: r.profit_loss >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 500 }}>
-        {r.profit_loss >= 0 ? '+' : ''}{r.profit_loss.toLocaleString()}
-      </span>
-    )},
-    { key: 'profit_loss_pct', title: '收益率', align: 'right', render: (r) => (
-      <span style={{ color: r.profit_loss_pct >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-        {r.profit_loss_pct >= 0 ? '+' : ''}{r.profit_loss_pct.toFixed(2)}%
-      </span>
-    )},
-  ];
+  // v1.10.0：投资收益明细改为近 3 天卖出收益（见 RecentSellPnlCard），持仓表移除
 
   // ── Export handler ──
   const handleExport = async () => {
@@ -355,15 +330,9 @@ export function Reports() {
         </Card>
       </div>
 
-      {/* Row 3: Investment performance detail table */}
+      {/* Row 3: v1.10.0 投资收益明细 = 近 3 天卖出收益（只显示卖出） */}
       <div style={{ marginTop: 'var(--spacing-lg)' }}>
-        <Card title="📋 投资收益明细">
-          {assets.length > 0 ? (
-            <Table columns={assetColumns} data={assets} rowKey={(r) => r.code} />
-          ) : (
-            <div className="card-placeholder">暂无投资持仓</div>
-          )}
-        </Card>
+        <RecentSellPnlCard />
       </div>
 
       {/* Row 3.5: Daily trades report */}

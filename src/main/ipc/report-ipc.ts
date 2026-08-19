@@ -7,7 +7,7 @@ import { ipcMain } from 'electron';
 import { getDatabase } from '../database';
 import { ASSET_SORT_SQL } from '../database/services/asset-service';
 import {
-  getDailyTrades, buildAssetSummarySheets,
+  getDailyTrades, getRecentSellPnl, buildAssetSummarySheets,
   transformRows, getExportHeaders,
 } from '../services/report-export-service';
 import { computeRealizedPnl } from '../../shared/utils/investment';
@@ -41,6 +41,9 @@ export function registerReportIpcHandlers(): void {
       buyAmount: roundMoney(buys.reduce((s: number, r: any) => s + r.totalAmount, 0)),
     };
   });
+
+  // v1.10.0：投资收益明细——最近 days 天每天卖出收益（成本价/成交价/数量/盈亏/收益率）
+  handleValidated('report:recentSellPnl', (days?: number) => getRecentSellPnl(days ?? 3));
 
   // ── Reports / Analytics ──
   ipcMain.handle('report:monthlyTrend', (_e, months: number = 12) => {

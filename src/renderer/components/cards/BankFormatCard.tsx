@@ -7,6 +7,7 @@ import { Button } from '../ui/Button';
 import { Table, Column } from '../ui/Table';
 import { Modal } from '../ui/Modal';
 import { invoke } from '../../hooks/useIpc';
+import { AiFormatGeneratorModal } from '../ai/AiFormatGeneratorModal';
 
 interface BankFormat {
   id: number;
@@ -46,6 +47,8 @@ export function BankFormatCard({ refreshKey = 0 }: Props) {
   const [editingBankFormatId, setEditingBankFormatId] = useState<number | null>(null);
   const [bankFormatSaving, setBankFormatSaving] = useState(false);
   const [bankFormatMsg, setBankFormatMsg] = useState<string | null>(null);
+  // v1.10.0：AI 生成模板
+  const [showAiModal, setShowAiModal] = useState(false);
 
   const loadBankFormats = useCallback(() => {
     invoke<BankFormat[]>('bankFormat:list').then((d) => setBankFormats(d || []));
@@ -168,11 +171,20 @@ export function BankFormatCard({ refreshKey = 0 }: Props) {
         )}
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
           <Button variant="primary" onClick={() => handleOpenBankFormatModal()}>＋ 添加自定义格式</Button>
+          <Button variant="secondary" onClick={() => setShowAiModal(true)}>🤖 AI 生成模板</Button>
           {bankFormatMsg && (
             <span style={{ fontSize: 'var(--font-size-sm)', color: bankFormatMsg.startsWith('✅') ? 'var(--color-success)' : 'var(--color-danger)' }}>{bankFormatMsg}</span>
           )}
         </div>
       </Card>
+
+      {/* v1.10.0：AI 生成模板（与手动创建并存） */}
+      <AiFormatGeneratorModal
+        open={showAiModal}
+        kind="bank"
+        onClose={() => setShowAiModal(false)}
+        onSaved={loadBankFormats}
+      />
 
       {/* Bank format config Modal */}
       <Modal open={showBankFormatModal} title={editingBankFormatId ? '🏦 编辑自定义银行日结单格式' : '🏦 添加自定义银行日结单格式'} onClose={() => setShowBankFormatModal(false)}>

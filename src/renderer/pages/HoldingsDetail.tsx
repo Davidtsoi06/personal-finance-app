@@ -5,6 +5,7 @@ import { Amount } from '../components/ui/Amount';
 import { SlidePanel } from '../components/ui/SlidePanel';
 import { TradeForm } from '../components/forms/TradeForm';
 import { invoke } from '../hooks/useIpc';
+import { usePriceRefresh } from '../hooks/usePriceRefresh';
 import { HoldingsTableCard, Holding } from '../components/holdings/HoldingsTableCard';
 import { TradesTableCard, TradeRecord } from '../components/holdings/TradesTableCard';
 import { TradeHistoryModal } from '../components/holdings/TradeHistoryModal';
@@ -53,6 +54,7 @@ export function HoldingsDetail() {
   }, [accountId, tradeLimit]);
 
   useEffect(() => { load(); }, [load]);
+  usePriceRefresh(load); // v1.10.0：股价更新后持仓详情自动同步
 
   // 跨币种总市值/总盈亏统一使用后端 CNY 口径（v1.5.6 修正混币汇总）
   const totalMV = cnyTotals.marketValueCny;

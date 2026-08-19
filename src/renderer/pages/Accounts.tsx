@@ -6,6 +6,7 @@ import { Modal } from '../components/ui/Modal';
 import { Amount, NetAmount } from '../components/ui/Amount';
 import { invoke } from '../hooks/useIpc';
 import { useCurrencyRefresh } from '../hooks/useCurrencyRefresh';
+import { usePriceRefresh } from '../hooks/usePriceRefresh';
 import { AccountEditModal, EditableAccount } from '../components/account/AccountEditModal';
 import './Accounts.css';
 
@@ -78,6 +79,7 @@ export function Accounts() {
   useEffect(() => { load(); }, [load]);
   // 汇率更新后自动刷新（v1.6.1：避免总览/资产管理页数据分叉）
   useCurrencyRefresh(load);
+  usePriceRefresh(load); // v1.10.0：股价更新后资产结构自动同步
 
   const toggleBank = (bankName: string) => {
     setExpandedBanks(prev => {

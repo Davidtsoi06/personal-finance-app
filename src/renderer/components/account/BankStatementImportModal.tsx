@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { invoke } from '../../hooks/useIpc';
+import { AiFormatGeneratorModal } from '../ai/AiFormatGeneratorModal';
 
 export interface ParsedBankRecord {
   date: string; amount: number; type: 'deposit' | 'withdraw';
@@ -75,6 +76,8 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
   // v1.9.0：智能建议与行级动作
   const [suggestions, setSuggestions] = useState<BankSuggestion[] | null>(null);
   const [rowActions, setRowActions] = useState<string[]>([]);
+  // v1.10.0：AI 生成模板
+  const [showAiModal, setShowAiModal] = useState(false);
 
   // Load bank formats when modal opens（同时重置状态，与原页面打开按钮行为一致）
   useEffect(() => {
@@ -254,6 +257,9 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
                 <Button variant="secondary" onClick={handleBankExcelUpload}>
                   📂 上传文件
                 </Button>
+                <Button variant="secondary" onClick={() => setShowAiModal(true)} disabled={!bankCsvText.trim()}>
+                  🤖 AI 生成模板
+                </Button>
               </div>
               <Button variant="primary" onClick={handleBankParse} disabled={!bankCsvText.trim()}>
                 🔍 识别并解析
@@ -364,6 +370,15 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
           </>
         )}
       </div>
+
+      {/* v1.10.0：AI 生成模板（样例取自当前粘贴内容；保存后刷新格式下拉） */}
+      <AiFormatGeneratorModal
+        open={showAiModal}
+        kind="bank"
+        initialSample={bankCsvText}
+        onClose={() => setShowAiModal(false)}
+        onSaved={() => invoke<string[]>('bank:listFormats').then((f) => setBankFormats(f || []))}
+      />
     </Modal>
   );
 }

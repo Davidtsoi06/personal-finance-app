@@ -27,6 +27,136 @@ const SYSTEM_PROMPT = `你是一个专业的个人理财投资助手。你可以
 - 金额使用人民币元为单位
 - 适当使用 Markdown 格式（标题、列表、表格）来组织信息，让回答更易读`;
 
+// ── AI 生成日结单模板（v1.10.0） ──
+
+export interface GeneratedFormat {
+  name: string;
+  keywords: string[];
+  hasHeader: boolean;
+  columns: { position: number; field: string }[];
+}
+
+// 银行与券商日结单字段的并集（校验 AI 输出用）
+const FORMAT_FIELDS = [
+  'date', 'amount', 'type', 'description', 'currency', 'balance', 'ignore',
+  'code', 'name', 'quantity', 'price', 'net_amount', 'fee',
+];
+const BANK_FIELDS_TEXT = 'date(日期) amount(金额) type(收支方向) description(摘要/备注) currency(币种) balance(余额) ignore(忽略此列)';
+const BROKER_FIELDS_TEXT = 'date(日期) code(证券代码) name(证券名称) type(业务名称) quantity(成交数量) price(成交价格) amount(成交金额) net_amount(发生金额) fee(手续费) currency(币种) ignore(忽略此列)';
+
+function formatSystemPrompt(kind: 'bank' | 'broker'): string {
+  const fieldsText = kind === 'bank' ? BANK_FIELDS_TEXT : BROKER_FIELDS_TEXT;
+  const kindName = kind === 'bank' ? '银行' : '券商';
+  return `你是${kindName}日结单格式分析专家。用户会给你一段${kindName}日结单样例文本，请识别它的列格式。
+只输出一个 JSON 对象，不要输出任何解释或 Markdown 围栏：
+{
+  "name": "模板名称（必须包含${kindName === '银行' ? '银行' : '券商'}名称，如：${kindName === '银行' ? '招商银行' : '华泰证券'}-个人流水）",
+  "keywords": ["该${kindName}格式的特征关键词（表头或固定字样，2~5 个）"],
+  "hasHeader": true,
+  "columns": [{"position": 0, "field": "date"}]
+}
+字段 field 只能取：${fieldsText}。
+position 从 0 开始，按样例中的列顺序排列。${kind === 'bank' ? '金额若为收入/支出分列，amount 取收入列并让 type 列给出方向。' : ''}`;
+}
+
+/** 解析 AI 返回内容为格式定义（容错：去代码围栏/截取 JSON 片段），校验日期与金额列必须存在。 */
+export function parseGeneratedFormat(raw: string): GeneratedFormat {
+  let text = raw.trim();
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) text = fence[1].trim();
+  let obj: any;
+  try {
+    obj = JSON.parse(text);
+  } catch {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end <= start) throw new Error('AI 返回内容不是有效的 JSON');
+    try {
+      obj = JSON.parse(text.slice(start, end + 1));
+    } catch {
+      throw new Error('AI 返回内容不是有效的 JSON');
+    }
+  }
+  const name = typeof obj.name === 'string' && obj.name.trim() ? obj.name.trim().slice(0, 50) : 'AI 生成的模板';
+  const keywords = Array.isArray(obj.keywords)
+    ? obj.keywords.map((k: any) => String(k).trim()).filter(Boolean).slice(0, 20)
+    : [];
+  const hasHeader = obj.hasHeader === undefined ? true : !!obj.hasHeader;
+  const colsRaw = Array.isArray(obj.columns) ? obj.columns : (Array.isArray(obj.column_mapping) ? obj.column_mapping : []);
+  const columns = colsRaw
+    .map((c: any) => ({
+      position: typeof c.position === 'number' ? c.position : parseInt(String(c.position ?? c.index ?? ''), 10),
+      field: typeof c.field === 'string' ? c.field.trim() : '',
+    }))
+    .filter((c: any) => Number.isInteger(c.position) && c.position >= 0 && FORMAT_FIELDS.includes(c.field))
+    .sort((a: any, b: any) => a.position - b.position);
+  if (columns.length === 0) throw new Error('AI 生成结果没有有效列映射，请重试');
+  if (!columns.some((c: any) => c.field === 'date')) throw new Error('AI 生成结果缺少日期列，请重试');
+  if (!columns.some((c: any) => c.field === 'amount')) throw new Error('AI 生成结果缺少金额列，请重试');
+  return { name, keywords, hasHeader, columns };
+}
+
+/**
+ * AI 生成日结单模板：取样例前 30 行 → 调用 AI → 解析校验（JSON 解析失败自动重试一次）。
+ * 样例内容会发送给配置的 AI 服务商（弹窗已明示）。
+ */
+export async function generateStatementFormat(sample: string, kind: 'bank' | 'broker'): Promise<GeneratedFormat> {
+  const config = getAiConfig();
+  if (!config.apiKey) {
+    throw new Error('请先在设置中配置 AI API Key（设置 → AI 助手）');
+  }
+  const sampleLines = sample.split('\n').filter((l) => l.trim()).slice(0, 30).join('\n');
+  if (!sampleLines) throw new Error('样例内容为空');
+
+  const callOnce = async (): Promise<string> => {
+    const messages: ChatMessage[] = [
+      { role: 'system', content: formatSystemPrompt(kind) },
+      { role: 'user', content: `这是${kind === 'bank' ? '银行' : '券商'}日结单样例（可能带表头）：\n\`\`\`\n${sampleLines}\n\`\`\`` },
+    ];
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    try {
+      const response = await fetch(config.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({ model: config.model, messages, temperature: 0.2, max_tokens: 1500 }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        if (response.status === 401) throw new Error('API Key 无效（401），请在设置中更新');
+        if (response.status === 429) throw new Error('请求过于频繁，请稍后再试');
+        const text = await response.text().catch(() => '');
+        throw new Error(`AI 服务返回错误 (${response.status}): ${text.slice(0, 200)}`);
+      }
+      const data = await response.json() as any;
+      const content = data?.choices?.[0]?.message?.content || '';
+      if (!content) throw new Error('AI 返回了空内容，请重试');
+      return content;
+    } catch (err: any) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') throw new Error('请求超时（60秒），请检查网络连接');
+      throw err;
+    }
+  };
+
+  let lastErr: Error | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const content = await callOnce();
+      return parseGeneratedFormat(content);
+    } catch (err: any) {
+      // 仅解析类错误（JSON/列缺失）自动重试一次；网络/鉴权错误直接抛出
+      if (!(err instanceof Error) || !/JSON|列/.test(err.message)) throw err;
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error('AI 生成模板失败，请重试');
+}
+
 /**
  * Non-streaming chat — sends full message and waits for complete response.
  */
