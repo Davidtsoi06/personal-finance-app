@@ -96,6 +96,7 @@ Electron App
 │   ├── hooks/
 │   │   ├── useIpc.ts              # IPC 调用封装（泛型 invoke）
 │   │   ├── useCurrencyRefresh.ts   # 汇率更新事件订阅 → 页面自动重载（v1.6.1）
+│   │   ├── usePriceRefresh.ts      # 股价更新事件订阅 → 页面自动重载（v1.10.0）
 │   │   └── useIdleLock.ts          # 空闲自动锁定（v1.7.0）
 │   ├── pages/                     # 页面组件（13 个，含 LockScreen 锁屏页 v1.7.0）
 │   │   ├── Dashboard.tsx          # 仪表盘（饼图下钻 + 概览可展开分组[银行内嵌关联券商] + 资产查询 + 走势 + 预算）
@@ -304,7 +305,7 @@ AI 对话支持 SSE 流式响应，通过 Electron 的 `event.sender.send()` 推
 | **Context Isolation** | `contextIsolation: true`，渲染进程不暴露 Node.js API |
 | **API Key 保护** | AI API Key 仅存主进程 `app_settings` 表（AES-256-GCM 密文，密钥存 `userData/secret.key`，与数据库分离），`getAiConfigPublic()` 只返回 `hasApiKey` 布尔值，Key 明文永不到达渲染进程，且不随备份导出 |
 | **卡号保护** | 银行卡号仅存后 4 位（服务层 `normalizeCardNumber` 截断 + 迁移 v13 清洗存量数据），完整卡号不落库 |
-| **IPC 白名单** | preload 仅放行主进程已注册的 170 个频道（含 `app:ping`），未授权频道调用直接拒绝；锁屏窗口使用独立最小权限 `lock-preload`（v1.7.0） |
+| **IPC 白名单** | preload 仅放行主进程已注册的 172 个频道（含 `app:ping`），未授权频道调用直接拒绝；锁屏窗口使用独立最小权限 `lock-preload`（v1.7.0） |
 | **AI 渲染安全** | AI 回复先整体 HTML 转义再做 Markdown 转换，模型输出中的原始 HTML 不会进入 DOM（防 XSS） |
 | **单实例运行** | `app.requestSingleInstanceLock()`：双开时第二个实例直接退出并聚焦已有窗口，防止双进程写库/重复调度 |
 | **迁移前自动备份** | 有待执行迁移时自动把数据库复制到 `userData/backups/`（WAL checkpoint 后），仅保留最近 5 份 |
@@ -392,7 +393,7 @@ npm run release:local
 ### 测试
 
 ```bash
-npm test                # 单元 + 集成测试（vitest，167 个用例）
+npm test                # 单元 + 集成测试（vitest，178 个用例）
 npm run test:unit       # 仅单元测试（共享纯函数：金额/成本/市场/卡号/Markdown/加密）
 npm run test:integration # 仅集成测试（迁移体系，真实 SQLite 内存库）
 npm run test:e2e        # E2E（Playwright + Electron：构建后启动真实应用冒烟测试）
