@@ -72,8 +72,8 @@ async function main() {
     `https://api.github.com/repos/${OWNER}/${REPO}/releases/${release.id}/assets?per_page=100`,
     { headers: { ...auth, 'User-Agent': 'release-script' } }
   );
-  const existing = assetsRes.ok ? await assetsRes.json() : [];
-  const existingNames = new Set(existing.filter((a) => a.state === 'uploaded').map((a) => a.name));
+  const existingAssets = assetsRes.ok ? await assetsRes.json() : [];
+  const existingNames = new Set(existingAssets.filter((a) => a.state === 'uploaded').map((a) => a.name));
 
   const respFile = path.join(__dirname, '..', 'release', '_upload_resp.json');
   for (const name of assets) {
