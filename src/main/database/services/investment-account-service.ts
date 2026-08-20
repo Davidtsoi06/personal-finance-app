@@ -105,8 +105,9 @@ export function deleteInvestmentAccount(id: number): DeleteResult {
 /** Get assets belonging to an investment account (sorted: 港股→A股→…, code ASC). */
 export function getAccountHoldings(investmentAccountId: number) {
   const db = getDatabase();
+  // v1.10.2：持仓明细只显示现有持仓（数量为 0 的股票不再显示）
   return db.prepare(`
-    SELECT * FROM assets WHERE investment_account_id = ?
+    SELECT * FROM assets WHERE investment_account_id = ? AND quantity > 0
     ORDER BY ${ASSET_SORT_SQL}
   `).all(investmentAccountId);
 }
@@ -153,7 +154,7 @@ export function getAccountSummary(id: number) {
   // 市值/盈亏按持仓币种换算 CNY（修正混币口径）；现金按账户币种换算
   const row = db.prepare(`
     SELECT
-      COUNT(*) as asset_count,
+      SUM(CASE WHEN a.quantity > 0 THEN 1 ELSE 0 END) as asset_count, -- v1.10.2：只计现有持仓
       COALESCE(SUM(a.market_value), 0) as total_market_value,
       COALESCE(SUM(a.profit_loss), 0) as total_profit_loss,
       COALESCE(SUM(a.market_value * COALESCE(c.rate_to_base, 1)), 0) as total_market_value_cny,

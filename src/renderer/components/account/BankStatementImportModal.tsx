@@ -81,12 +81,15 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
   // v1.10.1：导入目标账户/卡号（默认当前账户，可在弹窗内切换）
   const [bankAccounts, setBankAccounts] = useState<{ id: number; name: string; bank_name: string | null; display_alias: string | null; card_number: string | null }[]>([]);
   const [targetAccountId, setTargetAccountId] = useState(String(accountId));
+  // v1.10.2：预览可编辑副本（解析结果 → 用户修改 → 编辑后导入）
+  const [editableRecords, setEditableRecords] = useState<ParsedBankRecord[] | null>(null);
 
   // Load bank formats when modal opens（同时重置状态，与原页面打开按钮行为一致）
   useEffect(() => {
     if (open) {
       setBankCsvText('');
       setParsedBankRecords(null);
+      setEditableRecords(null);
       setBankImportStatus('');
       setSuggestions(null);
       setRowActions([]);
@@ -104,6 +107,20 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
     if (parsedBankRecords && parsedBankRecords.length > 0) {
       applySuggestions(parsedBankRecords, parseInt(value) || accountId);
     }
+  };
+
+  /** v1.10.2：编辑预览行（照券商弹窗模式，受控输入） */
+  const updateRecord = (index: number, field: 'date' | 'description' | 'type' | 'amount' | 'currency', value: string) => {
+    setEditableRecords((prev) => {
+      if (!prev) return prev;
+      const next = prev.map((r, i) => {
+        if (i !== index) return r;
+        if (field === 'amount') return { ...r, amount: parseFloat(value) || 0 };
+        if (field === 'type') return { ...r, type: value === 'deposit' ? ('deposit' as const) : ('withdraw' as const) };
+        return { ...r, [field]: value } as ParsedBankRecord;
+      });
+      return next as ParsedBankRecord[];
+    });
   };
 
   /** 解析后：拉取智能建议（分类/重复/配对）并填充默认动作 */
@@ -131,7 +148,8 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
       if (result.success && result.records.length > 0) {
         setBankParseFormat(result.format);
         setParsedBankRecords(result.records);
-        setBankImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.records.length + ' 条记录，请预览确认后导入');
+        setEditableRecords(result.records.map((r) => ({ ...r }))); // v1.10.2：可编辑副本
+        setBankImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.records.length + ' 条记录，预览可修改后导入');
         await applySuggestions(result.records);
       } else {
         setBankImportStatus('❌ 无法识别格式：' + (result.errors || ['未知格式']).join('，'));
@@ -172,7 +190,8 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
       if (result.success && result.records && result.records.length > 0) {
         setBankParseFormat(result.format + ' · ' + result.fileName);
         setParsedBankRecords(result.records);
-        setBankImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.records.length + ' 条记录，请预览确认后导入');
+        setEditableRecords(result.records.map((r) => ({ ...r }))); // v1.10.2：可编辑副本
+        setBankImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.records.length + ' 条记录，预览可修改后导入');
         await applySuggestions(result.records);
       } else {
         setBankImportStatus('❌ 无法识别格式：' + (result.errors || ['未知格式']).join('，'));
@@ -187,8 +206,9 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
     setBankImporting(true);
     setBankImportStatus('正在导入...');
     try {
-      // v1.9.0：行级动作随记录提交
-      const payload = parsedBankRecords.map((r, i) => ({ ...r, action: rowActions[i] || 'import' }));
+      // v1.9.0：行级动作随记录提交；v1.10.2：使用编辑后的记录
+      const source = editableRecords ?? parsedBankRecords;
+      const payload = source.map((r, i) => ({ ...r, action: rowActions[i] || 'import' }));
       const result = await invoke<{
         imported: number; skipped: number; duplicates: number; errors: string[];
         createdFds: { id: number; amount: number; date: string }[];
@@ -314,7 +334,7 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
               已识别格式：<b>{bankParseFormat}</b>，共 <b>{parsedBankRecords.length}</b> 条记录
             </div>
 
-            <div style={{ maxHeight: '340px', overflow: 'auto', marginBottom: 'var(--spacing-md)' }}>
+            <div style={{ maxHeight: '360px', overflow: 'auto', marginBottom: 'var(--spacing-md)' }}>
               <table style={{ width: '100%', fontSize: 'var(--font-size-xs)', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--color-bg-secondary)', position: 'sticky', top: 0 }}>
@@ -322,43 +342,86 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
                     <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>摘要</th>
                     <th style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '1px solid var(--color-border)' }}>方向</th>
                     <th style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--color-border)' }}>金额</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '1px solid var(--color-border)' }}>币种</th>
                     <th style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '1px solid var(--color-border)' }}>分类</th>
                     <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>动作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {parsedBankRecords.map((r, i) => {
+                  {(editableRecords ?? parsedBankRecords).map((r, i) => {
                     const sug = suggestions?.[i];
                     const cls = (sug?.classification || r.classification || 'normal') as string;
                     const clsMeta = CLASS_LABELS[cls] || CLASS_LABELS.normal;
+                    const inputStyle: React.CSSProperties = {
+                      padding: '4px 6px', borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-border)', fontSize: 'var(--font-size-xs)',
+                      background: 'var(--color-bg-primary)', width: '100%', boxSizing: 'border-box',
+                    };
+                    const currencyOptions = ['CNY', 'HKD', 'USD', 'EUR', 'GBP', 'JPY'];
+                    if (r.currency && !currencyOptions.includes(r.currency)) currencyOptions.push(r.currency);
                     return (
                       <tr key={i} style={{ borderBottom: '1px solid var(--color-border)', verticalAlign: 'top' }}>
-                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
-                        <td style={{ padding: '6px 8px' }}>
-                          <div>{r.description || '—'}</div>
+                        {/* v1.10.2：预览全字段可编辑 */}
+                        <td style={{ padding: '4px 6px', whiteSpace: 'nowrap', width: 110 }}>
+                          <input
+                            className="form-input"
+                            style={inputStyle}
+                            value={r.date || ''}
+                            onChange={(e) => updateRecord(i, 'date', e.target.value)}
+                            placeholder="日期"
+                          />
+                        </td>
+                        <td style={{ padding: '4px 6px', minWidth: 160 }}>
+                          <input
+                            className="form-input"
+                            style={inputStyle}
+                            value={r.description || ''}
+                            onChange={(e) => updateRecord(i, 'description', e.target.value)}
+                            placeholder="摘要"
+                          />
                           {sug?.note && (
                             <div style={{ color: 'var(--color-text-muted)', marginTop: 2 }}>💡 {sug.note}</div>
                           )}
                         </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                          <span style={{
-                            color: r.type === 'deposit' ? 'var(--color-success)' : 'var(--color-danger)',
-                            fontWeight: 500,
-                          }}>
-                            {r.type === 'deposit' ? '📥 存入' : '📤 取出'}
-                          </span>
+                        <td style={{ padding: '4px 6px', textAlign: 'center', width: 84 }}>
+                          <select
+                            className="form-select"
+                            style={inputStyle}
+                            value={r.type}
+                            onChange={(e) => updateRecord(i, 'type', e.target.value)}
+                          >
+                            <option value="deposit">📥 存入</option>
+                            <option value="withdraw">📤 取出</option>
+                          </select>
                         </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-family-number)', whiteSpace: 'nowrap' }}>
-                          {r.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          <span style={{ color: 'var(--color-text-muted)' }}> {r.currency}</span>
+                        <td style={{ padding: '4px 6px', textAlign: 'right', width: 120 }}>
+                          <input
+                            className="form-input"
+                            type="number" step="0.01" min="0"
+                            style={{ ...inputStyle, textAlign: 'right', fontFamily: 'var(--font-family-number)' }}
+                            value={Number(r.amount) || 0}
+                            onChange={(e) => updateRecord(i, 'amount', e.target.value)}
+                          />
                         </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <td style={{ padding: '4px 6px', textAlign: 'center', width: 84 }}>
+                          <select
+                            className="form-select"
+                            style={inputStyle}
+                            value={r.currency || 'CNY'}
+                            onChange={(e) => updateRecord(i, 'currency', e.target.value)}
+                          >
+                            {currencyOptions.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: '4px 6px', textAlign: 'center', whiteSpace: 'nowrap', width: 76 }}>
                           <span style={{
                             background: clsMeta.color, borderRadius: 'var(--radius-sm)',
                             padding: '2px 8px', fontWeight: 500,
                           }}>{clsMeta.label}</span>
                         </td>
-                        <td style={{ padding: '6px 8px' }}>
+                        <td style={{ padding: '4px 6px', width: 140 }}>
                           <select
                             value={rowActions[i] || 'import'}
                             onChange={(e) => {
@@ -396,7 +459,7 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
             )}
 
             <div className="form-actions">
-              <Button variant="secondary" onClick={() => { setParsedBankRecords(null); setSuggestions(null); setBankImportStatus(''); }}>
+              <Button variant="secondary" onClick={() => { setParsedBankRecords(null); setEditableRecords(null); setSuggestions(null); setBankImportStatus(''); }}>
                 ← 返回修改
               </Button>
               <Button variant="primary" onClick={handleBankImport} disabled={bankImporting}>
