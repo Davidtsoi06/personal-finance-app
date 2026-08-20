@@ -66,12 +66,14 @@ async function main() {
     `personal-finance-setup-${require('../package.json').version}.exe.blockmap`,
     'latest.yml',
   ];
-  // 查询已有资产，跳过同名（幂等续传）
+  // 查询已有资产，跳过「已完整上传」的同名（幂等续传）
+  // v1.10.1 修复：仅 state='uploaded' 才算已存在；'starter'（上传中断的僵尸资产）会被重新上传
   const assetsRes = await fetch(
     `https://api.github.com/repos/${OWNER}/${REPO}/releases/${release.id}/assets?per_page=100`,
     { headers: { ...auth, 'User-Agent': 'release-script' } }
   );
-  const existingNames = new Set(assetsRes.ok ? (await assetsRes.json()).map((a) => a.name) : []);
+  const existing = assetsRes.ok ? await assetsRes.json() : [];
+  const existingNames = new Set(existing.filter((a) => a.state === 'uploaded').map((a) => a.name));
 
   const respFile = path.join(__dirname, '..', 'release', '_upload_resp.json');
   for (const name of assets) {
