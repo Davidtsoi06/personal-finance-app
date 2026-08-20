@@ -242,12 +242,7 @@ function mapRowToBankRecord(cols: string[], colMap: Record<string, number>): Par
   if (cols.length < 3) return null;
 
   const date = normalizeDate(colMap['date'] !== undefined ? safeTrim(cols[colMap['date']]) : '');
-  const rawAmount = colMap['amount'] !== undefined ? parseAmount(cols[colMap['amount']]) : null;
-  if (rawAmount === null || !date) return null;
-
-  const absAmount = Math.abs(rawAmount);
-  const typeRaw = colMap['type'] !== undefined ? safeTrim(cols[colMap['type']]) : '';
-  const type = detectType(typeRaw, rawAmount);
+  if (!date) return null;
 
   const description = colMap['description'] !== undefined ? safeTrim(cols[colMap['description']]) : '';
   const currency = normalizeCurrency(
@@ -257,6 +252,28 @@ function mapRowToBankRecord(cols: string[], colMap: Record<string, number>): Par
   const balance = colMap['balance'] !== undefined ? parseAmount(cols[colMap['balance']]) : undefined;
   const validBalance = balance !== undefined && balance !== null ? balance : undefined;
 
+  // v1.10.1：收入/支出分列支持（常见银行格式：支出一列、收入一列、结余一列，无方向列）
+  const incomeIdx = colMap['income'];
+  const expenseIdx = colMap['expense'];
+  let amount: number;
+  let type: 'deposit' | 'withdraw';
+
+  if (incomeIdx !== undefined || expenseIdx !== undefined) {
+    const inc = incomeIdx !== undefined ? parseAmount(cols[incomeIdx]) : 0;
+    const exp = expenseIdx !== undefined ? parseAmount(cols[expenseIdx]) : 0;
+    if (inc !== null && inc > 0) { amount = inc; type = 'deposit'; }
+    else if (exp !== null && exp > 0) { amount = exp; type = 'withdraw'; }
+    else return null; // 两列都为空 → 跳过该行
+  } else {
+    const rawAmount = colMap['amount'] !== undefined ? parseAmount(cols[colMap['amount']]) : null;
+    if (rawAmount === null) return null;
+    amount = rawAmount;
+    const typeRaw = colMap['type'] !== undefined ? safeTrim(cols[colMap['type']]) : '';
+    // 无方向列时按金额正负号推断（负=支出，正=收入）
+    type = detectType(typeRaw, amount);
+  }
+
+  const absAmount = Math.abs(amount);
   return { date, amount: absAmount, type, description, currency, balance: validBalance };
 }
 
@@ -270,7 +287,9 @@ function tryCustomFormat(lines: string[], fmt: CustomBankFormat, skipKeywordChec
   if (!skipKeywordCheck && !keywordMatch(lines.join('\n'), fmt)) return null;
 
   const colMap = buildColMap(fmt);
-  if (colMap['date'] === undefined || colMap['amount'] === undefined) return null;
+  // v1.10.1：金额可以是单列 amount，也可以是 income/expense 分列
+  const hasAmount = colMap['amount'] !== undefined || colMap['income'] !== undefined || colMap['expense'] !== undefined;
+  if (colMap['date'] === undefined || !hasAmount) return null;
 
   const dataStartIdx = fmt.hasHeader ? 1 : 0;
   const records: ParsedBankRecord[] = [];
@@ -285,7 +304,9 @@ function tryCustomFormatOnRows(rows: string[][], fmt: CustomBankFormat, skipKeyw
   if (!skipKeywordCheck && !keywordMatch(rows.map((r) => r.join(',')).join('\n'), fmt)) return null;
 
   const colMap = buildColMap(fmt);
-  if (colMap['date'] === undefined || colMap['amount'] === undefined) return null;
+  // v1.10.1：金额可以是单列 amount，也可以是 income/expense 分列
+  const hasAmount = colMap['amount'] !== undefined || colMap['income'] !== undefined || colMap['expense'] !== undefined;
+  if (colMap['date'] === undefined || !hasAmount) return null;
 
   const dataStartIdx = fmt.hasHeader ? 1 : 0;
   const records: ParsedBankRecord[] = [];
@@ -471,18 +492,14 @@ function loadCustomBankFormats(): CustomBankFormat[] {
     const db = getDatabase();
     const rows = db.prepare('SELECT * FROM custom_bank_formats').all() as any[];
     return rows.map((row: any) => {
-      const mapping: Record<string, string> = {};
+      // v1.10.1 修复：此前 mapping 以字段名为键、解构顺序颠倒，导致 columnMap 恒为空、
+      // 自定义银行格式从未生效——改为直接构建 {field -> position}（与 buildColMap 期望一致）
+      const columnMap: Record<string, number> = {};
       const columns: { position: number; field: string }[] = JSON.parse(row.column_mapping);
       for (const col of columns) {
         if (col.field !== 'ignore') {
-          mapping[col.field] = String(col.position);
+          columnMap[col.field] = col.position;
         }
-      }
-      // Convert to columnMap: {field -> index}
-      const columnMap: Record<string, number> = {};
-      for (const [pos, field] of Object.entries(mapping)) {
-        const idx = parseInt(pos);
-        if (!isNaN(idx)) columnMap[field] = idx;
       }
       return {
         name: row.name,

@@ -39,9 +39,11 @@ export interface GeneratedFormat {
 // 银行与券商日结单字段的并集（校验 AI 输出用）
 const FORMAT_FIELDS = [
   'date', 'amount', 'type', 'description', 'currency', 'balance', 'ignore',
+  'income', 'expense',
   'code', 'name', 'quantity', 'price', 'net_amount', 'fee',
 ];
-const BANK_FIELDS_TEXT = 'date(日期) amount(金额) type(收支方向) description(摘要/备注) currency(币种) balance(余额) ignore(忽略此列)';
+// v1.10.1：银行字段含「收入/支出分列」（常见港银格式：支出一列、收入一列、结余一列，无方向列）
+const BANK_FIELDS_TEXT = 'date(日期) income(收入金额) expense(支出金额) amount(金额) type(收支方向) description(摘要/备注) currency(币种) balance(余额) ignore(忽略此列)';
 const BROKER_FIELDS_TEXT = 'date(日期) code(证券代码) name(证券名称) type(业务名称) quantity(成交数量) price(成交价格) amount(成交金额) net_amount(发生金额) fee(手续费) currency(币种) ignore(忽略此列)';
 
 function formatSystemPrompt(kind: 'bank' | 'broker'): string {
@@ -56,7 +58,10 @@ function formatSystemPrompt(kind: 'bank' | 'broker'): string {
   "columns": [{"position": 0, "field": "date"}]
 }
 字段 field 只能取：${fieldsText}。
-position 从 0 开始，按样例中的列顺序排列。${kind === 'bank' ? '金额若为收入/支出分列，amount 取收入列并让 type 列给出方向。' : ''}`;
+position 从 0 开始，按样例中的列顺序排列。
+${kind === 'bank'
+    ? '银行日结单常见两种结构：① 只有一个金额列（带正负号或借/贷方向列）→ 用 amount 映射金额列，若有方向列再用 type；② 收入/支出分列（支出一列、收入一列，另有结余列）→ 用 income 映射收入列、expense 映射支出列、balance 映射结余列，此时不要生成 type 列（方向由收入/支出列自动判断）。币种列用 currency；结余币种列或重复列用 ignore。'
+    : ''}`;
 }
 
 /** 解析 AI 返回内容为格式定义（容错：去代码围栏/截取 JSON 片段），校验日期与金额列必须存在。 */
@@ -92,8 +97,18 @@ export function parseGeneratedFormat(raw: string): GeneratedFormat {
     .sort((a: any, b: any) => a.position - b.position);
   if (columns.length === 0) throw new Error('AI 生成结果没有有效列映射，请重试');
   if (!columns.some((c: any) => c.field === 'date')) throw new Error('AI 生成结果缺少日期列，请重试');
-  if (!columns.some((c: any) => c.field === 'amount')) throw new Error('AI 生成结果缺少金额列，请重试');
+  // v1.10.1：金额可以是单列 amount，也可以是 income/expense 分列
+  const hasAmount = columns.some((c: any) => c.field === 'amount' || c.field === 'income' || c.field === 'expense');
+  if (!hasAmount) throw new Error('AI 生成结果缺少金额列（amount 或收入/支出分列），请重试');
   return { name, keywords, hasHeader, columns };
+}
+
+/** v1.10.1：把解析出的表格行转成样例文本（制表符分隔、单元格去空白），最多 maxLines 行 */
+export function rowsToSampleText(rows: unknown[][], maxLines = 30): string {
+  return rows
+    .slice(0, maxLines)
+    .map((row) => row.map((c) => String(c ?? '').trim()).join('\t'))
+    .join('\n');
 }
 
 /**

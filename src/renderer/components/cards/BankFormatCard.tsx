@@ -20,7 +20,9 @@ interface BankFormat {
 
 const BANK_FIELD_OPTIONS: { value: string; label: string }[] = [
   { value: 'date', label: '日期' },
-  { value: 'amount', label: '金额' },
+  { value: 'income', label: '收入金额' },
+  { value: 'expense', label: '支出金额' },
+  { value: 'amount', label: '金额（单列带符号）' },
   { value: 'type', label: '收支方向' },
   { value: 'description', label: '摘要/描述' },
   { value: 'currency', label: '币种' },

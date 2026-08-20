@@ -54,6 +54,9 @@ export function normalizeDate(raw: string | undefined | null): string {
     const [, m, d, y] = usMatch;
     const valid = toValidDate(y, m, d);
     if (valid) return valid;
+    // v1.10.1：月/日解析失败（如 18/08/2026）→ 回退日/月（银行 DD/MM/YYYY 常见）
+    const dayFirst = toValidDate(y, d, m);
+    if (dayFirst) return dayFirst;
   }
 
   // 美式月/日/年（2 位年）：M/D/YY → 2000+YY（>=70 视为 19YY）
@@ -63,6 +66,31 @@ export function normalizeDate(raw: string | undefined | null): string {
     const y = Number(yy) >= 70 ? `19${yy}` : `20${yy}`;
     const valid = toValidDate(y, m, d);
     if (valid) return valid;
+    const dayFirst = toValidDate(y, d, m);
+    if (dayFirst) return dayFirst;
+  }
+
+  // v1.10.1：中文日期——YYYY年M月D日 / M月D日 / D月M日（可带时间，如 10月8日 12:30）
+  // 无年份默认今年；「X月Y日」歧义（部分银行按日/月渲染，如 10月8日=8月10日）：
+  // 先按标准「月日」解析，若结果晚于今天则回退「日月」再验证
+  const cnMatch = trimmed.match(/^(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  if (cnMatch) {
+    const [, yStr, a, b] = cnMatch;
+    const todayDate = today();
+    const year = yStr || todayDate.slice(0, 4);
+    const candidates: string[] = [];
+    const std = toValidDate(year, a, b); // 月= a, 日= b（标准中文）
+    const flip = toValidDate(year, b, a); // 日= a, 月= b（日在前渲染）
+    if (std) candidates.push(std);
+    if (flip && flip !== std) candidates.push(flip);
+    // 选择不晚于今天的结果；都合法时优先「月日」；都不合法则取最早（跨年回退）
+    const past = candidates.filter((c) => c <= todayDate);
+    if (past.length > 0) return past[0];
+    if (candidates.length > 0) {
+      candidates.sort();
+      // 跨年：取最近的一个（排序后最接近今天的），否则取最早的
+      return candidates[candidates.length - 1] <= todayDate ? candidates[candidates.length - 1] : candidates[0];
+    }
   }
 
   // Excel 日期序列号（数字单元格转字符串，如 46080 → 2026-02-27；可带时间小数）

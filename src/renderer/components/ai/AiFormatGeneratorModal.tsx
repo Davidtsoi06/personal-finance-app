@@ -33,7 +33,9 @@ const FIELD_LABELS: Record<string, string> = {
 
 const BANK_FIELD_OPTIONS: { value: string; label: string }[] = [
   { value: 'date', label: '日期' },
-  { value: 'amount', label: '金额' },
+  { value: 'income', label: '收入金额' },
+  { value: 'expense', label: '支出金额' },
+  { value: 'amount', label: '金额（单列带符号）' },
   { value: 'type', label: '收支方向' },
   { value: 'description', label: '摘要/描述' },
   { value: 'currency', label: '币种' },
@@ -72,6 +74,8 @@ export function AiFormatGeneratorModal({ open, kind, initialSample = '', onClose
   const [sample, setSample] = useState(initialSample);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedName, setUploadedName] = useState('');
   const [error, setError] = useState('');
   const [result, setResult] = useState<GeneratedFormat | null>(null);
   // 可编辑字段
@@ -86,6 +90,24 @@ export function AiFormatGeneratorModal({ open, kind, initialSample = '', onClose
     setResult(null);
     setGenerating(false);
     setSaving(false);
+  };
+
+  // v1.10.1：上传 Excel/CSV 文件作为样例（主进程读取前 30 行）
+  const handleUploadFile = async () => {
+    setUploading(true);
+    setError('');
+    try {
+      const r = await invoke<{ canceled?: boolean; fileName?: string; sampleText?: string; error?: string }>('ai:readSampleFile');
+      if (r.canceled) return;
+      if (r.error) { setError(r.error); return; }
+      if (r.sampleText) {
+        setSample(r.sampleText);
+        setUploadedName(r.fileName || '');
+      }
+    } catch (err: any) {
+      setError(err.message || '读取文件失败');
+    }
+    setUploading(false);
   };
 
   const handleGenerate = async () => {
@@ -140,18 +162,28 @@ export function AiFormatGeneratorModal({ open, kind, initialSample = '', onClose
     <Modal open={open} title={kind === 'bank' ? '🤖 AI 生成银行日结单模板' : '🤖 AI 生成券商日结单模板'} onClose={onClose} width="760px">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
-          粘贴日结单样例（含表头更佳），AI 自动识别列格式生成模板。
+          粘贴日结单样例（含表头更佳）或<b>直接上传 Excel / CSV 文件</b>，AI 自动识别列格式生成模板。
           <b style={{ color: 'var(--color-warning, #E6A23C)' }}>样例前 30 行将发送给 AI 服务商用于识别</b>，
           生成后可核对示例、手动微调再保存。手动创建模板入口保持不变。
         </p>
 
         {!result && (
           <>
+            <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
+              <Button variant="secondary" onClick={handleUploadFile} disabled={uploading}>
+                {uploading ? '⏳ 读取中...' : '📂 上传 Excel/CSV 文件'}
+              </Button>
+              {uploadedName && (
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                  已读取：{uploadedName}（前 30 行填入，可继续编辑）
+                </span>
+              )}
+            </div>
             <textarea
               className="form-input"
               value={sample}
               onChange={(e) => setSample(e.target.value)}
-              placeholder={'粘贴日结单样例文本，如：\n交易日期, 摘要, 收支方向, 金额, 币种\n2026-08-05, 工资入账, 收入, 5000.00, CNY'}
+              placeholder={'粘贴日结单样例文本，或上传文件后自动填入，如：\n交易日期, 摘要, 收支方向, 金额, 币种\n2026-08-05, 工资入账, 收入, 5000.00, CNY'}
               rows={8}
               style={{ height: 'auto', fontFamily: 'var(--font-family-number)', fontSize: 'var(--font-size-xs)' }}
             />

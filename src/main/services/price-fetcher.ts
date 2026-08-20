@@ -15,6 +15,7 @@
 import { BrowserWindow } from 'electron';
 import { getDatabase } from '../database';
 import { updateCurrentPrice } from '../database/services/asset-service';
+import { recordNetWorth } from '../database/services/net-worth-service';
 import { detectMarket } from '../../shared/utils/market';
 
 const TAG = '[PriceFetcher]';
@@ -488,8 +489,14 @@ export async function fetchAllPrices(): Promise<{
     console.log(`${TAG} 完成: ${updated}/${assets.length} 全部更新成功`);
   }
 
-  // v1.8.0：价格更新完成广播（页面显示「数据已更新」提示条）
+  // v1.10.1：股价更新后先重新记录当天净值（总资产走势图同步最新市值），再广播页面刷新
   if (updated > 0) {
+    try {
+      recordNetWorth();
+    } catch (err: any) {
+      console.warn('[price] 净值记录失败（非致命）:', err?.message);
+    }
+    // v1.8.0：价格更新完成广播（页面显示「数据已更新」提示条）
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send('prices:updated', { updatedAt: new Date().toISOString(), updated });
     }

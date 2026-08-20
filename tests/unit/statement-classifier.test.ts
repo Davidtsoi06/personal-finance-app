@@ -27,4 +27,18 @@ describe('classifyBankRecord（v1.9.0）', () => {
     expect(classifyBankRecord({ type: 'withdraw', description: '' })).toBe('normal');
     expect(classifyBankRecord({ type: 'deposit', description: '工资' })).toBe('normal');
   });
+
+  it('v1.10.1 英文关键词（港银）：NEW TERM DEP 转出 / TERM DEP W\\D 回款', () => {
+    expect(classifyBankRecord({ type: 'withdraw', description: 'NEW TERM DEP 4114913018330033' })).toBe('fd_out');
+    expect(classifyBankRecord({ type: 'withdraw', description: 'NEW TERM DEPOSIT' })).toBe('fd_out');
+    expect(classifyBankRecord({ type: 'deposit', description: 'TERM DEP W\\D 4114913018330026' })).toBe('fd_in');
+    expect(classifyBankRecord({ type: 'deposit', description: 'TERM DEP WITHDRAWAL' })).toBe('fd_in');
+    expect(classifyBankRecord({ type: 'deposit', description: 'TERM DEP MATURITY' })).toBe('fd_in');
+    expect(classifyBankRecord({ type: 'deposit', description: 'MATURITY PAYMENT' })).toBe('fd_in');
+  });
+
+  it('v1.10.1 英文方向不误判：存入的 NEW TERM / 取出的 TERM DEP W 均为 normal', () => {
+    expect(classifyBankRecord({ type: 'deposit', description: 'NEW TERM DEP' })).toBe('normal');
+    expect(classifyBankRecord({ type: 'withdraw', description: 'TERM DEP W\\D' })).toBe('normal');
+  });
 });

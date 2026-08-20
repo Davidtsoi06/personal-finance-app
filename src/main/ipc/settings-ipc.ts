@@ -387,6 +387,48 @@ export function registerSettingsIpcHandlers(): void {
     return { success: true, format: result };
   });
 
+  // v1.10.1：AI 生成模板读取样例文件（CSV 取原文前 30 行；Excel 解析首表转制表符文本前 30 行）
+  handleValidated('ai:readSampleFile', async () => {
+    const { dialog } = require('electron') as typeof import('electron');
+    const result = await dialog.showOpenDialog({
+      title: '选择日结单文件（Excel / CSV）',
+      filters: [
+        { name: 'Excel / CSV 文件', extensions: ['xlsx', 'xls', 'csv'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true };
+    const filePath = result.filePaths[0];
+    const fs = require('fs');
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    try {
+      if (ext === 'csv') {
+        const text = fs.readFileSync(filePath, 'utf-8');
+        return {
+          canceled: false,
+          fileName: filePath.split(/[\\/]/).pop() || filePath,
+          sampleText: text.split(/\r?\n/).filter((l: string) => l.trim()).slice(0, 30).join('\n'),
+        };
+      }
+      const xlsx = require('xlsx') as typeof import('xlsx');
+      const fileBuffer = fs.readFileSync(filePath);
+      const workbook = ext === 'xls'
+        ? xlsx.read(fileBuffer, { type: 'buffer', codepage: 936 })
+        : xlsx.read(fileBuffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows: unknown[][] = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      return {
+        canceled: false,
+        fileName: filePath.split(/[\\/]/).pop() || filePath,
+        sampleText: aiService.rowsToSampleText(rows),
+      };
+    } catch (err: any) {
+      return { canceled: false, error: `读取文件失败：${err.message}` };
+    }
+  });
+
   ipcMain.handle('ai:dailySummary', async (_e, date?: string) => {
     const targetDate = date || new Date().toISOString().slice(0, 10);
     // Check cache first

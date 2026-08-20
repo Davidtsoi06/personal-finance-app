@@ -49,6 +49,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'ai:chatStream',
   'ai:dailySummary',
   'ai:generateFormat',
+  'ai:readSampleFile',
   'alert:listConfig',
   'alert:updateConfig',
   'archive:execute',

@@ -5,6 +5,7 @@
 import { BrowserWindow } from 'electron';
 import { getDatabase } from '../database';
 import { updateRate } from '../database/services/currency-service';
+import { recordNetWorth } from '../database/services/net-worth-service';
 
 const API_BASE = 'https://api.exchangerate-api.com/v4/latest';
 
@@ -52,8 +53,15 @@ export async function fetchExchangeRates(): Promise<{ success: boolean; updated:
       }
     }
 
-    // 通知渲染端刷新展示（启动抓取/每 6 小时/手动更新都会走到这里）
-    if (updated > 0) broadcastCurrencyUpdated(updated);
+    // v1.10.1：汇率更新后先重新记录当天净值（走势图同步 CNY 折算），再通知渲染端刷新展示
+    if (updated > 0) {
+      try {
+        recordNetWorth();
+      } catch (err: any) {
+        console.warn('[fx] 净值记录失败（非致命）:', err?.message);
+      }
+      broadcastCurrencyUpdated(updated);
+    }
 
     return { success: true, updated };
   } catch (err: any) {

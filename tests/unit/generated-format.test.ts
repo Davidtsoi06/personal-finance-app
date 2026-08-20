@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseGeneratedFormat } from '../../src/main/services/ai-service';
+import { parseGeneratedFormat, rowsToSampleText } from '../../src/main/services/ai-service';
 
 /** v1.10.0：AI 生成模板 JSON 解析与校验 */
 describe('parseGeneratedFormat（v1.10.0）', () => {
@@ -86,5 +86,31 @@ describe('parseGeneratedFormat（v1.10.0）', () => {
   it('名称缺失 → 默认名', () => {
     const f = parseGeneratedFormat(JSON.stringify({ keywords: [], hasHeader: true, columns: [{ position: 0, field: 'date' }, { position: 1, field: 'amount' }] }));
     expect(f.name).toBe('AI 生成的模板');
+  });
+});
+
+/** v1.10.1：Excel 行 → 样例文本（AI 上传文件用） */
+describe('rowsToSampleText（v1.10.1）', () => {
+  it('普通行转制表符分隔文本', () => {
+    const text = rowsToSampleText([
+      ['交易日期', '摘要', '金额'],
+      ['2026-08-05', '工资', 5000],
+    ]);
+    expect(text).toBe('交易日期\t摘要\t金额\n2026-08-05\t工资\t5000');
+  });
+
+  it('空单元格与前后空白清理', () => {
+    const text = rowsToSampleText([
+      ['a', null, '  c  '],
+    ]);
+    expect(text).toBe('a\t\tc');
+  });
+
+  it('最多 maxLines 行（默认 30）', () => {
+    const rows = Array.from({ length: 40 }, (_, i) => [`row-${i}`]);
+    const text = rowsToSampleText(rows);
+    expect(text.split('\n')).toHaveLength(30);
+    const text2 = rowsToSampleText(rows, 5);
+    expect(text2.split('\n')).toHaveLength(5);
   });
 });

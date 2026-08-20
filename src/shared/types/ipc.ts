@@ -42,6 +42,7 @@ export type IpcChannel =
   | 'ai:chatStream'
   | 'ai:dailySummary'
   | 'ai:generateFormat'
+  | 'ai:readSampleFile'
   | 'alert:listConfig'
   | 'alert:updateConfig'
   | 'app:ping'

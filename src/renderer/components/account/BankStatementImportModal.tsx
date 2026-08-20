@@ -78,6 +78,9 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
   const [rowActions, setRowActions] = useState<string[]>([]);
   // v1.10.0：AI 生成模板
   const [showAiModal, setShowAiModal] = useState(false);
+  // v1.10.1：导入目标账户/卡号（默认当前账户，可在弹窗内切换）
+  const [bankAccounts, setBankAccounts] = useState<{ id: number; name: string; bank_name: string | null; display_alias: string | null; card_number: string | null }[]>([]);
+  const [targetAccountId, setTargetAccountId] = useState(String(accountId));
 
   // Load bank formats when modal opens（同时重置状态，与原页面打开按钮行为一致）
   useEffect(() => {
@@ -87,14 +90,26 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
       setBankImportStatus('');
       setSuggestions(null);
       setRowActions([]);
+      setTargetAccountId(String(accountId));
       invoke<string[]>('bank:listFormats').then((f) => setBankFormats(f || []));
+      invoke<{ id: number; name: string; bank_name: string | null; display_alias: string | null; card_number: string | null }[]>('account:listBankAccounts')
+        .then((list) => setBankAccounts(list || []))
+        .catch(() => {});
     }
-  }, [open]);
+  }, [open, accountId]);
+
+  /** 目标账户变化时重跑智能建议（定期配对按账户） */
+  const handleTargetAccountChange = (value: string) => {
+    setTargetAccountId(value);
+    if (parsedBankRecords && parsedBankRecords.length > 0) {
+      applySuggestions(parsedBankRecords, parseInt(value) || accountId);
+    }
+  };
 
   /** 解析后：拉取智能建议（分类/重复/配对）并填充默认动作 */
-  const applySuggestions = async (records: ParsedBankRecord[]) => {
+  const applySuggestions = async (records: ParsedBankRecord[], forAccountId?: number) => {
     try {
-      const suggs = await invoke<BankSuggestion[]>('bank:suggestActions', records, accountId);
+      const suggs = await invoke<BankSuggestion[]>('bank:suggestActions', records, forAccountId ?? (parseInt(targetAccountId) || accountId));
       setSuggestions(suggs || null);
       setRowActions((suggs || records.map((r) => r.action || 'import')).map((s) => s.defaultAction));
     } catch {
@@ -178,7 +193,7 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
         imported: number; skipped: number; duplicates: number; errors: string[];
         createdFds: { id: number; amount: number; date: string }[];
         settledFds: { id: number; principal: number; interest: number }[];
-      }>('bank:importParsed', payload, accountId);
+      }>('bank:importParsed', payload, parseInt(targetAccountId) || accountId); // v1.10.1：导入到所选账户/卡号
 
       const parts: string[] = ['✅ 成功导入 ' + result.imported + ' 条存取记录'];
       if ((result.createdFds || []).length > 0) {
@@ -213,6 +228,27 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
           粘贴 CSV 日结单，或直接上传文件（支持 CSV / Excel）。自动检测格式或手动选择银行格式。
           <br />v1.9.0：识别到「转定期 / 定期回款」会自动建议创建或结清定期，避免手动重复记录；可逐行修改动作。
         </p>
+
+        {/* v1.10.1：导入目标账户/卡号确认 */}
+        <div style={{ marginBottom: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, whiteSpace: 'nowrap' }}>导入到账户：</label>
+          <select
+            value={targetAccountId}
+            onChange={(e) => handleTargetAccountChange(e.target.value)}
+            style={{
+              flex: 1, padding: '6px 12px', borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)',
+              background: 'var(--color-bg-primary)', cursor: 'pointer',
+            }}
+          >
+            {bankAccounts.length === 0 && <option value={accountId}>当前账户</option>}
+            {bankAccounts.map((ba) => (
+              <option key={ba.id} value={ba.id}>
+                🏦 {ba.bank_name || ba.name} · {ba.display_alias || ba.name}{ba.card_number ? ' · 尾号' + ba.card_number.slice(-4) : ''}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div style={{ marginBottom: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
           <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, whiteSpace: 'nowrap' }}>银行格式：</label>

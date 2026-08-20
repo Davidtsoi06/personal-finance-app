@@ -262,6 +262,7 @@ export function Dashboard() {
   const MARKET_LABELS: Record<string, string> = { a_stock: 'A股', hk_stock: '港股', us_stock: '美股', other: '其他' };
 
   const filteredAssets = allAssets
+    .filter(a => (a.quantity ?? 0) > 0) // v1.10.1：只显示现有持仓（持仓为 0 不显示）
     .filter(a => {
       if (typeFilter && a.type !== typeFilter) return false;
       if (marketFilter && a.market !== marketFilter) return false;
@@ -457,9 +458,9 @@ export function Dashboard() {
         </Card>
       </div>
 
-      {/* ── Asset Query & Analysis ── */}
+      {/* ── Asset Query & Analysis（v1.10.1：改名股票查询，只显示现有持仓） ── */}
       <div style={{ marginTop: 'var(--spacing-lg)' }}>
-        <Card title="🔍 资产查询与分析">
+        <Card title="🔍 股票查询与分析">
           {/* Filter toolbar */}
           <div className="filter-toolbar">
             <input
