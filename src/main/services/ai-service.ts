@@ -4,6 +4,7 @@
  */
 import { getAiConfig } from '../database/services/settings-service';
 import { gatherPortfolioContext, generateDailySummaryContext } from './portfolio-context';
+import { normalizeDate } from './data-normalizer';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -103,12 +104,28 @@ export function parseGeneratedFormat(raw: string): GeneratedFormat {
   return { name, keywords, hasHeader, columns };
 }
 
-/** v1.10.1：把解析出的表格行转成样例文本（制表符分隔、单元格去空白），最多 maxLines 行 */
+/**
+ * v1.10.1：把解析出的表格行转成样例文本（制表符分隔、单元格去空白），最多 maxLines 行。
+ * v1.10.3：Excel「日期格式」单元格读取后是序列号数字（46251）或 Date 对象——
+ *   统一转成真实日期文本（如 2026-08-17），AI 与用户看到的样例不再是 46251。
+ */
 export function rowsToSampleText(rows: unknown[][], maxLines = 30): string {
   return rows
     .slice(0, maxLines)
-    .map((row) => row.map((c) => String(c ?? '').trim()).join('\t'))
+    .map((row) => row.map(cellToSampleText).join('\t'))
     .join('\n');
+}
+
+function cellToSampleText(c: unknown): string {
+  if (c === null || c === undefined) return '';
+  if (c instanceof Date) return normalizeDate(c);
+  if (typeof c === 'number') {
+    // Excel 日期序列号（20000~80000，可带时间小数）→ 真实日期
+    if (c >= 20000 && c <= 80000 && /^\d{5}(\.\d+)?$/.test(String(c))) {
+      return normalizeDate(c);
+    }
+  }
+  return String(c).trim();
 }
 
 /**

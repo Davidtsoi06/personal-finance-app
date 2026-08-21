@@ -17,12 +17,19 @@ const CURRENCY_NORMALIZE_MAP: Record<string, string> = {
  * Normalize a date string to YYYY-MM-DD format.
  * Accepts: YYYYMMDD, YYYY/MM/DD, YYYY-MM-DD, YYYY.MM.DD,
  *   美式 M/D/YYYY（银行日结单常用，可带时间）, M/D/YY（2 位年）, Excel 日期序列号.
+ * v1.10.3：直接支持 number（Excel 日期序列号）与 Date 对象（按 UTC 格式化）——
+ *   Excel 里「日期格式」单元格经 xlsx 读取后是序列号数字（如 46251 = 2026-08-17），不再漏转。
  * Falls back to today if no valid date provided.
  */
-export function normalizeDate(raw: string | undefined | null): string {
+export function normalizeDate(raw: string | number | Date | undefined | null): string {
   if (!raw) return today();
 
-  const trimmed = raw.trim();
+  if (raw instanceof Date) {
+    if (Number.isNaN(raw.getTime())) return today();
+    return `${raw.getUTCFullYear()}-${String(raw.getUTCMonth() + 1).padStart(2, '0')}-${String(raw.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  const trimmed = typeof raw === 'number' ? String(raw) : raw.trim();
 
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;

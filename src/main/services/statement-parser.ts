@@ -214,7 +214,8 @@ function parseStandardLine(cols: string[]): ParsedTrade | null {
   const fee = parseAmount(feeStr) || 0;
   if (quantity === null || price === null) return null;
 
-  const sDate = safeTrim(date) || new Date().toISOString().slice(0, 10);
+  // v1.10.3：Excel 日期序列号（46251 等）统一转换；空值回退今天
+  const sDate = normalizeDate(safeTrim(date)) || new Date().toISOString().slice(0, 10);
   const sCode = safeTrim(code);
   const sName = safeTrim(name) || sCode;
   const sCurrency = (safeTrim(currency) || 'HKD').toUpperCase();
@@ -355,7 +356,8 @@ function tryGenericDetection(lines: string[]): ParseResult {
     const cols = parseCSVLine(lines[i]);
     if (cols.length < Math.max(dateIdx, qtyIdx, priceIdx) + 1) continue;
 
-    const date = normalizeDate(cols[dateIdx]?.trim());
+    // v1.10.3：safeTrim 兼容数字单元格（Excel 日期序列号），避免 number.trim() 抛错
+    const date = normalizeDate(safeTrim(cols[dateIdx]));
     const qty = parseAmount(cols[qtyIdx]);
     const price = parseAmount(cols[priceIdx]);
     if (qty === null || price === null || !date) continue;
