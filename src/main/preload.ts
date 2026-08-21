@@ -30,6 +30,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'account:balances',
   'account:create',
   'account:createWithChildren',
+  'account:createAlipayFamily',
   'account:delete',
   'account:deleteImpact',
   'account:forceDelete',
@@ -52,6 +53,17 @@ const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'ai:readSampleFile',
   'ai:balance',
   'ai:usageToday',
+  'ai:sessionCreate',
+  'ai:sessionList',
+  'ai:sessionDelete',
+  'ai:sessionMessages',
+  'ai:messageAppend',
+  'ai:reportSave',
+  'ai:reportList',
+  'ai:reportGet',
+  'ai:reportDelete',
+  'ai:reportExport',
+  'ai:sessionExport',
   'alert:listConfig',
   'alert:updateConfig',
   'archive:execute',
@@ -185,6 +197,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'update:install',
   'wallet:getSystemWallets',
   'wallet:importBills',
+  'wallet:parseFile',
 ]);
 
 electron.contextBridge.exposeInMainWorld('electronAPI', {

@@ -34,6 +34,10 @@ export function normalizeDate(raw: string | number | Date | undefined | null): s
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
 
+  // v1.10.6：YYYY-MM-DD 带时间（微信账单：2026-08-16 12:30:45）
+  const withTime = trimmed.match(/^(\d{4}-\d{2}-\d{2})(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  if (withTime) return withTime[1];
+
   // YYYYMMDD → YYYY-MM-DD
   if (trimmed.length === 8 && /^\d{8}$/.test(trimmed)) {
     return `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`;

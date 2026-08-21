@@ -54,16 +54,21 @@ export function WalletFlow() {
   const [csvText, setCsvText] = useState('');
   const [importStatus, setImportStatus] = useState('');
   const [importing, setImporting] = useState(false);
+  // v1.10.6：微信/支付宝账单文件解析预览（可逐行删除）
+  const [parsedBills, setParsedBills] = useState<{ date: string; type: string; amount: number; currency: string; description: string }[] | null>(null);
+  const [billFormat, setBillFormat] = useState('');
+  const [billFileName, setBillFileName] = useState('');
 
   const walletLabel = WALLET_LABELS[type || ''] || type || '钱包';
 
   const load = useCallback(async () => {
     try {
       const wallets = await invoke<SystemWallet[]>('wallet:getSystemWallets');
+      // v1.10.6：前缀匹配（支付宝（国内）/支付宝（香港）等子账户也能识别）
       const found = wallets?.find(w => {
-        if (type === 'wechat') return w.name === '微信';
-        if (type === 'alipay') return w.name === '支付宝';
-        if (type === 'cash') return w.name === '现金';
+        if (type === 'wechat') return w.name === '微信' || w.name.startsWith('微信');
+        if (type === 'alipay') return w.name === '支付宝' || w.name.startsWith('支付宝');
+        if (type === 'cash') return w.name === '现金' || w.name.startsWith('现金');
         return false;
       });
       if (found) {
@@ -136,6 +141,64 @@ export function WalletFlow() {
   };
 
   // ── Bill Import ──
+  // v1.10.6：上传并解析微信/支付宝账单文件
+  const handleUploadBillFile = async () => {
+    if (!wallet) return;
+    setImportStatus('正在选择并解析文件...');
+    setParsedBills(null);
+    try {
+      const r = await invoke<{
+        canceled?: boolean; fileName?: string; format?: string;
+        records?: { date: string; type: string; amount: number; currency: string; description: string }[];
+        errors?: string[];
+      }>('wallet:parseFile');
+      if (r.canceled) { setImportStatus(''); return; }
+      if (r.errors && r.errors.length > 0) {
+        setImportStatus('❌ ' + r.errors.join('；'));
+      }
+      if (r.records && r.records.length > 0) {
+        setParsedBills(r.records);
+        setBillFormat(r.format === 'wechat' ? '微信账单' : '支付宝账单');
+        setBillFileName(r.fileName || '');
+        setImportStatus(`✅ 解析出 ${r.records.length} 条记录，可逐行删除后确认导入`);
+      } else if (!r.errors || r.errors.length === 0) {
+        setImportStatus('⚠️ 未解析到有效记录');
+      }
+    } catch (err: any) {
+      setImportStatus('❌ 解析失败：' + err.message);
+    }
+  };
+
+  const handleConfirmParsedImport = async () => {
+    if (!wallet || !parsedBills) return;
+    setImporting(true);
+    setImportStatus('正在导入...');
+    try {
+      const records = parsedBills.map((r) => ({
+        date: r.date, description: r.description, amount: r.amount, type: r.type, currency: r.currency,
+      }));
+      const result = await invoke<{ imported: number; errors: string[]; txIds: number[]; ledgerIds: number[] }>('wallet:importBills', wallet.id, records);
+      setImportStatus(`✅ 成功导入 ${result.imported} 条记录`);
+      setParsedBills(null);
+      setBillFormat('');
+      if (result.imported > 0) {
+        showToast(`已导入 ${result.imported} 条账单并更新余额`, '撤销', async () => {
+          for (const lid of [...result.ledgerIds].reverse()) {
+            await invoke('ledger:delete', lid).catch(() => {});
+          }
+          for (const tid of [...result.txIds].reverse()) {
+            await invoke('accountTransaction:delete', tid).catch(() => {});
+          }
+          load();
+        });
+      }
+      load();
+    } catch (err: any) {
+      setImportStatus('❌ 导入失败：' + err.message);
+    }
+    setImporting(false);
+  };
+
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!wallet || !csvText.trim()) return;
@@ -412,35 +475,87 @@ export function WalletFlow() {
       </Modal>
 
       {/* ── Bill Import Modal ── */}
-      <Modal open={showImport} title="📥 导入账单" onClose={() => setShowImport(false)}>
-        <form onSubmit={handleImport}>
-          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-md)' }}>
-            粘贴 CSV 账单数据，格式：日期, 摘要, 金额, 类型(income/expense)
-          </p>
-          <textarea
-            className="form-input"
-            value={csvText}
-            onChange={e => setCsvText(e.target.value)}
-            placeholder="2026-08-01, 午餐, 35.00, expense&#10;2026-08-01, 工资, 5000.00, income"
-            rows={8}
-            style={{ height: 'auto', fontFamily: 'var(--font-family-number)', fontSize: 'var(--font-size-xs)' }}
-          />
-          {importStatus && (
-            <div style={{
-              marginTop: 'var(--spacing-sm)', padding: 'var(--spacing-sm) var(--spacing-md)',
-              background: importStatus.startsWith('✅') ? '#F6FFED' : importStatus.startsWith('❌') ? '#FFF2F0' : '#E6F7FF',
-              borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)',
-            }}>
-              {importStatus}
+      <Modal open={showImport} title="📥 导入账单" onClose={() => setShowImport(false)} width="720px">
+        {parsedBills ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
+              {billFormat} · {billFileName} · 共 <b>{parsedBills.length}</b> 条记录，可逐行删除后确认导入。
+            </p>
+            <div style={{ maxHeight: 320, overflow: 'auto' }}>
+              <table style={{ width: '100%', fontSize: 'var(--font-size-xs)', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--color-bg-secondary)', position: 'sticky', top: 0 }}>
+                    <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>日期</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>摘要</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '1px solid var(--color-border)' }}>方向</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--color-border)' }}>金额</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '1px solid var(--color-border)' }}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsedBills.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      <td style={{ padding: '6px 8px' }}>{r.date}</td>
+                      <td style={{ padding: '6px 8px' }}>{r.description || '—'}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                        <Badge label={r.type === 'income' ? '📥 收入' : '📤 支出'} color={r.type === 'income' ? 'success' : 'danger'} />
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-family-number)' }}>
+                        {r.type === 'income' ? '+' : '-'}{r.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                        <Button variant="secondary" size="sm" onClick={() => setParsedBills(parsedBills.filter((_, j) => j !== i))}>✕</Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-          <div className="form-actions">
-            <Button variant="secondary" onClick={() => setShowImport(false)} type="button">取消</Button>
-            <Button variant="primary" type="submit" disabled={importing || !csvText.trim()}>
-              {importing ? '导入中...' : '导入'}
-            </Button>
+            {importStatus && (
+              <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)', background: importStatus.startsWith('✅') ? '#F6FFED' : importStatus.startsWith('❌') ? '#FFF2F0' : '#E6F7FF', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)' }}>
+                {importStatus}
+              </div>
+            )}
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => { setParsedBills(null); setImportStatus(''); }} type="button">← 返回</Button>
+              <Button variant="primary" onClick={handleConfirmParsedImport} disabled={importing || parsedBills.length === 0}>
+                {importing ? '导入中...' : '✅ 确认导入 ' + parsedBills.length + ' 条记录'}
+              </Button>
+            </div>
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleImport}>
+            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-md)' }}>
+              方式一：<b>上传账单文件</b>（微信 Excel / 支付宝 CSV，自动识别）· 方式二：粘贴 CSV（日期, 摘要, 金额, 类型）
+            </p>
+            <div style={{ marginBottom: 'var(--spacing-md)' }}>
+              <Button variant="secondary" type="button" onClick={handleUploadBillFile}>📂 上传微信/支付宝账单文件</Button>
+            </div>
+            <textarea
+              className="form-input"
+              value={csvText}
+              onChange={e => setCsvText(e.target.value)}
+              placeholder="2026-08-01, 午餐, 35.00, expense&#10;2026-08-01, 工资, 5000.00, income"
+              rows={8}
+              style={{ height: 'auto', fontFamily: 'var(--font-family-number)', fontSize: 'var(--font-size-xs)' }}
+            />
+            {importStatus && (
+              <div style={{
+                marginTop: 'var(--spacing-sm)', padding: 'var(--spacing-sm) var(--spacing-md)',
+                background: importStatus.startsWith('✅') ? '#F6FFED' : importStatus.startsWith('❌') ? '#FFF2F0' : '#E6F7FF',
+                borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)',
+              }}>
+                {importStatus}
+              </div>
+            )}
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setShowImport(false)} type="button">取消</Button>
+              <Button variant="primary" type="submit" disabled={importing || !csvText.trim()}>
+                {importing ? '导入中...' : '导入'}
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

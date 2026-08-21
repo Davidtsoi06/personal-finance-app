@@ -488,6 +488,27 @@ export interface AssetSummaryItem {
   is_investment: boolean;
 }
 
+/**
+ * v1.10.6：支付宝多区域模板——父账户「支付宝」+ 子账户「支付宝（国内）」CNY /「支付宝（香港）」HKD。
+ * 资产管理页树形展开后即显示两个独立子账号（各自余额/流水）。
+ */
+export function createAlipayFamily(): { parentId: number; children: number[] } {
+  const db = getDatabase();
+  const tx = db.transaction(() => {
+    const parent = createAccount({ name: '支付宝', type: 'online_pay', asset_type: 'e_wallet', currency: 'CNY' });
+    const cn = createAccount({
+      name: '支付宝（国内）', type: 'online_pay', asset_type: 'e_wallet',
+      currency: 'CNY', parent_account_id: parent.id,
+    });
+    const hk = createAccount({
+      name: '支付宝（香港）', type: 'online_pay', asset_type: 'e_wallet',
+      currency: 'HKD', parent_account_id: parent.id,
+    });
+    return { parentId: parent.id, children: [cn.id, hk.id] };
+  });
+  return tx();
+}
+
 /** Get system wallet accounts (WeChat, Alipay, Cash). */
 export function getSystemWallets(): AccountRow[] {
   const db = getDatabase();

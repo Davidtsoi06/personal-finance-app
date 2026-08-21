@@ -21,6 +21,8 @@ export function registerAccountIpcHandlers(): void {
   ipcMain.handle('account:totalBalance', (_e, currency?: string) => accountService.getTotalBalance(currency));
   ipcMain.handle('account:balances', (_e, accountId: number) => accountService.getAccountBalances(accountId));
   handleValidated('account:createWithChildren', (data: any) => accountService.createAccountWithChildren(data));
+  // v1.10.6：支付宝多区域模板（父账户 + 国内/香港子账户）
+  handleValidated('account:createAlipayFamily', () => accountService.createAlipayFamily());
   ipcMain.handle('account:allAssetsSummary', () => accountService.getAllAssetsSummary());
 
   // ── Account Transactions (deposit/withdraw) ──

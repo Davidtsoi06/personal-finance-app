@@ -431,6 +431,70 @@ export function registerSettingsIpcHandlers(): void {
     }
   });
 
+  // v1.10.6：AI 会话持久化与报告归档
+  const aiSession = require('../database/services/ai-session-service');
+  handleValidated('ai:sessionCreate', (title: string) => aiSession.createSession(title));
+  ipcMain.handle('ai:sessionList', () => aiSession.listSessions());
+  handleValidated('ai:sessionDelete', (id: number) => aiSession.deleteSession(id));
+  ipcMain.handle('ai:sessionMessages', (_e, sessionId: number) => aiSession.listMessages(sessionId));
+  handleValidated('ai:messageAppend', (sessionId: number, role: string, content: string) =>
+    aiSession.appendMessage(sessionId, role as 'user' | 'assistant', content)
+  );
+  handleValidated('ai:reportSave', (data: any) =>
+    aiSession.saveReport(data.sessionId ?? null, data.title, data.content)
+  );
+  ipcMain.handle('ai:reportList', () => aiSession.listReports());
+  ipcMain.handle('ai:reportGet', (_e, id: number) => aiSession.getReport(id) || null);
+  handleValidated('ai:reportDelete', (id: number) => aiSession.deleteReport(id));
+
+  /** 导出（md 直写 / pdf 隐藏窗口打印），report 与 session 共用 */
+  const exportAiDocument = async (title: string, md: string, format: string) => {
+    const { dialog } = require('electron') as typeof import('electron');
+    const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60);
+    const result = await dialog.showSaveDialog({
+      title: '导出 AI 报告',
+      defaultPath: `${safeTitle}.${format}`,
+      filters: format === 'pdf'
+        ? [{ name: 'PDF', extensions: ['pdf'] }]
+        : [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, canceled: true };
+    const fs = require('fs');
+    if (format !== 'pdf') {
+      fs.writeFileSync(result.filePath, md, 'utf-8');
+      return { success: true, filePath: result.filePath };
+    }
+    const { BrowserWindow } = require('electron') as typeof import('electron');
+    const html = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
+<style>body{font-family:"Microsoft YaHei",sans-serif;padding:28px;line-height:1.8;color:#222}
+h1{font-size:22px}h2{font-size:18px}h3{font-size:16px}table{border-collapse:collapse;width:100%}
+td,th{border:1px solid #bbb;padding:4px 10px;font-size:13px}code{background:#f2f2f2;padding:1px 5px;border-radius:3px}
+pre{background:#f7f7f7;padding:10px;overflow:auto;border-radius:4px}blockquote{border-left:4px solid #ddd;margin:0;padding-left:12px;color:#555}
+ul{padding-left:22px}</style></head><body>${aiSession.mdToHtml(md)}</body></html>`;
+    const win = new BrowserWindow({ show: false, width: 900, height: 1200 });
+    try {
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+      const pdf = await win.webContents.printToPDF({ printBackground: true });
+      fs.writeFileSync(result.filePath, pdf);
+      return { success: true, filePath: result.filePath };
+    } finally {
+      if (!win.isDestroyed()) win.destroy();
+    }
+  };
+
+  handleValidated('ai:reportExport', async (reportId: number, format: string) => {
+    const report = aiSession.getReport(reportId);
+    if (!report) return { success: false, error: '报告不存在' };
+    return exportAiDocument(report.title, report.content, format);
+  });
+  handleValidated('ai:sessionExport', async (sessionId: number, format: string) => {
+    const sessions = aiSession.listSessions();
+    const session = sessions.find((s: any) => s.id === sessionId);
+    const messages = aiSession.listMessages(sessionId);
+    if (!session || messages.length === 0) return { success: false, error: '会话无内容可导出' };
+    return exportAiDocument(session.title, aiSession.sessionToMarkdown(session.title, messages), format);
+  });
+
   // v1.10.5：API 余额查询（DeepSeek/OpenAI）
   handleValidated('ai:balance', async () => {
     try {

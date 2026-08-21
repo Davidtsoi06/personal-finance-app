@@ -305,6 +305,38 @@ function generateMonthlyReport(month: string): Buffer {
     xlsx.utils.book_append_sheet(workbook, ws, '收支流水');
   }
 
+  // Sheet 5+6: v1.10.6 全局资产快照（与资产管理页同口径）
+  {
+    const { getAllAssetsSummary } = require('../database/services/account-service');
+    const items = getAllAssetsSummary() as any[];
+    const typeLabel: Record<string, string> = {
+      bank: '银行账户', cash: '现金', e_wallet: '电子钱包',
+      investment: '券商账户', insurance: '保险', other: '其他',
+    };
+    const byType = new Map<string, number>();
+    let total = 0;
+    const rows: (string | number)[][] = [['类别', '账户', '金额(CNY 等值)']];
+    for (const it of items) {
+      const v = Number(it.market_value_cny) || 0;
+      total += v;
+      byType.set(it.asset_type, (byType.get(it.asset_type) || 0) + v);
+      rows.push([typeLabel[it.asset_type] || it.asset_type, it.name, Math.round(v * 100) / 100]);
+    }
+    rows.push(['总资产', '—', Math.round(total * 100) / 100]);
+    const ws = xlsx.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 16 }, { wch: 26 }, { wch: 16 }];
+    xlsx.utils.book_append_sheet(workbook, ws, '资产快照');
+
+    const pRows: (string | number)[][] = [['类别', '金额(CNY 等值)', '占比(%)']];
+    for (const [k, v] of byType) {
+      pRows.push([typeLabel[k] || k, Math.round(v * 100) / 100, total > 0 ? Math.round((v / total) * 10000) / 100 : 0]);
+    }
+    pRows.push(['总资产', Math.round(total * 100) / 100, 100]);
+    const ws2 = xlsx.utils.aoa_to_sheet(pRows);
+    ws2['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 10 }];
+    xlsx.utils.book_append_sheet(workbook, ws2, '资产分类占比');
+  }
+
   // Write to buffer
   const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
   return buffer;

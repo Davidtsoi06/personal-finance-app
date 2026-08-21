@@ -219,6 +219,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'account:forceDelete': z.tuple([id]),
   'account:deleteImpact': z.tuple([id]),
   'account:createWithChildren': z.tuple([accountData]),
+  'account:createAlipayFamily': z.tuple([]),
   'accountTransaction:create': z.tuple([accountTxData]),
   // ── 启动密码锁（v1.7.0） ──
   'auth:status': z.tuple([]),
@@ -302,10 +303,22 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'ai:readSampleFile': z.tuple([]),
   'ai:balance': z.tuple([]),
   'ai:usageToday': z.tuple([]),
+  'ai:sessionCreate': z.tuple([z.string().min(1).max(100)]),
+  'ai:sessionDelete': z.tuple([id]),
+  'ai:messageAppend': z.tuple([id, z.enum(['user', 'assistant']), z.string().min(1).max(200000)]),
+  'ai:reportSave': z.tuple([z.object({
+    sessionId: id.nullish(),
+    title: z.string().min(1).max(100),
+    content: z.string().min(1).max(300000),
+  }).passthrough()]),
+  'ai:reportDelete': z.tuple([id]),
+  'ai:reportExport': z.tuple([id, z.enum(['md', 'pdf'])]),
+  'ai:sessionExport': z.tuple([id, z.enum(['md', 'pdf'])]),
   'trade:importParsed': z.tuple([z.array(recordItem), id]),
   'bank:importParsed': z.tuple([z.array(recordItem), id]),
   'bank:suggestActions': z.tuple([z.array(recordItem), id]),
   'wallet:importBills': z.tuple([id, z.array(recordItem)]),
+  'wallet:parseFile': z.tuple([]),
 };
 
 export { SCHEMAS };

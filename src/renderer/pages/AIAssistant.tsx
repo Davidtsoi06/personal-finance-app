@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { invoke } from '../hooks/useIpc';
 import { Button } from '../components/ui/Button';
+import { Modal } from '../components/ui/Modal';
 import { renderMarkdown } from '@shared/utils/markdown';
 import './AIAssistant.css';
 
@@ -46,6 +47,16 @@ export function AIAssistant() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
 
+  // v1.10.6：会话持久化与报告归档
+  const [sessions, setSessions] = useState<{ id: number; title: string; message_count?: number; updated_at: string }[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const [tab, setTab] = useState<'chat' | 'reports'>('chat');
+  const [reports, setReports] = useState<{ id: number; session_id: number | null; title: string; content: string; created_at: string }[]>([]);
+  const [viewingReport, setViewingReport] = useState<{ id: number; title: string; content: string; created_at: string } | null>(null);
+  const [reportMsg, setReportMsg] = useState('');
+  const streamedRef = useRef('');
+  const bootstrappedRef = useRef(false);
+
   // Load AI config
   useEffect(() => {
     invoke<AiConfigPublic>('settings:getAiConfig')
@@ -57,6 +68,112 @@ export function AIAssistant() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // ── v1.10.6：会话持久化 ──
+  const loadSessions = useCallback(async () => {
+    const list = await invoke<{ id: number; title: string; message_count?: number; updated_at: string }[]>('ai:sessionList').catch(() => []);
+    setSessions(list || []);
+    return list || [];
+  }, []);
+
+  const loadMessages = useCallback(async (sessionId: number) => {
+    const list = await invoke<{ id: number; role: string; content: string }[]>('ai:sessionMessages', sessionId).catch(() => []);
+    setMessages((list || []).map((m) => ({ id: String(m.id), role: m.role as 'user' | 'assistant', content: renderMarkdown(m.content) })));
+  }, []);
+
+  const loadReports = useCallback(async () => {
+    const list = await invoke<{ id: number; session_id: number | null; title: string; content: string; created_at: string }[]>('ai:reportList').catch(() => []);
+    setReports(list || []);
+  }, []);
+
+  // 首次进入（已配置 Key）：恢复会话
+  useEffect(() => {
+    if (!config || !config.hasApiKey || bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
+    (async () => {
+      const list = await loadSessions();
+      if (list.length > 0) {
+        setActiveSessionId(list[0].id);
+        await loadMessages(list[0].id);
+      } else {
+        const sid = await invoke<number>('ai:sessionCreate', '新对话').catch(() => 0);
+        setActiveSessionId(sid || null);
+        await loadSessions();
+      }
+      loadReports();
+    })();
+  }, [config, loadSessions, loadMessages, loadReports]);
+
+  /** 把一轮问答持久化到当前会话 */
+  const persistExchange = useCallback(async (userText: string, assistantText: string) => {
+    const sid = activeSessionId;
+    if (sid == null) return;
+    try {
+      await invoke('ai:messageAppend', sid, 'user', userText);
+      if (assistantText) await invoke('ai:messageAppend', sid, 'assistant', assistantText);
+      await loadSessions();
+    } catch { /* 持久化失败不阻塞对话 */ }
+  }, [activeSessionId, loadSessions]);
+
+  const handleNewSession = async () => {
+    const sid = await invoke<number>('ai:sessionCreate', '新对话').catch(() => 0);
+    if (!sid) return;
+    await loadSessions();
+    setActiveSessionId(sid);
+    setMessages([]);
+    setError('');
+  };
+
+  const handleSwitchSession = async (sid: number) => {
+    setActiveSessionId(sid);
+    setError('');
+    await loadMessages(sid);
+  };
+
+  const handleDeleteSession = async (sid: number) => {
+    await invoke('ai:sessionDelete', sid).catch(() => {});
+    const list = await loadSessions();
+    if (sid === activeSessionId) {
+      if (list.length > 0) {
+        setActiveSessionId(list[0].id);
+        await loadMessages(list[0].id);
+      } else {
+        const nsid = await invoke<number>('ai:sessionCreate', '新对话').catch(() => 0);
+        setActiveSessionId(nsid || null);
+        setMessages([]);
+        await loadSessions();
+      }
+    }
+  };
+
+  /** ⭐ 保存当前会话为报告 */
+  const handleSaveReport = async () => {
+    if (activeSessionId == null) return;
+    const firstUser = messages.find((m) => m.role === 'user');
+    const plain = firstUser ? firstUser.content.replace(/<[^>]+>/g, '').slice(0, 30) : '';
+    const title = plain || `AI 对话报告 ${new Date().toISOString().slice(0, 10)}`;
+    const rid = await invoke<number>('ai:reportSave', { sessionId: activeSessionId, title }).catch(() => 0);
+    if (rid) {
+      setReportMsg('✅ 报告已保存到「AI 报告归档」');
+      loadReports();
+      setTimeout(() => setReportMsg(''), 4000);
+    }
+  };
+
+  const handleExportSession = async (format: 'md' | 'pdf') => {
+    if (activeSessionId == null) return;
+    await invoke('ai:sessionExport', activeSessionId, format).catch(() => {});
+  };
+
+  const handleExportReport = async (rid: number, format: 'md' | 'pdf') => {
+    await invoke('ai:reportExport', rid, format).catch(() => {});
+  };
+
+  const handleDeleteReport = async (rid: number) => {
+    await invoke('ai:reportDelete', rid).catch(() => {});
+    loadReports();
+    if (viewingReport && viewingReport.id === rid) setViewingReport(null);
+  };
 
   const handleSend = useCallback(async (text?: string) => {
     const msg = (text || input).trim();
@@ -88,6 +205,7 @@ export function AIAssistant() {
             }
             return updated;
           });
+          await persistExchange('📋 生成今日投资日报', result.content); // v1.10.6
         } else {
           setError(result.error || '生成日报失败');
           setMessages(prev => {
@@ -99,6 +217,7 @@ export function AIAssistant() {
             }
             return updated;
           });
+          await persistExchange('📋 生成今日投资日报', `❌ ${result.error || '生成失败'}`);
         }
       } catch (err: any) {
         setError(err.message || '未知错误');
@@ -111,6 +230,7 @@ export function AIAssistant() {
           }
           return updated;
         });
+        await persistExchange('📋 生成今日投资日报', `❌ ${err.message || '请求失败'}`);
       }
       setLoading(false);
       return;
@@ -132,6 +252,7 @@ export function AIAssistant() {
       if (window.electronAPI?.onAiStreamChunk) {
         window.electronAPI.onAiStreamChunk((chunk: string) => {
           streamedContent += chunk;
+          streamedRef.current = streamedContent; // v1.10.6：持久化用原文
           setMessages(prev => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
@@ -176,6 +297,10 @@ export function AIAssistant() {
       // If streaming is available, use it; otherwise fallback to non-streaming
       if (window.electronAPI) {
         await invoke('ai:chatStream', { message: msg, history });
+        // v1.10.6：流式完成后持久化（原文）
+        const finalContent = streamedRef.current || '';
+        streamedRef.current = '';
+        await persistExchange(msg, finalContent || undefined as any);
       } else {
         const result = await invoke<{ success: boolean; content?: string; error?: string }>('ai:chat', { message: msg, history });
         if (result.success && result.content) {
@@ -188,6 +313,7 @@ export function AIAssistant() {
             }
             return updated;
           });
+          await persistExchange(msg, result.content); // v1.10.6
         } else {
           setError(result.error || 'AI 请求失败');
           setMessages(prev => {
@@ -199,6 +325,7 @@ export function AIAssistant() {
             }
             return updated;
           });
+          await persistExchange(msg, `❌ ${result.error || '请求失败'}`);
         }
         setLoading(false);
         cleanup.forEach(fn => fn());
@@ -215,8 +342,9 @@ export function AIAssistant() {
         return updated;
       });
       setLoading(false);
+      await persistExchange(msg, `❌ ${err.message || '请求失败'}`);
     }
-  }, [input, loading, messages]);
+  }, [input, loading, messages, persistExchange]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -295,6 +423,93 @@ export function AIAssistant() {
       </div>
 
       <div className="ai-chat">
+        {/* v1.10.6：工具栏——标签切换 + 会话操作 */}
+        <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center', marginBottom: 'var(--spacing-md)', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setTab('chat')}
+            style={{
+              padding: '6px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 'var(--font-size-sm)',
+              border: tab === 'chat' ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+              background: tab === 'chat' ? 'rgba(91,155,213,0.1)' : 'var(--color-bg-primary)',
+              color: tab === 'chat' ? 'var(--color-primary)' : 'var(--color-text-primary)', fontWeight: tab === 'chat' ? 600 : 400,
+            }}
+          >💬 对话</button>
+          <button
+            onClick={() => { setTab('reports'); loadReports(); }}
+            style={{
+              padding: '6px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 'var(--font-size-sm)',
+              border: tab === 'reports' ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+              background: tab === 'reports' ? 'rgba(91,155,213,0.1)' : 'var(--color-bg-primary)',
+              color: tab === 'reports' ? 'var(--color-primary)' : 'var(--color-text-primary)', fontWeight: tab === 'reports' ? 600 : 400,
+            }}
+          >📁 AI 报告归档{reports.length > 0 ? `（${reports.length}）` : ''}</button>
+          <span style={{ flex: 1 }} />
+          {tab === 'chat' && activeSessionId != null && (
+            <>
+              <Button variant="secondary" size="sm" onClick={handleNewSession}>＋ 新对话</Button>
+              <Button variant="secondary" size="sm" onClick={handleSaveReport}>⭐ 保存为报告</Button>
+              <Button variant="secondary" size="sm" onClick={() => handleExportSession('md')}>📄 导出 .md</Button>
+              <Button variant="secondary" size="sm" onClick={() => handleExportSession('pdf')}>📄 导出 .pdf</Button>
+            </>
+          )}
+        </div>
+        {reportMsg && (
+          <div style={{ padding: '6px 12px', background: '#F6FFED', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}>
+            {reportMsg}
+          </div>
+        )}
+
+        {/* v1.10.6：报告归档列表 */}
+        {tab === 'reports' && (
+          <div>
+            {reports.length === 0 ? (
+              <div className="card-placeholder">暂无归档报告——在对话中点「⭐ 保存为报告」即可归档</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+                {reports.map((r) => (
+                  <div key={r.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)',
+                    padding: 'var(--spacing-sm) var(--spacing-md)',
+                    background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-sm)',
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</div>
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>{r.created_at?.replace('T', ' ').slice(0, 16)}</div>
+                    </div>
+                    <Button variant="secondary" size="sm" onClick={() => setViewingReport(r)}>👁 查看</Button>
+                    <Button variant="secondary" size="sm" onClick={() => handleExportReport(r.id, 'md')}>📄 .md</Button>
+                    <Button variant="secondary" size="sm" onClick={() => handleExportReport(r.id, 'pdf')}>📄 .pdf</Button>
+                    <Button variant="secondary" size="sm" onClick={() => handleDeleteReport(r.id)}>🗑</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'chat' && (
+        <div style={{ display: 'flex', gap: 'var(--spacing-md)', alignItems: 'flex-start' }}>
+          {/* 会话侧栏（v1.10.6） */}
+          <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid var(--color-border)', paddingRight: 'var(--spacing-md)', maxHeight: '60vh', overflow: 'auto' }}>
+            {sessions.map((s) => (
+              <div key={s.id} onClick={() => handleSwitchSession(s.id)} style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', marginBottom: 4,
+                borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                background: s.id === activeSessionId ? 'rgba(91,155,213,0.15)' : 'transparent',
+                border: s.id === activeSessionId ? '1px solid var(--color-primary)' : '1px solid transparent',
+              }}>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--font-size-xs)' }}>
+                  💬 {s.title || '新对话'}
+                </span>
+                <button
+                  onClick={(ev) => { ev.stopPropagation(); handleDeleteSession(s.id); }}
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)' }}
+                >🗑</button>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
         {/* Quick prompts */}
         <div className="ai-chat__quick-prompts">
           {QUICK_PROMPTS.map((qp) => (
@@ -380,7 +595,33 @@ export function AIAssistant() {
           <span>🔒 数据仅本地处理 · AI 由 DeepSeek 提供</span>
           <span>💡 快捷提问前 5 个模板点击即发送</span>
         </div>
+          </div>
+        </div>
+        )}
       </div>
+
+      {/* v1.10.6：报告查看弹窗 */}
+      <Modal open={!!viewingReport} title="📄 AI 报告" onClose={() => setViewingReport(null)} width="720px">
+        {viewingReport && (
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>{viewingReport.title}</div>
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-md)' }}>
+              {viewingReport.created_at?.replace('T', ' ').slice(0, 16)}
+            </div>
+            <div
+              className="ai-chat__markdown"
+              style={{ maxHeight: 420, overflow: 'auto' }}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(viewingReport.content) }}
+            />
+            <div className="form-actions" style={{ marginTop: 'var(--spacing-md)' }}>
+              <Button variant="secondary" onClick={() => handleExportReport(viewingReport.id, 'md')}>📄 下载 .md</Button>
+              <Button variant="secondary" onClick={() => handleExportReport(viewingReport.id, 'pdf')}>📄 下载 .pdf</Button>
+              <Button variant="secondary" onClick={() => handleDeleteReport(viewingReport.id)}>🗑 删除</Button>
+              <Button variant="primary" onClick={() => setViewingReport(null)}>关闭</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

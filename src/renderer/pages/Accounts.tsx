@@ -638,6 +638,18 @@ export function Accounts() {
       <div className="layer2-actions" style={{ marginTop: 'var(--spacing-lg)', display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
         <Button variant="primary" onClick={() => { setAddAssetType('bank'); setAddBankPreset(null); setAddError(''); setShowAdd(true); }}>+ 添加银行卡</Button>
         <Button variant="secondary" onClick={() => { setAddAssetType('investment'); setAddError(''); setShowAdd(true); }}>+ 添加券商账户</Button>
+        {/* v1.10.6：支付宝多区域模板 */}
+        <Button
+          variant="secondary"
+          onClick={async () => {
+            try {
+              await invoke('account:createAlipayFamily');
+              load();
+            } catch (err: any) {
+              console.error(err);
+            }
+          }}
+        >+ 支付宝多区域</Button>
       </div>
 
       {/* ── Add Asset Modal ── */}
