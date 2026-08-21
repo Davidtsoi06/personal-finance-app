@@ -479,6 +479,16 @@
 - [x] 测试：200/200 通过（持仓过滤集成 3）；tsc 无错；IPC 173 频道一致；双端已重建
 - [x] 用户验证通过并打包发布 v1.10.2（README 已同步更新并推送；上传后核验三个资产 state=uploaded）
 
+## 第 31n 阶段：v1.10.3 Excel 日期序列号修复 🔄（代码完成，待用户验证后发布）
+
+> 需求来源：Excel 里「日期格式」的单元格（17/8/2026）经 xlsx 读取变成序列号 46251，银行与券商日结单都受影响。
+
+- [x] **normalizeDate 支持 number/Date**：Excel 日期序列号（20000~80000 含小数）与 Date 对象直接转 YYYY-MM-DD，任何路径不漏转
+- [x] **券商标准格式修复**：parseStandardLine 从未调用 normalizeDate（日期原样输出 46251）→ 补上；券商自动检测 `cols[dateIdx]?.trim()` 对数字单元格会抛错 → 改 safeTrim
+- [x] **AI 样例修复**：rowsToSampleText 把序列号/Date 转真实日期（AI 与用户看到的样例是 2026-08-17 而非 46251）
+- [x] 测试：204/204 通过（真实 xlsx 生成：银行解析/券商解析/AI 样例/normalizeDate 直转 4 用例）；tsc 无错；IPC 173 频道一致；双端已重建
+- [ ] 用户验证后打包发布
+
 ## 第 32 阶段：v1.11.0 前端效率工具（批 C） 📋（已规划，待执行）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。
