@@ -25,7 +25,9 @@ export function registerWalletIpcHandlers(): void {
     const parser = require('../services/wallet-bill-parser') as typeof import('../services/wallet-bill-parser');
     try {
       if (ext === 'csv') {
-        const text = fs.readFileSync(filePath, 'utf-8');
+        // v1.10.7：支付宝/微信官方导出常为 GBK 编码，自动检测解码
+        const buf = fs.readFileSync(filePath);
+        const text = parser.decodeCsvBuffer(buf);
         const parsed = parser.parseCsvAuto(text);
         return {
           canceled: false,

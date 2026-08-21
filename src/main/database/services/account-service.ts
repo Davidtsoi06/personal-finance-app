@@ -509,6 +509,64 @@ export function createAlipayFamily(): { parentId: number; children: number[] } {
   return tx();
 }
 
+/**
+ * v1.10.7：支付宝账户归类升级（幂等，可反复调用）。
+ * 把现有「支付宝」/「支付宝（国内）」账户（无父）统一归入新建的「支付宝」父账户下作为
+ * 「支付宝（国内）」子账户（余额/流水保留），并自动补建「支付宝（香港）」（HKD）子账户，
+ * 使资产管理页呈现「支付宝 ▸ 支付宝（国内）/支付宝（香港）」的银行式可展开分组。
+ */
+export function ensureAlipayFamily(): { parentId: number; children: number[] } {
+  const db = getDatabase();
+  return db.transaction(() => {
+    const wallets = db.prepare(
+      "SELECT * FROM accounts WHERE asset_type = 'e_wallet' AND is_active = 1 ORDER BY id"
+    ).all() as AccountRow[];
+
+    // 已有父：名「支付宝」、无父、且带子账户（v1.10.6 createAlipayFamily 建过的树）
+    let parent = wallets.find((a) =>
+      a.name === '支付宝' && a.parent_account_id === null &&
+      wallets.some((c) => c.parent_account_id === a.id)
+    );
+
+    // 待归类：无父的「支付宝」/「支付宝（国内）」账户（不含父本身）；「支付宝」优先改名
+    const orphans = wallets.filter((a) =>
+      a.id !== parent?.id && a.parent_account_id === null &&
+      (a.name === '支付宝' || a.name === '支付宝（国内）')
+    ).sort((a, b) => (a.name === '支付宝' ? 0 : 1) - (b.name === '支付宝' ? 0 : 1));
+
+    if (!parent) {
+      parent = createAccount({ name: '支付宝', type: 'online_pay', asset_type: 'e_wallet', currency: 'CNY', sort_order: 100 });
+    }
+
+    // 归类：挂到父下，名称确保唯一「支付宝（国内）」（多个时追加序号）
+    const siblings = db.prepare(
+      'SELECT name FROM accounts WHERE parent_account_id = ? AND is_active = 1'
+    ).all(parent.id) as { name: string }[];
+    for (const acc of orphans) {
+      let finalName = '支付宝（国内）';
+      if (siblings.some((s) => s.name === finalName) || orphans.some((o) => o.id !== acc.id && o.name === '支付宝（国内）')) {
+        let n = 2;
+        while (siblings.some((s) => s.name === '支付宝（国内）' + n)) n++;
+        finalName = '支付宝（国内）' + n;
+      }
+      db.prepare('UPDATE accounts SET name = ?, parent_account_id = ? WHERE id = ?')
+        .run(finalName, parent.id, acc.id);
+      siblings.push({ name: finalName });
+    }
+
+    // 确保「支付宝（香港）」子账户
+    const hasHk = siblings.some((s) => s.name === '支付宝（香港）');
+    if (!hasHk) {
+      createAccount({ name: '支付宝（香港）', type: 'online_pay', asset_type: 'e_wallet', currency: 'HKD', parent_account_id: parent.id, sort_order: 1 });
+    }
+
+    const children = db.prepare(
+      'SELECT id FROM accounts WHERE parent_account_id = ? AND is_active = 1 ORDER BY sort_order, id'
+    ).all(parent.id) as { id: number }[];
+    return { parentId: parent.id, children: children.map((c) => c.id) };
+  })();
+}
+
 /** Get system wallet accounts (WeChat, Alipay, Cash). */
 export function getSystemWallets(): AccountRow[] {
   const db = getDatabase();
@@ -621,8 +679,39 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
   // ═══ Layer 2: Individual items, not grouped by asset_type ═══
 
   // 1. e_wallet accounts (WeChat, Alipay)
+  // v1.10.7：有子账户的父钱包（如支付宝）→ 银行式可展开分组（余额 = 自身 + 子账户合计，子账户不单独计入总资产）
+  const walletChildren = new Map<number, AccountRow[]>();
   for (const acc of allAccounts) {
-    if (acc.asset_type === 'e_wallet') {
+    if (acc.asset_type === 'e_wallet' && acc.parent_account_id != null) {
+      const list = walletChildren.get(acc.parent_account_id) || [];
+      list.push(acc);
+      walletChildren.set(acc.parent_account_id, list);
+    }
+  }
+  const walletParentIds = new Set(walletChildren.keys());
+  for (const acc of allAccounts) {
+    if (acc.asset_type !== 'e_wallet') continue;
+    if (walletParentIds.has(acc.id)) {
+      // 父钱包 → 分组条目：children 为子账户，余额 = 自身 + 子账户 CNY 合计
+      const children = (walletChildren.get(acc.id) || []).map((c) => ({
+        id: c.id, name: c.name, asset_type: 'e_wallet' as const, type: c.type,
+        currency: c.currency, balance: c.balance,
+        bank_name: null, broker: null,
+        card_number: null, display_alias: null,
+        market_value_cny: cnyMap.get(c.id) || 0,
+        children: [] as AssetSummaryItem[], is_investment: false,
+      }));
+      const sum = children.reduce((s, c) => s + (c.market_value_cny || 0), 0) + (cnyMap.get(acc.id) || 0);
+      result.push({
+        id: acc.id, name: acc.name, asset_type: 'e_wallet', type: acc.type,
+        currency: acc.currency, balance: sum,
+        bank_name: null, broker: null,
+        card_number: null, display_alias: null,
+        market_value_cny: sum,
+        children, is_investment: false,
+      });
+    } else if (acc.parent_account_id == null) {
+      // 独立钱包（微信等）保持原样
       result.push({
         id: acc.id, name: acc.name, asset_type: 'e_wallet', type: acc.type,
         currency: acc.currency, balance: acc.balance,
@@ -632,6 +721,7 @@ export function getAllAssetsSummary(): AssetSummaryItem[] {
         children: [], is_investment: false,
       });
     }
+    // 有父的子账户由父条目承载，不再单独出现
   }
 
   // 2. Cash accounts

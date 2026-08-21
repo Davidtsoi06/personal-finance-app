@@ -99,9 +99,14 @@ export function parseAlipayCsv(text: string, currency = 'CNY'): WalletParseResul
   const errors: string[] = [];
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   // 表头行：含 交易时间 与 收/支 与 金额
+  // v1.10.7：官方导出在表头前有「导出信息/特别提示/电子客户回单」说明区（可达 20+ 行），
+  // 先定位分隔线行（电子客户回单 / 交易记录明细列表），从其后扫描；找不到则扫描全文件（限 100 行）
   let headIdx = -1;
   let sep = ',';
-  for (let i = 0; i < Math.min(lines.length, 20); i++) {
+  const sepLineIdx = lines.findIndex((l) => l.includes('电子客户回单') || l.includes('交易记录明细'));
+  const scanStart = sepLineIdx >= 0 ? sepLineIdx + 1 : 0;
+  const scanEnd = Math.min(lines.length, scanStart + 100);
+  for (let i = scanStart; i < scanEnd; i++) {
     const joined = lines[i];
     if (joined.includes('交易时间') && joined.includes('收/支') && joined.includes('金额')) {
       headIdx = i;
@@ -146,6 +151,28 @@ export function parseAlipayCsv(text: string, currency = 'CNY'): WalletParseResul
     });
   }
   return { format: 'alipay', records, errors };
+}
+
+/**
+ * v1.10.7：账单 CSV 文件解码——支付宝/微信官方导出常为 GBK（ANSI）编码，
+ * 先按 UTF-8 检测，非 UTF-8 回退 GBK 解码（Node TextDecoder full-icu 支持 gbk）。
+ */
+export function decodeCsvBuffer(buf: Buffer): string {
+  if (typeof Buffer !== 'undefined' && typeof (Buffer as any).isUtf8 === 'function') {
+    try {
+      if ((Buffer as any).isUtf8(buf)) return buf.toString('utf-8');
+    } catch { /* fallthrough */ }
+  } else {
+    try {
+      const s = buf.toString('utf-8');
+      if (!s.includes('\uFFFD')) return s;
+    } catch { /* fallthrough */ }
+  }
+  try {
+    return new TextDecoder('gbk').decode(buf);
+  } catch {
+    return buf.toString('utf-8');
+  }
 }
 
 /** 文本自动识别：微信 CSV / 支付宝 CSV */

@@ -23,6 +23,8 @@ export function registerAccountIpcHandlers(): void {
   handleValidated('account:createWithChildren', (data: any) => accountService.createAccountWithChildren(data));
   // v1.10.6：支付宝多区域模板（父账户 + 国内/香港子账户）
   handleValidated('account:createAlipayFamily', () => accountService.createAlipayFamily());
+  // v1.10.7：支付宝账户归类升级（幂等）——现有支付宝账户归入「支付宝（国内）」子账户 + 自动补建香港子账户
+  handleValidated('account:ensureAlipayFamily', () => accountService.ensureAlipayFamily());
   ipcMain.handle('account:allAssetsSummary', () => accountService.getAllAssetsSummary());
 
   // ── Account Transactions (deposit/withdraw) ──

@@ -24,6 +24,7 @@ export type IpcChannel =
   | 'account:create'
   | 'account:createWithChildren'
   | 'account:createAlipayFamily'
+  | 'account:ensureAlipayFamily'
   | 'account:delete'
   | 'account:deleteImpact'
   | 'account:forceDelete'

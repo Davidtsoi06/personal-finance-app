@@ -54,6 +54,8 @@ export function Accounts() {
   const [addError, setAddError] = useState('');
   // 分组内点「添加银行卡」时预填的银行名（可修改，v1.6.0）
   const [addBankPreset, setAddBankPreset] = useState<string | null>(null);
+  // v1.10.7：支付宝分组内「+ 添加支付宝账户」时记录父账户 id（新建子账户用）
+  const [addWalletParent, setAddWalletParent] = useState<number | null>(null);
   const [bankAccounts, setBankAccounts] = useState<Account[]>([]);
 
   // Edit / delete modal state
@@ -68,6 +70,8 @@ export function Accounts() {
 
   const load = useCallback(async () => {
     try {
+      // v1.10.7：幂等归类支付宝账户（现有账户 → 支付宝（国内）+ 自动补建香港子账户）
+      await invoke('account:ensureAlipayFamily').catch(() => undefined);
       const summary = await invoke<AssetSummaryItem[]>('account:allAssetsSummary');
       setAssetSummary(summary || []);
       const banks = await invoke<Account[]>('account:listBankAccounts');
@@ -176,6 +180,32 @@ export function Accounts() {
     }
   };
 
+  // v1.10.7：支付宝分组内新建子账户（名称自定义，如「支付宝（淘宝小号）」）
+  const handleAddWalletAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddError('');
+    const fd = new FormData(e.target as HTMLFormElement);
+    const name = String(fd.get('name') || '').trim() || '支付宝（国内）';
+    const data: Record<string, unknown> = {
+      name,
+      type: 'online_pay',
+      asset_type: 'e_wallet',
+      currency: fd.get('currency') || 'CNY',
+      balance: parseFloat(fd.get('balance') as string) || 0,
+      parent_account_id: addWalletParent,
+    };
+    try {
+      await invoke('account:create', data);
+      setShowAdd(false);
+      setAddAssetType('');
+      setAddWalletParent(null);
+      load();
+    } catch (err: any) {
+      console.error(err);
+      setAddError(err?.message || '创建失败，请检查填写内容');
+    }
+  };
+
   // ── Compute stats ──
   const totalAssets = assetSummary.reduce((s, item) => s + (item.market_value_cny || 0), 0);
   const bankCount = assetSummary.filter(item => item.asset_type === 'bank').length;
@@ -246,13 +276,86 @@ export function Accounts() {
 
             // ── e_wallet card (WeChat, Alipay) ──
             if (assetType === 'e_wallet') {
+              const walletSlug = (name: string) => name === '微信' ? 'wechat' : name === '支付宝' ? 'alipay' : name.toLowerCase();
+              // v1.10.7：支付宝父钱包 → 银行式可展开分组（子账户：支付宝（国内）/支付宝（香港）等）
+              if ((item.children?.length || 0) > 0) {
+                const isExpanded = expandedBanks.has(item.name);
+                return (
+                  <div key={`wallet-${item.id}`} className="layer2-card">
+                    <div
+                      className="layer2-card-main layer2-card--clickable"
+                      onClick={() => toggleBank(item.name)}
+                    >
+                      <div className="layer2-card-icon">{icon}</div>
+                      <div className="layer2-card-info">
+                        <div className="layer2-card-name">{item.name}</div>
+                        <div className="layer2-card-meta">
+                          {item.children.length} 个子账户
+                        </div>
+                      </div>
+                      <div className="layer2-card-value">
+                        <Amount value={item.market_value_cny} currency="CNY" colored={false} />
+                        <span style={{ marginLeft: 8, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                          {isExpanded ? '▼' : '▶'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="layer2-card-children">
+                        {item.children.map((child) => (
+                          <div
+                            key={`wallet-child-${child.id}`}
+                            className="bank-card-row"
+                            onClick={() => navigate(`/wallet/${walletSlug(item.name)}`)}
+                          >
+                            <div className="bank-card-row-icon">{icon}</div>
+                            <div className="bank-card-row-info">
+                              <div className="bank-card-row-name">{child.name}</div>
+                              <div className="bank-card-row-meta">
+                                电子钱包 · {child.currency}
+                              </div>
+                            </div>
+                            <div className="bank-card-row-value">
+                              <Amount value={child.market_value_cny} currency="CNY" colored />
+                            </div>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(e) => {
+                                e?.stopPropagation();
+                                setEditingAccount(child as EditableAccount);
+                              }}
+                            >
+                              ✏️
+                            </Button>
+                          </div>
+                        ))}
+                        <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)' }} onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              setAddAssetType('e_wallet');
+                              setAddWalletParent(item.id);
+                              setAddError('');
+                              setShowAdd(true);
+                            }}
+                          >
+                            + 添加支付宝账户
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
               return (
                 <div
                   key={`wallet-${item.id}`}
                   className="layer2-card layer2-card--clickable"
                   onClick={() => {
-                    const slug = item.name === '微信' ? 'wechat' : item.name === '支付宝' ? 'alipay' : item.name.toLowerCase();
-                    navigate(`/wallet/${slug}`);
+                    navigate(`/wallet/${walletSlug(item.name)}`);
                   }}
                 >
                   <div className="layer2-card-main">
@@ -655,7 +758,7 @@ export function Accounts() {
       {/* ── Add Asset Modal ── */}
       <Modal
         open={showAdd}
-        title={!addAssetType ? '选择资产类型' : addAssetType === 'bank' ? '添加银行卡' : '添加券商账户'}
+        title={!addAssetType ? '选择资产类型' : addAssetType === 'bank' ? '添加银行卡' : addAssetType === 'e_wallet' ? '添加支付宝账户' : '添加券商账户'}
         onClose={() => { setShowAdd(false); setAddAssetType(''); }}
       >
         {!addAssetType ? (
@@ -675,6 +778,40 @@ export function Accounts() {
               <Button variant="secondary" onClick={() => setShowAdd(false)}>取消</Button>
             </div>
           </div>
+        ) : addAssetType === 'e_wallet' ? (
+          <form onSubmit={handleAddWalletAccount}>
+            <div className="form-group">
+              <label className="form-label">账户名称 *</label>
+              <input className="form-input" name="name" required placeholder="如：支付宝（国内）/ 支付宝（淘宝小号）" />
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 4 }}>
+                将添加为「支付宝」的子账户，名称可自定义
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">币种</label>
+                <select className="form-select" name="currency" defaultValue="CNY">
+                  <option value="CNY">¥ 人民币</option>
+                  <option value="HKD">HK$ 港币</option>
+                  <option value="USD">$ 美元</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">初始余额</label>
+                <input className="form-input" name="balance" type="number" step="0.01" defaultValue="0" />
+              </div>
+            </div>
+            {addError && (
+              <div style={{ padding: 'var(--spacing-sm) var(--spacing-md)', background: 'var(--color-danger-bg)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-danger)', marginBottom: 'var(--spacing-md)' }}>
+                ❌ {addError}
+              </div>
+            )}
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setAddAssetType('')} type="button">← 返回</Button>
+              <Button variant="secondary" onClick={() => { setShowAdd(false); setAddAssetType(''); }} type="button">取消</Button>
+              <Button variant="primary" type="submit">创建</Button>
+            </div>
+          </form>
         ) : addAssetType === 'bank' ? (
           <form onSubmit={handleAddBankCard}>
             <div className="form-group">

@@ -220,6 +220,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'account:deleteImpact': z.tuple([id]),
   'account:createWithChildren': z.tuple([accountData]),
   'account:createAlipayFamily': z.tuple([]),
+  'account:ensureAlipayFamily': z.tuple([]),
   'accountTransaction:create': z.tuple([accountTxData]),
   // ── 启动密码锁（v1.7.0） ──
   'auth:status': z.tuple([]),
