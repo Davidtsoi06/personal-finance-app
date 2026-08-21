@@ -512,8 +512,8 @@ export function createAlipayFamily(): { parentId: number; children: number[] } {
 /**
  * v1.10.7：支付宝账户归类升级（幂等，可反复调用）。
  * 把现有「支付宝」/「支付宝（国内）」账户（无父）统一归入新建的「支付宝」父账户下作为
- * 「支付宝（国内）」子账户（余额/流水保留），并自动补建「支付宝（香港）」（HKD）子账户，
- * 使资产管理页呈现「支付宝 ▸ 支付宝（国内）/支付宝（香港）」的银行式可展开分组。
+ * 「支付宝（国内）」子账户（余额/流水保留），使资产管理页呈现「支付宝 ▸ 支付宝（国内）」的
+ * 银行式可展开分组；其他区域子账户（如支付宝（香港））由用户通过「+ 添加支付宝账户」自行新建。
  */
 export function ensureAlipayFamily(): { parentId: number; children: number[] } {
   const db = getDatabase();
@@ -554,12 +554,7 @@ export function ensureAlipayFamily(): { parentId: number; children: number[] } {
       siblings.push({ name: finalName });
     }
 
-    // 确保「支付宝（香港）」子账户
-    const hasHk = siblings.some((s) => s.name === '支付宝（香港）');
-    if (!hasHk) {
-      createAccount({ name: '支付宝（香港）', type: 'online_pay', asset_type: 'e_wallet', currency: 'HKD', parent_account_id: parent.id, sort_order: 1 });
-    }
-
+    // 注意：不自动补建「支付宝（香港）」等子账户——用户可通过「+ 添加支付宝账户」自定义新建
     const children = db.prepare(
       'SELECT id FROM accounts WHERE parent_account_id = ? AND is_active = 1 ORDER BY sort_order, id'
     ).all(parent.id) as { id: number }[];

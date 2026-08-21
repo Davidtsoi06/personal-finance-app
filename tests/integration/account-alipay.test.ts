@@ -39,7 +39,7 @@ describe('支付宝账户归类升级 ensureAlipayFamily（v1.10.7）', () => {
     db.prepare("UPDATE accounts SET balance = 7854.62 WHERE name = '微信'").run();
 
     const { parentId, children } = ensureAlipayFamily();
-    expect(children).toHaveLength(2);
+    expect(children).toHaveLength(1);
 
     // 原账户改名为「支付宝（国内）」并挂到父下，余额保留
     const renamed = getAccount(alipay.id);
@@ -54,12 +54,10 @@ describe('支付宝账户归类升级 ensureAlipayFamily（v1.10.7）', () => {
     const wechat = db.prepare("SELECT * FROM accounts WHERE name = '微信'").get() as any;
     expect(wechat.parent_account_id).toBeNull();
 
-    // 树形可见：支付宝 ▸ 支付宝（国内）+ 支付宝（香港）
+    // 树形可见：支付宝 ▸ 支付宝（国内）（香港等区域子账户由用户手动新建）
     const tree = listAccountsAsTree();
     const p = tree.find((a: any) => a.id === parentId);
-    expect(p?.children.map((c: any) => c.name).sort()).toEqual(['支付宝（国内）', '支付宝（香港）']);
-    const hk = p?.children.find((c: any) => c.name === '支付宝（香港）');
-    expect(hk.currency).toBe('HKD');
+    expect(p?.children.map((c: any) => c.name)).toEqual(['支付宝（国内）']);
     db.close();
   });
 
@@ -68,9 +66,9 @@ describe('支付宝账户归类升级 ensureAlipayFamily（v1.10.7）', () => {
     db.prepare("UPDATE accounts SET balance = 50 WHERE name = '支付宝' AND asset_type = 'e_wallet'").run();
     ensureAlipayFamily();
     const r2 = ensureAlipayFamily();
-    expect(r2.children).toHaveLength(2);
+    expect(r2.children).toHaveLength(1);
     const count = db.prepare("SELECT COUNT(*) as c FROM accounts WHERE asset_type = 'e_wallet' AND is_active = 1").get() as { c: number };
-    expect(count.c).toBe(4); // 种子微信 + 支付宝（国内）+ 支付宝（父）+ 支付宝（香港）
+    expect(count.c).toBe(3); // 种子微信 + 支付宝（国内）+ 支付宝（父）
     const dups = db.prepare("SELECT COUNT(*) as c FROM accounts WHERE name = '支付宝（国内）' AND is_active = 1").get() as { c: number };
     expect(dups.c).toBe(1);
     db.close();
@@ -104,8 +102,8 @@ describe('支付宝账户归类升级 ensureAlipayFamily（v1.10.7）', () => {
     expect(wallets).toHaveLength(2);
     const parentItem = wallets.find((w) => w.name === '支付宝');
     expect(parentItem).toBeTruthy();
-    expect(parentItem!.children).toHaveLength(2);
-    // 父条目余额 = 国内子账户 100 + 香港 0
+    expect(parentItem!.children).toHaveLength(1);
+    // 父条目余额 = 国内子账户 100
     expect(parentItem!.market_value_cny).toBeCloseTo(100, 2);
     // 总资产 = 支付宝分组 100 + 微信 200（子账户不单独重复计入）
     const total = summary.reduce((s, item) => s + (item.market_value_cny || 0), 0);
