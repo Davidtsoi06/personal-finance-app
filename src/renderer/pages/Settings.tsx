@@ -5,6 +5,7 @@ import { Table, Column } from '../components/ui/Table';
 import { invoke } from '../hooks/useIpc';
 import { ArchiveCard } from '../components/cards/ArchiveCard';
 import { AiConfigCard } from '../components/cards/AiConfigCard';
+import { AiUsageBalanceCard } from '../components/cards/AiUsageBalanceCard';
 import { AlertConfigCard } from '../components/cards/AlertConfigCard';
 import { DataBackupCard } from '../components/cards/DataBackupCard';
 import { BrokerFormatCard } from '../components/cards/BrokerFormatCard';
@@ -230,6 +231,11 @@ export function Settings() {
       {/* AI Config Card */}
       <div style={{ marginTop: 'var(--spacing-lg)' }}>
         <AiConfigCard />
+      </div>
+
+      {/* v1.10.5：AI API 余额与今日用量 */}
+      <div style={{ marginTop: 'var(--spacing-lg)' }}>
+        <AiUsageBalanceCard />
       </div>
 
       {/* Budget Card */}

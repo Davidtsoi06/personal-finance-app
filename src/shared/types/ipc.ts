@@ -43,6 +43,8 @@ export type IpcChannel =
   | 'ai:dailySummary'
   | 'ai:generateFormat'
   | 'ai:readSampleFile'
+  | 'ai:balance'
+  | 'ai:usageToday'
   | 'alert:listConfig'
   | 'alert:updateConfig'
   | 'app:ping'

@@ -498,6 +498,16 @@
 - [x] 测试：206/206 通过（新增 isDateCellFormat 白名单 10 断言 + 端到端：日期单元格转真实日期、HK$ 金额 25000 保持数字 + 金额误转回归断言）；tsc 无错；IPC 173 频道一致；双端已重建
 - [ ] 用户验证后打包发布
 
+## 第 31p 阶段：v1.10.5 AI API 余额 + 今日用量 🔄（代码完成，待用户验证后发布）
+
+> 需求来源：AI 需用户自备 API Key，用户想在 App 内看到余额与今日用量。
+
+- [x] **今日用量（本地统计，通用）**：chat / chatStreaming / 模板生成 三处成功响应后记录 usage（输入/输出 tokens）+ 调用次数；流式从 SSE 末尾 usage 数据块收集；app_settings 按天 JSON 存最近 7 天；`ai:usageToday` 频道
+- [x] **API 余额（服务商接口）**：DeepSeek /user/balance、OpenAI /v1/dashboard/billing/credit_grants；deriveBalanceEndpoint 纯函数按 apiUrl 推导；手动刷新不轮询；其他服务商提示不支持；`ai:balance` 频道
+- [x] **UI**：设置页新增「💳 API 余额与用量」卡片（余额+币种+更新时间+刷新按钮；今日调用次数/输入 tokens/输出 tokens 三格统计）
+- [x] 测试：215/215 通过（mergeUsage 4 + 端点推导 3 + 持久化集成 2）；tsc 无错；IPC 175 频道一致
+- [ ] 双端构建 + 用户验证后打包发布
+
 ## 第 32 阶段：v1.11.0 前端效率工具（批 C） 📋（已规划，待执行）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。

@@ -50,6 +50,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'ai:dailySummary',
   'ai:generateFormat',
   'ai:readSampleFile',
+  'ai:balance',
+  'ai:usageToday',
   'alert:listConfig',
   'alert:updateConfig',
   'archive:execute',

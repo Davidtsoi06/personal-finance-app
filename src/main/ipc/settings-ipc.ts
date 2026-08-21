@@ -431,6 +431,19 @@ export function registerSettingsIpcHandlers(): void {
     }
   });
 
+  // v1.10.5：API 余额查询（DeepSeek/OpenAI）
+  handleValidated('ai:balance', async () => {
+    try {
+      const result = await aiService.fetchBalance();
+      return { success: true, ...result, fetchedAt: new Date().toISOString() };
+    } catch (err: any) {
+      return { success: false, error: err.message || '余额查询失败' };
+    }
+  });
+
+  // v1.10.5：今日 AI 用量（本地统计）
+  handleValidated('ai:usageToday', () => aiService.getUsageToday());
+
   ipcMain.handle('ai:dailySummary', async (_e, date?: string) => {
     const targetDate = date || new Date().toISOString().slice(0, 10);
     // Check cache first

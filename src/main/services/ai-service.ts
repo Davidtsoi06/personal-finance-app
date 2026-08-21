@@ -2,7 +2,7 @@
  * AI service — Chat with DeepSeek/OpenAI-compatible API.
  * All network calls and API key handling stay in the main process.
  */
-import { getAiConfig } from '../database/services/settings-service';
+import { getAiConfig, getSetting, setSetting } from '../database/services/settings-service';
 import { gatherPortfolioContext, generateDailySummaryContext } from './portfolio-context';
 import { normalizeDate } from './data-normalizer';
 
@@ -195,6 +195,130 @@ function colIndexToLetter(i: number): string {
   return s;
 }
 
+// ── AI 用量统计（v1.10.5：本地记录每日调用次数与 tokens，所有服务商通用） ──
+
+export interface UsageDay {
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+}
+
+/** 纯函数：把一次调用合并进用量表（按天），并裁剪到最近 7 天 */
+export function mergeUsage(
+  existing: Record<string, UsageDay> | null,
+  date: string,
+  calls: number,
+  promptTokens: number,
+  completionTokens: number
+): Record<string, UsageDay> {
+  const map: Record<string, UsageDay> = existing && typeof existing === 'object' ? { ...existing } : {};
+  const day = map[date] || { calls: 0, promptTokens: 0, completionTokens: 0 };
+  day.calls += calls || 0;
+  day.promptTokens += promptTokens || 0;
+  day.completionTokens += completionTokens || 0;
+  map[date] = day;
+  // 保留最近 7 天
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 6);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  for (const k of Object.keys(map)) {
+    if (k < cutoffStr) delete map[k];
+  }
+  return map;
+}
+
+/** 记录一次 AI 调用（成功响应后调用） */
+export function recordUsage(promptTokens = 0, completionTokens = 0, calls = 1, dateStr?: string): void {
+  const date = dateStr || new Date().toISOString().slice(0, 10);
+  const raw = getSetting('ai.usage.daily');
+  let existing: Record<string, UsageDay> | null = null;
+  try { existing = raw ? JSON.parse(raw) : null; } catch { existing = null; }
+  const merged = mergeUsage(existing, date, calls, promptTokens, completionTokens);
+  setSetting('ai.usage.daily', JSON.stringify(merged));
+}
+
+/** 今日用量（未记录则为 0） */
+export function getUsageToday(dateStr?: string): UsageDay {
+  const date = dateStr || new Date().toISOString().slice(0, 10);
+  const raw = getSetting('ai.usage.daily');
+  try {
+    const map = raw ? JSON.parse(raw) as Record<string, UsageDay> : null;
+    const day = map && map[date] ? map[date] : { calls: 0, promptTokens: 0, completionTokens: 0 };
+    return {
+      calls: day.calls || 0,
+      promptTokens: day.promptTokens || 0,
+      completionTokens: day.completionTokens || 0,
+    };
+  } catch {
+    return { calls: 0, promptTokens: 0, completionTokens: 0 };
+  }
+}
+
+// ── AI 余额查询（v1.10.5：DeepSeek/OpenAI 官方接口） ──
+
+export interface BalanceResult {
+  balance: number;
+  currency: string;
+  provider: string;
+}
+
+/** 纯函数：由 apiUrl 与 provider 推导余额查询端点 */
+export function deriveBalanceEndpoint(apiUrl: string, provider: string): string | null {
+  try {
+    const u = new URL(apiUrl);
+    const base = u.protocol + '//' + u.host;
+    if (provider === 'deepseek') return base + '/user/balance';
+    if (provider === 'openai') return base + '/v1/dashboard/billing/credit_grants';
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** 查询服务商账户余额（DeepSeek / OpenAI）；其他服务商抛「不支持」 */
+export async function fetchBalance(): Promise<BalanceResult> {
+  const config = getAiConfig();
+  if (!config.apiKey) throw new Error('请先配置 AI API Key（设置 → AI 助手）');
+  const endpoint = deriveBalanceEndpoint(config.apiUrl, config.provider);
+  if (!endpoint) {
+    throw new Error('当前服务商暂不支持余额查询（DeepSeek / OpenAI 支持）');
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      if (response.status === 401) throw new Error('API Key 无效（401）');
+      if (response.status === 403) throw new Error('无权限查询余额（403），可能需在服务商控制台查看');
+      const text = await response.text().catch(() => '');
+      throw new Error(`余额查询失败 (${response.status}): ${text.slice(0, 150)}`);
+    }
+    const data = await response.json() as any;
+    if (config.provider === 'deepseek') {
+      const infos = Array.isArray(data?.balance_infos) ? data.balance_infos : [];
+      const total = infos.reduce((s: number, i: any) => s + (Number(i.total_balance) || 0), 0);
+      const currency = infos.find((i: any) => i.currency)?.currency || 'USD';
+      if (!infos.length) throw new Error('余额接口返回为空');
+      return { balance: Math.round(total * 100) / 100, currency, provider: config.provider };
+    }
+    // openai: total_available / total_granted
+    const balance = Number(data?.total_available ?? data?.total_granted ?? 0);
+    return { balance: Math.round(balance * 100) / 100, currency: 'USD', provider: config.provider };
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') throw new Error('余额查询超时（20秒），请检查网络');
+    throw err;
+  }
+}
+
 /**
  * AI 生成日结单模板：取样例前 30 行 → 调用 AI → 解析校验（JSON 解析失败自动重试一次）。
  * 样例内容会发送给配置的 AI 服务商（弹窗已明示）。
@@ -234,6 +358,8 @@ export async function generateStatementFormat(sample: string, kind: 'bank' | 'br
       const data = await response.json() as any;
       const content = data?.choices?.[0]?.message?.content || '';
       if (!content) throw new Error('AI 返回了空内容，请重试');
+      // v1.10.5：记录本次调用用量
+      recordUsage(data?.usage?.prompt_tokens || 0, data?.usage?.completion_tokens || 0);
       return content;
     } catch (err: any) {
       clearTimeout(timeout);
@@ -317,6 +443,8 @@ export async function chat(
 
     const data = await response.json() as any;
     const content = data?.choices?.[0]?.message?.content || '';
+    // v1.10.5：记录本次调用用量（投资日报也经此统计）
+    recordUsage(data?.usage?.prompt_tokens || 0, data?.usage?.completion_tokens || 0);
 
     return {
       content: content || 'AI 返回了空内容，请稍后重试',
@@ -396,6 +524,7 @@ export async function chatStreaming(
     const decoder = new TextDecoder();
     let fullContent = '';
     let buffer = '';
+    let lastUsage: { prompt_tokens?: number; completion_tokens?: number } | null = null; // v1.10.5
 
     while (true) {
       const { done, value } = await reader.read();
@@ -413,6 +542,11 @@ export async function chatStreaming(
 
         try {
           const parsed = JSON.parse(data);
+          // v1.10.5：流式响应的 usage 在结束前的数据块中返回
+          const usage = parsed?.usage;
+          if (usage && (usage.prompt_tokens || usage.completion_tokens || usage.total_tokens)) {
+            lastUsage = usage;
+          }
           const delta = parsed?.choices?.[0]?.delta?.content;
           if (delta) {
             fullContent += delta;
@@ -423,6 +557,9 @@ export async function chatStreaming(
         }
       }
     }
+
+    // v1.10.5：记录本次调用用量（流式拿不到 usage 时按 0 计，仍计 1 次调用）
+    recordUsage(lastUsage?.prompt_tokens || 0, lastUsage?.completion_tokens || 0);
 
     return { content: fullContent || 'AI 返回了空内容，请稍后重试', model: config.model };
   } catch (err: any) {
