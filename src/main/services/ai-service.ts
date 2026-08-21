@@ -106,8 +106,9 @@ export function parseGeneratedFormat(raw: string): GeneratedFormat {
 
 /**
  * v1.10.1：把解析出的表格行转成样例文本（制表符分隔、单元格去空白），最多 maxLines 行。
- * v1.10.3：Excel「日期格式」单元格读取后是序列号数字（46251）或 Date 对象——
- *   统一转成真实日期文本（如 2026-08-17），AI 与用户看到的样例不再是 46251。
+ * v1.10.3：Excel「日期格式」单元格（cellDates 读取后为 Date 对象）→ 真实日期文本。
+ * v1.10.4 修复：不再按数值区间猜日期——普通数字（货币金额如 30,000）会被误转成日期序列号；
+ *   只有读取时被 xlsx 识别为日期格式的单元格（Date 对象）才转日期，金额等数字保持原样。
  */
 export function rowsToSampleText(rows: unknown[][], maxLines = 30): string {
   return rows
@@ -118,14 +119,80 @@ export function rowsToSampleText(rows: unknown[][], maxLines = 30): string {
 
 function cellToSampleText(c: unknown): string {
   if (c === null || c === undefined) return '';
+  // 仅 Date 对象视为日期；普通数字（金额）保持原样
   if (c instanceof Date) return normalizeDate(c);
-  if (typeof c === 'number') {
-    // Excel 日期序列号（20000~80000，可带时间小数）→ 真实日期
-    if (c >= 20000 && c <= 80000 && /^\d{5}(\.\d+)?$/.test(String(c))) {
-      return normalizeDate(c);
-    }
-  }
   return String(c).trim();
+}
+
+/**
+ * v1.10.4：白名单判断 Excel 数字格式是否为日期格式。
+ * 不用 SheetJS 的 cellDates（会把 HK$#,##0.00 里的 h 误判为小时）；
+ * 规则：去掉引号/[..]片段/数字占位符后，含 年份(yy/yyyy)、星期文本(ddd)、月份文本(mmmm) 或 时间(h:mm) 令牌 → 日期。
+ */
+export function isDateCellFormat(z: string): boolean {
+  if (!z) return false;
+  const cleaned = z.replace(/"[^"]*"/g, '').replace(/\[[^\]]*\]/g, '');
+  const lowerRaw = cleaned.toLowerCase();
+  // 时间检测在剥离冒号前进行（h:mm 的冒号不能被剥掉）
+  const hasTime = /h+\s*[:.]/.test(lowerRaw);
+  const code = cleaned.replace(/[0#?.,:;@\\\-_* ]/g, '').toLowerCase();
+  if (!code) return false;
+  const hasYear = /y{2,}/.test(code);
+  const hasTextDay = /ddd/.test(code);
+  const hasMonthName = /mmmm/.test(code);
+  return hasYear || hasTextDay || hasMonthName || hasTime;
+}
+
+/**
+ * v1.10.4：把 Excel sheet 转成样例行——日期格式单元格（序列号）→ 真实日期文本，
+ * 金额/币种等普通数字保持原样（前 30 行）。'!ref' 形如 'A1:F30'。
+ */
+export function xlsxSheetToSampleRows(sheet: any, maxLines = 30): unknown[][] {
+  const ref = String(sheet?.['!ref'] || 'A1');
+  const m = ref.match(/^(\w+)(\d+):(\w+)(\d+)$/);
+  let eRow = 0;
+  let eCol = 0;
+  if (m) {
+    eCol = colToIndex(m[3]);
+    eRow = parseInt(m[4], 10) - 1;
+  }
+  const rows: unknown[][] = [];
+  for (let r = 0; r <= eRow && rows.length < maxLines; r++) {
+    const row: unknown[] = [];
+    for (let c = 0; c <= eCol; c++) {
+      const addr = (sheet as any)[colIndexToLetter(c) + (r + 1)];
+      if (!addr || addr.v === undefined || addr.v === null) { row.push(''); continue; }
+      if (addr.t === 'n' && typeof addr.w === 'string' && addr.w.trim()) {
+        // 优先用格式化显示文本：日期→'17/8/2026'，货币→'HK$25,000.00'（真实显示，AI 可识别）
+        row.push(addr.w.trim());
+      } else if (addr.t === 'n' && isDateCellFormat(String(addr.z || ''))) {
+        row.push(normalizeDate(addr.v)); // 日期序列号 → 日期文本（无 w 时的兜底）
+      } else if (addr.t === 'd') {
+        row.push(normalizeDate(addr.v));
+      } else {
+        row.push(addr.v);
+      }
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function colToIndex(letter: string): number {
+  let n = 0;
+  for (const ch of letter.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+function colIndexToLetter(i: number): string {
+  let s = '';
+  let n = i + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
 }
 
 /**

@@ -413,12 +413,14 @@ export function registerSettingsIpcHandlers(): void {
       }
       const xlsx = require('xlsx') as typeof import('xlsx');
       const fileBuffer = fs.readFileSync(filePath);
+      // v1.10.4：白名单日期格式识别（不用 cellDates——SheetJS 会把 HK$#,##0.00 里的 h 误判为小时）：
+      // 日期格式单元格（序列号）→ 日期文本；金额等普通数字保持原样
       const workbook = ext === 'xls'
         ? xlsx.read(fileBuffer, { type: 'buffer', codepage: 936 })
         : xlsx.read(fileBuffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const rows: unknown[][] = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const rows = aiService.xlsxSheetToSampleRows(sheet);
       return {
         canceled: false,
         fileName: filePath.split(/[\\/]/).pop() || filePath,
