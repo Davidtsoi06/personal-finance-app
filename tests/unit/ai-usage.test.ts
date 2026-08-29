@@ -9,14 +9,16 @@ function daysAgo(n: number): string {
 
 describe('AI 用量合并（v1.10.5）', () => {
   it('首次记录创建当天条目', () => {
-    const m = mergeUsage(null, '2026-08-20', 1, 100, 50);
-    expect(m['2026-08-20']).toEqual({ calls: 1, promptTokens: 100, completionTokens: 50 });
+    const today = daysAgo(0);
+    const m = mergeUsage(null, today, 1, 100, 50);
+    expect(m[today]).toEqual({ calls: 1, promptTokens: 100, completionTokens: 50 });
   });
 
   it('同一天多次调用累加', () => {
-    let m = mergeUsage(null, '2026-08-20', 1, 100, 50);
-    m = mergeUsage(m, '2026-08-20', 2, 30, 10);
-    expect(m['2026-08-20']).toEqual({ calls: 3, promptTokens: 130, completionTokens: 60 });
+    const today = daysAgo(0);
+    let m = mergeUsage(null, today, 1, 100, 50);
+    m = mergeUsage(m, today, 2, 30, 10);
+    expect(m[today]).toEqual({ calls: 3, promptTokens: 130, completionTokens: 60 });
   });
 
   it('只保留最近 7 天（10 天前的清除，3 天前的保留）', () => {
@@ -31,8 +33,9 @@ describe('AI 用量合并（v1.10.5）', () => {
   });
 
   it('非法存量 JSON 容错（当作空表）', () => {
-    const m = mergeUsage({ bad: 1 } as any, '2026-08-20', 1, 1, 1);
-    expect(m['2026-08-20'].calls).toBe(1);
+    const today = daysAgo(0);
+    const m = mergeUsage({ bad: 1 } as any, today, 1, 1, 1);
+    expect(m[today].calls).toBe(1);
   });
 });
 

@@ -3,7 +3,7 @@
  * and old data cleanup. Archives data older than the configured retention period.
  */
 import { getDatabase } from '../database/index';
-import { reverseAssetAdjustment } from '../database/services/transaction-service';
+import { reconcileAssetCostBasis } from '../database/services/transaction-service';
 import { removeFlowsForTransactionInDb } from '../database/services/cash-flow-core';
 import { updateAccountBalance } from '../database/services/account-service';
 import { getSetting, setSetting } from '../database/services/settings-service';
@@ -385,13 +385,21 @@ export function executeArchive(months: string[]): ArchiveResult[] {
       const monthEnd = month + '-' + String(lastDay).padStart(2, '0');
 
       const run = db.transaction(() => {
-        // 1. 反冲该月交易对持仓的影响，并删除关联现金流（外键必须先清）
+        // 1. 删除该月交易及关联现金流（外键必须先清）；
+        //    v1.10.8：删除后按剩余历史交易重放校准持仓（替代逐笔流式反转，精确还原）
         const monthTx = db.prepare(
-          'SELECT * FROM transactions WHERE date >= ? AND date <= ? ORDER BY date DESC, id DESC'
+          'SELECT * FROM transactions WHERE date >= ? AND date <= ?'
         ).all(monthStart, monthEnd) as any[];
+        const affectedAssetIds = new Set<number>();
         for (const t of monthTx) {
-          reverseAssetAdjustment(t);
+          affectedAssetIds.add(t.asset_id);
           removeFlowsForTransactionInDb(db, t.id);
+        }
+        for (const t of monthTx) {
+          db.prepare('DELETE FROM transactions WHERE id = ?').run(t.id);
+        }
+        for (const assetId of affectedAssetIds) {
+          reconcileAssetCostBasis(assetId);
         }
 
         // 2. 反冲存取记录对账户余额的影响

@@ -9,6 +9,7 @@ import { parseStatement, parseRows, getBrokerFormats } from '../services/stateme
 import { normalizeDate, normalizeCurrency, normalizeCode, normalizeString } from '../services/data-normalizer';
 import { handleValidated } from './validation';
 import { insertCashFlowInDb, recomputeCashBalanceInDb } from '../database/services/cash-flow-core';
+import { reconcileAssetCostBasis } from '../database/services/transaction-service';
 
 export function registerAssetIpcHandlers(): void {
   // ── Assets ──
@@ -66,24 +67,13 @@ export function registerAssetIpcHandlers(): void {
         ).get(code, data.investmentAccountId) as any;
 
         if (asset) {
-          const newQty = asset.quantity + data.quantity;
-          const newTotalCost = asset.total_cost + (data.quantity * data.price + fee);
-          const newAvgCost = newTotalCost / newQty;
-          const newMktValue = newQty * data.price;
-          const newPL = newMktValue - newTotalCost;
-          const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
-
-          db.prepare(`
-            UPDATE assets SET quantity=?, cost_price=?, current_price=?, market_value=?,
-              total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
-            WHERE id=?
-          `).run(newQty, newAvgCost, data.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
-
           const txnResult = db.prepare(`
             INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(asset.id, 'buy', data.quantity, data.price, fee,
             data.quantity * data.price + fee, currency, date, data.notes || '买入');
+          // v1.10.8：重放校准持仓（替代内联加权平均，统一口径并修复浮点漂移）
+          reconcileAssetCostBasis(asset.id, asset.quantity + data.quantity);
 
           db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
             .run(asset.id, data.price);
@@ -120,6 +110,8 @@ export function registerAssetIpcHandlers(): void {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(assetId, 'buy', data.quantity, data.price, fee,
             data.quantity * data.price + fee, currency, date, data.notes || '买入');
+          // v1.10.8：重放校准（首次买入重放=该笔，与初始值一致）
+          reconcileAssetCostBasis(assetId);
 
           return { success: true, assetId, transactionId: txnResult.lastInsertRowid };
         }
@@ -137,23 +129,13 @@ export function registerAssetIpcHandlers(): void {
       }
 
       const tx = db.transaction(() => {
-        const newQty = asset.quantity - data.quantity;
-        const newTotalCost = newQty > 0 ? asset.total_cost * (newQty / asset.quantity) : 0;
-        const newMktValue = newQty * data.price;
-        const newPL = newMktValue - newTotalCost;
-        const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
-
-        db.prepare(`
-          UPDATE assets SET quantity=?, current_price=?, market_value=?,
-            total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime('now')
-          WHERE id=?
-        `).run(newQty, data.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
-
         const txnResult = db.prepare(`
           INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(asset.id, 'sell', data.quantity, data.price, fee,
           data.quantity * data.price - fee, currency, date, data.notes || '卖出');
+        // v1.10.8：重放校准持仓（替代内联比例缩放，修复清仓残留均价与浮点漂移）
+        reconcileAssetCostBasis(asset.id, asset.quantity - data.quantity);
 
         db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
           .run(asset.id, data.price);

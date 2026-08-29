@@ -3,7 +3,7 @@
  */
 import { getDatabase } from '../index';
 import { updateCurrentPrice, recomputeDerivedFields } from './asset-service';
-import { addPosition, removePosition } from '../../../shared/utils/investment';
+import { recomputeCostBasisFromTrades } from '../../../shared/utils/investment';
 import { roundMoney } from '../../../shared/utils/money';
 import { syncFlowForTransactionInDb, removeFlowsForTransactionInDb } from './cash-flow-core';
 
@@ -92,13 +92,18 @@ export function deleteTransaction(id: number): boolean {
   if (!tx) return false;
 
   const run = db.transaction(() => {
-    // Reverse asset adjustments
-    reverseAssetAdjustment(tx);
-
     // 删除关联现金流并重算余额（须先于交易删除，外键引用）
     removeFlowsForTransactionInDb(db, tx.id);
 
     const result = db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
+    if (result.changes > 0) {
+      // v1.10.8：删除后按剩余历史交易重放校准持仓（精确还原，不再流式反转）
+      const assetRow = db.prepare('SELECT quantity FROM assets WHERE id = ?').get(tx.asset_id) as { quantity: number } | undefined;
+      const expected = assetRow
+        ? assetRow.quantity + (tx.type === 'buy' ? -tx.quantity : tx.quantity)
+        : undefined;
+      reconcileAssetCostBasis(tx.asset_id, expected);
+    }
     return result.changes > 0;
   });
 
@@ -126,17 +131,20 @@ export function updateTransaction(id: number, data: {
   const newNotes = data.notes !== undefined ? data.notes : existing.notes;
 
   const tx = db.transaction(() => {
-    // 1. Reverse old transaction's asset effect
-    reverseAssetAdjustment(existing);
-
-    // 2. Update the row
+    // 1. Update the row
     db.prepare(`UPDATE transactions SET type=?, quantity=?, price=?, fee=?, total_amount=?, currency=?, date=?, notes=? WHERE id=?`)
       .run(newType, newQuantity, newPrice, newFee, newTotalAmount, newCurrency, newDate, newNotes, id);
 
-    // 3. Apply new transaction's asset effect
-    applyAssetAdjustment(existing.asset_id, newType, newQuantity, newPrice, newFee);
+    // 2. v1.10.8：更新后按全部历史交易重放校准持仓（精确还原，不再流式反转+应用）
+    const assetRow = db.prepare('SELECT quantity FROM assets WHERE id = ?').get(existing.asset_id) as { quantity: number } | undefined;
+    const expected = assetRow
+      ? assetRow.quantity
+        + (existing.type === 'buy' ? -existing.quantity : existing.quantity)
+        + (newType === 'buy' ? newQuantity : -newQuantity)
+      : undefined;
+    reconcileAssetCostBasis(existing.asset_id, expected);
 
-    // 4. Update current price
+    // 3. Update current price
     updateCurrentPrice(existing.asset_id, newPrice);
 
     // 5. 现金流同步（删除旧流水 + 按最终状态重建）
@@ -149,49 +157,57 @@ export function updateTransaction(id: number, data: {
   return getTransaction(id);
 }
 
-/** Reverse the asset quantity/cost changes from a transaction.（v1.7.1 起导出，供归档冲销复用） */
-export function reverseAssetAdjustment(tx: TransactionRow): void {
-  const db = getDatabase();
-  const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(tx.asset_id) as any;
-  if (!asset) return;
-
-  const state = { quantity: asset.quantity, totalCost: asset.total_cost, costPrice: asset.cost_price };
-  let next;
-  if (tx.type === 'buy') {
-    next = removePosition(state, tx.quantity, tx.total_amount);
-  } else if (tx.type === 'sell') {
-    // v1.7.1 修复：反转卖出应回加「卖出时的成本基数」（均价×数量），而非卖出净额；
-    // 均价清仓丢失时退化为 total_amount（净收）。
-    const costBasis = asset.cost_price > 0 ? roundMoney(asset.cost_price * tx.quantity) : tx.total_amount;
-    next = addPosition(state, tx.quantity, costBasis);
-  } else {
-    return;
-  }
-  db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
-    .run(next.quantity, next.totalCost, next.costPrice, tx.asset_id);
-
-  // v1.7.1 修复：只重算派生字段，不写价格历史（避免删除/编辑交易污染走势图）
-  recomputeDerivedFields(tx.asset_id, asset.current_price || 0);
-}
-
-/** Apply a new transaction's asset adjustment. */
-function applyAssetAdjustment(assetId: number, type: string, quantity: number, price: number, fee: number): void {
+/**
+ * v1.10.8：重放校准——按该资产全部历史买卖重算持仓（数量/均价/总成本），
+ * 与报表重放（getDailyTrades）和迁移 v21 同口径；任何交易增删改后调用，精确还原。
+ *
+ * @param expectedQuantityAfter 本次交易后的期望数量（调用方按现数量±本次影响计算）。
+ *   与重放数量一致（差≤0.01）→ 直接采用重放结果；不一致说明存在非交易数量变动
+ *   （手工调整/拆分/分红）→ 保留期望数量，成本价按重放均价刷新（与 v21 迁移同口径）。
+ *   不传（归档等批量场景）→ 直接采用重放结果。
+ * - 无交易记录 → 不动（手工成本价保留）
+ * - 历史已清仓 → 数量保留（若期望>0）但成本清零（不再残留旧均价）
+ * - 之后重算市值/盈亏派生字段（不写价格历史，避免污染走势图）
+ */
+export function reconcileAssetCostBasis(assetId: number, expectedQuantityAfter?: number): void {
   const db = getDatabase();
   const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(assetId) as any;
   if (!asset) return;
 
-  const state = { quantity: asset.quantity, totalCost: asset.total_cost, costPrice: asset.cost_price };
-  let next;
-  if (type === 'buy') {
-    next = addPosition(state, quantity, roundMoney(quantity * price + fee));
-  } else if (type === 'sell') {
-    const costBasis = asset.cost_price > 0 ? asset.cost_price * quantity : quantity * price;
-    next = removePosition(state, quantity, costBasis);
-  } else {
+  const trades = db.prepare(`
+    SELECT id, asset_id, type, quantity, price, fee, total_amount, date
+    FROM transactions WHERE asset_id = ? AND type IN ('buy','sell')
+    ORDER BY date ASC, id ASC
+  `).all(assetId) as any[];
+  if (trades.length === 0) return;
+
+  const { quantity, costPrice } = recomputeCostBasisFromTrades(
+    trades.map((t) => ({
+      id: t.id, assetId: t.asset_id, code: '', name: '', currency: '',
+      type: t.type, quantity: t.quantity, price: t.price, fee: t.fee,
+      totalAmount: t.total_amount, date: t.date,
+    }))
+  );
+
+  // 期望数量：与重放一致则采用重放；不一致保留期望（非交易数量变动）；不传则用重放
+  let q = quantity;
+  if (expectedQuantityAfter !== undefined && Math.abs(quantity - expectedQuantityAfter) > 0.01) {
+    q = expectedQuantityAfter;
+  }
+  if (q < 0.01) q = 0;
+
+  if (quantity <= 0.01) {
+    // 历史已清仓：成本清零（修复清仓残留均价）；数量保留期望值（手工重开）或归零
+    db.prepare("UPDATE assets SET quantity=?, cost_price=0, total_cost=0, updated_at=datetime('now') WHERE id=?")
+      .run(q, assetId);
+    recomputeDerivedFields(assetId, asset.current_price || 0);
     return;
   }
-  db.prepare(`UPDATE assets SET quantity=?, total_cost=?, cost_price=?, updated_at=datetime('now') WHERE id=?`)
-    .run(next.quantity, next.totalCost, next.costPrice, assetId);
+
+  const totalCost = roundMoney(q * costPrice);
+  db.prepare("UPDATE assets SET quantity=?, cost_price=?, total_cost=?, updated_at=datetime('now') WHERE id=?")
+    .run(q, costPrice, totalCost, assetId);
+  recomputeDerivedFields(assetId, asset.current_price || 0);
 }
 
 /** Get all today's transactions with asset names. */
