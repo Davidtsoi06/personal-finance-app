@@ -215,6 +215,7 @@ const aiConfigData = z.object({
 const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'account:create': z.tuple([accountData]),
   'account:update': z.tuple([id, accountData.partial()]),
+  'account:deleteBalanceBucket': z.tuple([id, z.string().min(1).max(10)]),
   'account:delete': z.tuple([id]),
   'account:forceDelete': z.tuple([id]),
   'account:deleteImpact': z.tuple([id]),

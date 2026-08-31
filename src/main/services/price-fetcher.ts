@@ -147,11 +147,13 @@ async function fetchHKStock(code: string): Promise<number | null> {
 
 /** Fetch US stock price via Yahoo Finance, with Sina Finance fallback */
 async function fetchUSStock(symbol: string): Promise<number | null> {
+  // v1.10.9：清理市场后缀（AAPL.US → AAPL），BRK.B 等特殊点号代码保留
+  const clean = symbol.trim().toUpperCase().replace(/\.(US|NYSE|NASDAQ)$/, '');
   // ── Primary: Yahoo Finance ──
   try {
     const t0 = Date.now();
-    console.log(`${TAG} 美股 ${symbol}: Yahoo 开始获取...`);
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+    console.log(`${TAG} 美股 ${clean}: Yahoo 开始获取...`);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${clean}?interval=1d&range=1d`;
     const response = await fetch(url);
     if (response.ok) {
       const data = await response.json() as any;
@@ -173,8 +175,8 @@ async function fetchUSStock(symbol: string): Promise<number | null> {
 
   // ── Fallback: Sina Finance US stock ──
   try {
-    console.log(`${TAG} 美股 ${symbol}: 新浪(备用) 开始获取...`);
-    const sinaUrl = `https://hq.sinajs.cn/list=gb_${symbol.toLowerCase()}`;
+    console.log(`${TAG} 美股 ${clean}: 新浪(备用) 开始获取...`);
+    const sinaUrl = `https://hq.sinajs.cn/list=gb_${clean.toLowerCase()}`;
     const response = await fetch(sinaUrl, {
       headers: { Referer: 'https://finance.sina.com.cn' },
     });

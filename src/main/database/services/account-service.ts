@@ -350,6 +350,33 @@ export function updateAccountBalance(accountId: number, currency: string, delta:
   ).run(row.total_cny, accountId);
 }
 
+/**
+ * v1.10.9：删除某币种余额桶（仅允许余额≈0，防误删有余额数据）。
+ * 用于账户详情「多币种余额」卡片——归零的币种格子（如已清空的美金）不再占位。
+ */
+export function deleteAccountBalanceBucket(accountId: number, currency: string): { success: boolean; error?: string } {
+  const db = getDatabase();
+  const bucket = db.prepare(
+    'SELECT * FROM account_balances WHERE account_id = ? AND currency = ?'
+  ).get(accountId, currency) as AccountBalanceRow | undefined;
+  if (!bucket) return { success: false, error: '该币种余额记录不存在' };
+  if (Math.abs(bucket.balance) > 0.005) {
+    return { success: false, error: `该币种还有余额 ${bucket.balance}，不能删除` };
+  }
+  db.prepare('DELETE FROM account_balances WHERE id = ?').run(bucket.id);
+  // 同步 accounts.balance（CNY 等值合计）
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as total_cny
+    FROM account_balances ab
+    LEFT JOIN currencies c ON ab.currency = c.code
+    WHERE ab.account_id = ?
+  `).get(accountId) as { total_cny: number };
+  db.prepare(
+    "UPDATE accounts SET balance = ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(row.total_cny, accountId);
+  return { success: true };
+}
+
 // ── Aggregation ──
 
 export function getTotalBalance(currency?: string): number {

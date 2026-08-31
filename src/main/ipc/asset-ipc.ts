@@ -10,6 +10,7 @@ import { normalizeDate, normalizeCurrency, normalizeCode, normalizeString } from
 import { handleValidated } from './validation';
 import { insertCashFlowInDb, recomputeCashBalanceInDb } from '../database/services/cash-flow-core';
 import { reconcileAssetCostBasis } from '../database/services/transaction-service';
+import { detectMarket } from '../../shared/utils/market';
 
 export function registerAssetIpcHandlers(): void {
   // ── Assets ──
@@ -59,6 +60,12 @@ export function registerAssetIpcHandlers(): void {
     const date = normalizeDate(data.date);
     const code = normalizeCode(data.code);
     const name = normalizeString(data.name);
+    // v1.10.9：市场推断 detectMarket(代码) 优先（字母→美股、数字→A/港股），币种仅兜底
+    const detected = detectMarket(code);
+    const market = data.market && data.market !== 'other'
+      ? data.market
+      : detected !== 'other' ? detected
+      : currency === 'HKD' ? 'hk_stock' : currency === 'USD' ? 'us_stock' : 'a_stock';
 
     if (data.type === 'buy') {
       const tx = db.transaction(() => {
@@ -98,7 +105,7 @@ export function registerAssetIpcHandlers(): void {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             name, code, data.assetType || 'stock',
-            data.market || (currency === 'HKD' ? 'hk_stock' : currency === 'USD' ? 'us_stock' : 'a_stock'),
+            market,
             currency, data.quantity, data.price, data.price, marketValue, totalCost,
             marketValue - totalCost, totalCost > 0 ? ((marketValue - totalCost) / totalCost) * 100 : 0,
             data.investmentAccountId, data.notes || null
@@ -215,29 +222,21 @@ export function registerAssetIpcHandlers(): void {
           if (trade.type === 'buy') {
             let assetId: number;
             if (asset) {
-              const newQty = asset.quantity + trade.quantity;
-              const newTotalCost = asset.total_cost + (trade.quantity * trade.price + trade.fee);
-              const newAvgCost = newTotalCost / newQty;
-              const newMktValue = newQty * trade.price;
-              const newPL = newMktValue - newTotalCost;
-              const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
-              db.prepare([
-                'UPDATE assets SET quantity=?, cost_price=?, current_price=?, market_value=?,',
-                'total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime(\'now\')',
-                'WHERE id=?',
-              ].join(' ')).run(newQty, newAvgCost, trade.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
               assetId = asset.id;
             } else {
               const totalCost = trade.quantity * trade.price + trade.fee;
               const mktValue = trade.quantity * trade.price;
+              // v1.10.9：市场按代码识别优先（字母→美股），币种兜底
+              const det = detectMarket(trade.code);
+              const market = det !== 'other' ? det
+                : trade.currency === 'HKD' ? 'hk_stock' : trade.currency === 'USD' ? 'us_stock' : 'a_stock';
               const r = db.prepare([
                 'INSERT INTO assets (name, code, type, market, currency, quantity, cost_price,',
                 'current_price, market_value, total_cost, profit_loss, profit_loss_pct,',
                 'investment_account_id)',
                 "VALUES (?, ?, 'stock', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               ].join(' ')).run(
-                trade.name || trade.code, trade.code,
-                trade.currency === 'HKD' ? 'hk_stock' : trade.currency === 'USD' ? 'us_stock' : 'a_stock',
+                trade.name || trade.code, trade.code, market,
                 trade.currency, trade.quantity, trade.price, trade.price, mktValue, totalCost,
                 mktValue - totalCost, totalCost > 0 ? ((mktValue - totalCost) / totalCost) * 100 : 0,
                 investmentAccountId
@@ -249,6 +248,8 @@ export function registerAssetIpcHandlers(): void {
               'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             ].join(' ')).run(assetId, 'buy', trade.quantity, trade.price, trade.fee,
               trade.quantity * trade.price + trade.fee, trade.currency, trade.date, '日结单导入');
+            // v1.10.8/1.10.9：重放校准持仓（统一口径）
+            reconcileAssetCostBasis(assetId, asset ? asset.quantity + trade.quantity : undefined);
             // 现金流水：买入扣现金（含手续费）
             insertCashFlowInDb(db, {
               investmentAccountId, type: 'buy',
@@ -261,22 +262,13 @@ export function registerAssetIpcHandlers(): void {
             if (asset.quantity < trade.quantity) {
               errors.push(trade.code + ' ' + trade.name + ': 持仓不足'); continue;
             }
-            const newQty = asset.quantity - trade.quantity;
-            const newTotalCost = newQty > 0 ? asset.total_cost * (newQty / asset.quantity) : 0;
-            const newMktValue = newQty * trade.price;
-            const newPL = newMktValue - newTotalCost;
-            const newPLPct = newTotalCost > 0 ? (newPL / newTotalCost) * 100 : 0;
-            db.prepare([
-              'UPDATE assets SET quantity=?, current_price=?, market_value=?,',
-              'total_cost=?, profit_loss=?, profit_loss_pct=?, updated_at=datetime(\'now\')',
-              'WHERE id=?',
-            ].join(' ')).run(newQty, trade.price, newMktValue, newTotalCost, newPL, newPLPct, asset.id);
-
             const txResult = db.prepare([
               'INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)',
               'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             ].join(' ')).run(asset.id, 'sell', trade.quantity, trade.price, trade.fee,
               trade.quantity * trade.price - trade.fee, trade.currency, trade.date, '日结单导入');
+            // v1.10.8/1.10.9：重放校准持仓（统一口径，修复清仓残留均价）
+            reconcileAssetCostBasis(asset.id, asset.quantity - trade.quantity);
             // 现金流水：卖出回笼现金（净额）
             insertCashFlowInDb(db, {
               investmentAccountId, type: 'sell',
@@ -286,15 +278,12 @@ export function registerAssetIpcHandlers(): void {
             });
           } else if (trade.type === 'split') {
             if (!asset) { errors.push(trade.code + ' ' + trade.name + ': 未找到持仓，无法拆分'); continue; }
-            const newQty = asset.quantity + trade.quantity;
-            const newAvgCost = newQty > 0 ? asset.total_cost / newQty : 0;
-            db.prepare(
-              'UPDATE assets SET quantity=?, cost_price=?, updated_at=datetime(\'now\') WHERE id=?'
-            ).run(newQty, newAvgCost, asset.id);
             db.prepare([
               'INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)',
               'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             ].join(' ')).run(asset.id, 'split', trade.quantity, 0, 0, 0, trade.currency, trade.date, '份额拆分/分拆');
+            // v1.10.8/1.10.9：重放校准（split 不参与重放成本，数量保留期望值 → 均价摊薄）
+            reconcileAssetCostBasis(asset.id, asset.quantity + trade.quantity);
           } else {
             if (asset) {
               db.prepare([
@@ -362,7 +351,8 @@ export function registerAssetIpcHandlers(): void {
         : xlsx.read(fileBuffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const rows: string[][] = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      // v1.10.9：读单元格格式化显示文本（等效 Excel→CSV）——日期直接是文本、金额带符号，不再依赖序列号猜测
+      const rows: string[][] = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
       const parseResult = parseRows(rows, formatName);
       return {
         canceled: false,

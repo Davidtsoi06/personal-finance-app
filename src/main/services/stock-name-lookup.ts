@@ -7,7 +7,8 @@ import { detectMarket } from '../../shared/utils/market';
 /** 由代码与市场推断东方财富 secid（纯函数，可测试） */
 export function buildEastmoneySecid(code: string, market?: string): string | null {
   const m = market || detectMarket(code);
-  const c = code.trim().toUpperCase();
+  // v1.10.9：清理美股市场后缀（AAPL.US → AAPL）；BRK.B 等特殊点号保留
+  const c = code.trim().toUpperCase().replace(/\.(US|NYSE|NASDAQ)$/, '');
   if (m === 'a_stock') {
     // 沪市：5/6/9 开头 → 1.；深市：0/1/2/3 开头 → 0.
     return (/^[569]/.test(c) ? '1.' : '0.') + c;

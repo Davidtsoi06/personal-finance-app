@@ -283,7 +283,8 @@ export function registerSettingsIpcHandlers(): void {
         : xlsx.read(fileBuffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const rows: string[][] = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      // v1.10.9：读单元格格式化显示文本（等效 Excel→CSV）——日期直接是文本（17/8/2026）、金额带符号（HK$25,000.00）
+      const rows: string[][] = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
       const parseResult = bankParser.parseBankRows(rows, formatName);
       parseResult.records = parseResult.records.map((r) => ({ ...r, classification: classifyBankRecord(r) }));
       return {

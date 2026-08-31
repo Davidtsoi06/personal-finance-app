@@ -110,7 +110,9 @@ export function AccountDetail() {
       {account.balances && account.balances.length > 0 && (
         <Card title="💱 多币种余额">
           <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap' }}>
-            {account.balances.map(b => (
+            {account.balances.map(b => {
+              const isZero = Math.abs(b.balance) < 0.005;
+              return (
               <div key={b.currency} style={{
                 flex: '1 1 180px',
                 background: 'var(--color-bg, #fafbfc)',
@@ -118,7 +120,27 @@ export function AccountDetail() {
                 padding: 'var(--spacing-md)',
                 border: '1px solid var(--color-border-light, #f0f0f0)',
                 textAlign: 'center',
+                position: 'relative',
               }}>
+                {/* v1.10.9：余额归零的币种可删除（不再占位） */}
+                {isZero && (
+                  <button
+                    title="删除该币种（余额为 0）"
+                    onClick={async () => {
+                      try {
+                        await invoke('account:deleteBalanceBucket', accountId, b.currency);
+                        load();
+                      } catch (err: any) {
+                        console.error(err);
+                        alert('删除失败：' + (err?.message || '未知错误'));
+                      }
+                    }}
+                    style={{
+                      position: 'absolute', top: 4, right: 6, border: 'none', background: 'none',
+                      cursor: 'pointer', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)',
+                    }}
+                  >🗑</button>
+                )}
                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 4 }}>
                   {b.currency}
                 </div>
@@ -127,7 +149,8 @@ export function AccountDetail() {
                   {b.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}

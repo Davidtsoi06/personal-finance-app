@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDate } from '../../src/main/services/data-normalizer';
+import { normalizeDate, normalizeCurrency, normalizeCode } from '../../src/main/services/data-normalizer';
 
 describe('normalizeDate 美式月/日/年（银行日结单，v1.7.0）', () => {
   it('M/D/YYYY', () => {
@@ -77,5 +77,73 @@ describe('normalizeDate 日/月与中文日期（v1.10.1）', () => {
 
   it('月/日均无效的中文日期原样返回', () => {
     expect(normalizeDate('13月32日')).toBe('13月32日');
+  });
+});
+
+/** v1.10.9：币种识别增强 + 美股代码清理 */
+describe('normalizeCurrency 银行结单币种（v1.10.9）', () => {
+  it('人民币元/元/符号 → CNY', () => {
+    expect(normalizeCurrency('人民币元')).toBe('CNY');
+    expect(normalizeCurrency('元')).toBe('CNY');
+    expect(normalizeCurrency('¥')).toBe('CNY');
+    expect(normalizeCurrency('￥')).toBe('CNY');
+    expect(normalizeCurrency('人民币')).toBe('CNY');
+    expect(normalizeCurrency('RMB')).toBe('CNY');
+  });
+
+  it('港元/港币/HK$ → HKD', () => {
+    expect(normalizeCurrency('港元')).toBe('HKD');
+    expect(normalizeCurrency('港币')).toBe('HKD');
+    expect(normalizeCurrency('HK$')).toBe('HKD');
+    expect(normalizeCurrency('港币元')).toBe('HKD');
+  });
+
+  it('美元/美金/US$/$ → USD', () => {
+    expect(normalizeCurrency('美元')).toBe('USD');
+    expect(normalizeCurrency('美金')).toBe('USD');
+    expect(normalizeCurrency('US$')).toBe('USD');
+    expect(normalizeCurrency('$')).toBe('USD');
+  });
+
+  it('主要外币中文名 → ISO 码', () => {
+    expect(normalizeCurrency('欧元')).toBe('EUR');
+    expect(normalizeCurrency('英镑')).toBe('GBP');
+    expect(normalizeCurrency('日元')).toBe('JPY');
+    expect(normalizeCurrency('新加坡元')).toBe('SGD');
+    expect(normalizeCurrency('澳元')).toBe('AUD');
+    expect(normalizeCurrency('加元')).toBe('CAD');
+    expect(normalizeCurrency('新台币')).toBe('TWD');
+    expect(normalizeCurrency('韩元')).toBe('KRW');
+    expect(normalizeCurrency('泰铢')).toBe('THB');
+  });
+
+  it('未知币种原样返回大写（不误转）', () => {
+    expect(normalizeCurrency('TWD')).toBe('TWD');
+    expect(normalizeCurrency('xyz')).toBe('XYZ');
+    expect(normalizeCurrency('', 'HKD')).toBe('HKD');
+  });
+});
+
+describe('normalizeCode 美股代码清理（v1.10.9）', () => {
+  it('市场后缀清理：AAPL.US / AAPL.NYSE / AAPL.NASDAQ → AAPL', () => {
+    expect(normalizeCode('aapl.us')).toBe('AAPL');
+    expect(normalizeCode('AAPL.US')).toBe('AAPL');
+    expect(normalizeCode('AAPL.NYSE')).toBe('AAPL');
+    expect(normalizeCode('TSLA.NASDAQ')).toBe('TSLA');
+  });
+
+  it('特殊点号代码保留：BRK.B / BF.B 不变', () => {
+    expect(normalizeCode('brk.b')).toBe('BRK.B');
+    expect(normalizeCode('BF.B')).toBe('BF.B');
+  });
+
+  it('A 股/港股后缀保留（不影响）', () => {
+    expect(normalizeCode('600519.SH')).toBe('600519.SH');
+    expect(normalizeCode('0700.HK')).toBe('0700.HK');
+  });
+
+  it('普通代码大写化', () => {
+    expect(normalizeCode('  aapl ')).toBe('AAPL');
+    expect(normalizeCode('00700')).toBe('00700');
   });
 });

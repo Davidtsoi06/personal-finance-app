@@ -539,6 +539,16 @@
 - [x] **归档重构**：executeArchive 删除整月交易后按剩余历史统一重放（替代逐笔倒序反转）
 - [x] 测试：235/235 通过（新增成本价审计 5 用例：删除/编辑中间卖出精确还原、清仓残留清零、手工数量保留、无交易保护；修复 ai-usage 测试固定日期时间炸弹）；tsc 无错；IPC 189 频道一致；双端已重建
 
+## 第 31t 阶段：v1.10.9 美股适配 + 币种识别 + 多币种删除 + Excel 文本识别（用户反馈） ✅（代码完成，待发布）
+
+> 需求来源：① 美股代码（英文简写）不能有效识别，需全面适配买卖与交易记录；② 银行结单币种写「人民币元」不能识别成 CNY；③ 银行日结单多币种（港币/美金），美金归零后格子仍占位，需删除权；④ 结单日期识别仍有问题，建议 Excel 先转 CSV 再识别。
+
+- [x] **美股全面适配**：市场推断统一 detectMarket(代码) 优先（字母→us_stock、数字→a/hk），币种仅兜底（trade:record 与 trade:importParsed 新建资产）；normalizeCode 清理 .US/.NYSE/.NASDAQ 后缀（AAPL.US→AAPL，BRK.B 保留）；fetchUSStock / buildEastmoneySecid 查询前同样清理；importParsed 买入/卖出/拆分全部接入 reconcileAssetCostBasis（v1.10.8 重放校准补漏）
+- [x] **币种识别增强**：CURRENCY_NORMALIZE_MAP 扩至 20+ 条（人民币元/元/¥/￥→CNY、HK$→HKD、US$/$→USD、欧元/英镑/日元/新加坡元/澳元/加元/新台币/韩元/泰铢/瑞士法郎/新西兰元）；normalizeCurrency 尾部「元」剥离再匹配
+- [x] **多币种删除权**：account:deleteBalanceBucket（余额≈0 才可删，防误删）；账户详情「多币种余额」卡片归零格子显示 🗑 删除；IPC 190 频道一致
+- [x] **Excel 文本识别（等效转 CSV）**：银行/券商/微信三处 Excel 导入 sheet_to_json 改 raw:false（读单元格格式化显示文本）——日期直接是文本（17/8/2026）、金额带符号（HK$25,000.00），不再依赖序列号猜测
+- [x] 测试：247/247 通过（币种映射 5 + 美股代码清理 4 + 余额桶删除 3）；tsc 无错；IPC 190 频道一致；双端已重建
+
 ## 第 32 阶段：v1.11.0 前端效率工具（批 C） 📋（已规划，待执行）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。

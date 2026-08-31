@@ -31,6 +31,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'account:create',
   'account:createWithChildren',
   'account:createAlipayFamily',
+  'account:deleteBalanceBucket',
   'account:ensureAlipayFamily',
   'account:delete',
   'account:deleteImpact',

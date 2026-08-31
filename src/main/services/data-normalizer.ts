@@ -7,10 +7,15 @@
  */
 
 // ── Currency name → ISO code ──
+// v1.10.9：扩展银行结单常见写法（人民币元/元/货币符号/主要外币中文名）
 const CURRENCY_NORMALIZE_MAP: Record<string, string> = {
-  '人民币': 'CNY', 'RMB': 'CNY',
-  '港元': 'HKD', '港币': 'HKD',
-  '美元': 'USD', '美金': 'USD',
+  '人民币': 'CNY', '人民币元': 'CNY', '元': 'CNY', 'RMB': 'CNY', '¥': 'CNY', '￥': 'CNY',
+  '港元': 'HKD', '港币': 'HKD', '港币元': 'HKD', 'HK$': 'HKD',
+  '美元': 'USD', '美金': 'USD', 'US$': 'USD', '$': 'USD',
+  '欧元': 'EUR', '英镑': 'GBP', '日元': 'JPY', '日圆': 'JPY',
+  '新加坡元': 'SGD', '澳元': 'AUD', '澳大利亚元': 'AUD',
+  '加元': 'CAD', '加拿大元': 'CAD', '新台币': 'TWD',
+  '韩元': 'KRW', '泰铢': 'THB', '瑞士法郎': 'CHF', '纽元': 'NZD', '新西兰元': 'NZD',
 };
 
 /**
@@ -138,15 +143,25 @@ function toValidDate(y: string, m: string, d: string): string | null {
 export function normalizeCurrency(raw: string | undefined | null, fallback = 'CNY'): string {
   if (!raw) return fallback;
   const upper = raw.trim().toUpperCase();
-  return CURRENCY_NORMALIZE_MAP[upper] || upper;
+  const direct = CURRENCY_NORMALIZE_MAP[upper];
+  if (direct) return direct;
+  // v1.10.9：尾部「元」剥离再匹配（人民币元→人民币、美元元→美元）
+  if (upper.endsWith('元') && upper.length > 1) {
+    const stripped = CURRENCY_NORMALIZE_MAP[upper.slice(0, -1)];
+    if (stripped) return stripped;
+  }
+  return upper;
 }
 
 /**
  * Normalize a security code: trim + uppercase.
+ * v1.10.9：美股市场后缀清理——AAPL.US / AAPL.NYSE / AAPL.NASDAQ → AAPL；
+ *   BRK.B 等带点号的特殊代码保留（.B 不是已知市场后缀）。
  */
 export function normalizeCode(raw: string | undefined | null): string {
   if (!raw) return '';
-  return raw.trim().toUpperCase();
+  const trimmed = raw.trim().toUpperCase();
+  return trimmed.replace(/\.(US|NYSE|NASDAQ)$/, '');
 }
 
 /**

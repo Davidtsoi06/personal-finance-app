@@ -15,6 +15,10 @@ export function registerAccountIpcHandlers(): void {
   ipcMain.handle('account:get', (_e, id: number) => accountService.getAccountWithTree(id));
   handleValidated('account:create', (data: any) => accountService.createAccount(data));
   handleValidated('account:update', (id: number, data: any) => accountService.updateAccount(id, data));
+  // v1.10.9：删除余额为 0 的币种桶（多币种卡片清理占位格子）
+  handleValidated('account:deleteBalanceBucket', (accountId: number, currency: string) =>
+    accountService.deleteAccountBalanceBucket(accountId, currency)
+  );
   handleValidated('account:delete', (id: number) => accountService.deleteAccount(id));
   handleValidated('account:forceDelete', (id: number) => accountService.forceDeleteAccount(id));
   handleValidated('account:deleteImpact', (id: number) => accountService.getForceDeleteImpact(id));

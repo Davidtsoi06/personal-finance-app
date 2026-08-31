@@ -41,7 +41,8 @@ export function registerWalletIpcHandlers(): void {
         ? xlsx.read(fileBuffer, { type: 'buffer', codepage: 936 })
         : xlsx.read(fileBuffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
-      const rows: unknown[][] = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' });
+      // v1.10.9：读格式化显示文本（等效 Excel→CSV），日期/金额不再依赖序列号猜测
+      const rows: unknown[][] = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
       const parsed = parser.parseWechatExcel(rows);
       return {
         canceled: false,
