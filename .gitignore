@@ -41,3 +41,7 @@ coverage/
 # ── Misc ──
 *.tmp
 *.temp
+
+# ── 用户样本/临时调试 ──
+excel/
+tmp/
