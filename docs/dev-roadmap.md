@@ -549,6 +549,17 @@
 - [x] **Excel 文本识别（等效转 CSV）**：银行/券商/微信三处 Excel 导入 sheet_to_json 改 raw:false（读单元格格式化显示文本）——日期直接是文本（17/8/2026）、金额带符号（HK$25,000.00），不再依赖序列号猜测
 - [x] 测试：247/247 通过（币种映射 5 + 美股代码清理 4 + 余额桶删除 3）；tsc 无错；IPC 190 频道一致；双端已重建
 
+## 第 31u 阶段：v1.10.10 银行日结单解析修复（用户样本：汇丰 6 列 + AI 模板币种） ✅（代码完成，待发布）
+
+> 需求来源：用户提供示范样本（excel/TransactionHistory (20)HF.xlsx，汇丰 6 列）——币种显示 HKD 却识别成 CNY、日期错误；且确认问题出现在「AI 生成模板 → 模板导入」路径。
+
+- [x] **标准格式判定收紧**：表头必须按顺序匹配（date,amount,type,description,currency）才走标准格式；第一行像表头但不匹配顺序（6 列 Date/Description/Billing amount/Billing currency/Balance/Balance currency）→ 交给自定义格式/通用表头检测（此前只匹配到 Date 就按位置硬编码 5 列 → 金额=订单号、摘要=HKD、币种=余额）
+- [x] **Excel→文本升级**：新增 excel-utils.xlsxSheetToTextRows——日期格式单元格输出序列号（46334 → 2026-08-11 精确，无 m/d/yy 美/英歧义），其他单元格用格式化显示文本（金额带符号）；银行/券商/微信三处导入统一；顺手修复 ai-service 样例生成同款正则 bug（\w+ 贪婪拆列）
+- [x] **通用检测千分位**：parseFloat → parseAmount（-300,000.00 不再截断成 -300；余额 59,792.70 正确）
+- [x] **日期歧义回退**：斜杠日期（M/D/YYYY 与 M/D/YY）解析结果晚于今天 → 回退日/月（11/8/26 → 2026-08-11，与中文「X月Y日」同规则）
+- [x] **AI 模板币种自动补齐**：模板缺 currency 映射时按表头自动找币种列（Billing currency → HKD，不再静默回退 CNY）；AI 提示词强化（第一个含 currency 字样的列必须映射，第二个标 ignore，切勿全 ignore）
+- [x] 测试：251/251 通过（HSBC 样本固化 4 用例：6 列正确解析/模板缺币种补齐/日期回退/币种回归）；tsc 无错；IPC 190 频道一致
+
 ## 第 32 阶段：v1.11.0 前端效率工具（批 C） 📋（已规划，待执行）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。

@@ -69,7 +69,15 @@ export function normalizeDate(raw: string | number | Date | undefined | null): s
   if (usMatch) {
     const [, m, d, y] = usMatch;
     const valid = toValidDate(y, m, d);
-    if (valid) return valid;
+    if (valid) {
+      // v1.10.10：银行结单不可能有未来日期——美式结果晚于今天（如 11/08/2026 解析成 11月8日但今天才 8月）
+      // → 回退日/月（DD/MM 歧义消解），与中文「X月Y日」同规则
+      if (valid > today()) {
+        const dayFirst = toValidDate(y, d, m);
+        if (dayFirst && dayFirst <= today()) return dayFirst;
+      }
+      return valid;
+    }
     // v1.10.1：月/日解析失败（如 18/08/2026）→ 回退日/月（银行 DD/MM/YYYY 常见）
     const dayFirst = toValidDate(y, d, m);
     if (dayFirst) return dayFirst;
@@ -81,7 +89,14 @@ export function normalizeDate(raw: string | number | Date | undefined | null): s
     const [, m, d, yy] = usShortMatch;
     const y = Number(yy) >= 70 ? `19${yy}` : `20${yy}`;
     const valid = toValidDate(y, m, d);
-    if (valid) return valid;
+    if (valid) {
+      // v1.10.10：2 位年歧义最大（11/8/26 美式=11月8日 vs 英式=8月11日）——晚于今天回退日/月
+      if (valid > today()) {
+        const dayFirst = toValidDate(y, d, m);
+        if (dayFirst && dayFirst <= today()) return dayFirst;
+      }
+      return valid;
+    }
     const dayFirst = toValidDate(y, d, m);
     if (dayFirst) return dayFirst;
   }

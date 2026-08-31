@@ -61,7 +61,7 @@ function formatSystemPrompt(kind: 'bank' | 'broker'): string {
 字段 field 只能取：${fieldsText}。
 position 从 0 开始，按样例中的列顺序排列。
 ${kind === 'bank'
-    ? '银行日结单常见两种结构：① 只有一个金额列（带正负号或借/贷方向列）→ 用 amount 映射金额列，若有方向列再用 type；② 收入/支出分列（支出一列、收入一列，另有结余列）→ 用 income 映射收入列、expense 映射支出列、balance 映射结余列，此时不要生成 type 列（方向由收入/支出列自动判断）。币种列用 currency；结余币种列或重复列用 ignore。'
+    ? '银行日结单常见两种结构：① 只有一个金额列（带正负号或借/贷方向列）→ 用 amount 映射金额列，若有方向列再用 type；② 收入/支出分列（支出一列、收入一列，另有结余列）→ 用 income 映射收入列、expense 映射支出列、balance 映射结余列，此时不要生成 type 列（方向由收入/支出列自动判断）。币种列必须映射：第一个含 currency/币种 字样的列（如 Billing currency）→ currency；第二个（如 Balance currency，结余币种）或重复列 → ignore。切勿把所有币种列都标 ignore，否则导入时币种会默认成 CNY（如 HKD 变 CNY）。'
     : ''}`;
 }
 
@@ -149,7 +149,7 @@ export function isDateCellFormat(z: string): boolean {
  */
 export function xlsxSheetToSampleRows(sheet: any, maxLines = 30): unknown[][] {
   const ref = String(sheet?.['!ref'] || 'A1');
-  const m = ref.match(/^(\w+)(\d+):(\w+)(\d+)$/);
+  const m = ref.match(/^([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)$/);
   let eRow = 0;
   let eCol = 0;
   if (m) {

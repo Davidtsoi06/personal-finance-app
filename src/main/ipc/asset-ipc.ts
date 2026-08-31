@@ -351,8 +351,9 @@ export function registerAssetIpcHandlers(): void {
         : xlsx.read(fileBuffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      // v1.10.9：读单元格格式化显示文本（等效 Excel→CSV）——日期直接是文本、金额带符号，不再依赖序列号猜测
-      const rows: string[][] = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+      // v1.10.10：Excel→文本网格——日期格式单元格输出序列号（精确转日期），其他用显示文本（金额带符号）
+      const { xlsxSheetToTextRows } = require('../services/excel-utils') as typeof import('../services/excel-utils');
+      const rows: string[][] = xlsxSheetToTextRows(sheet);
       const parseResult = parseRows(rows, formatName);
       return {
         canceled: false,

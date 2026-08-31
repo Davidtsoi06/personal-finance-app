@@ -194,12 +194,29 @@ function parseStandardLine(cols: string[]): ParsedBankRecord | null {
   };
 }
 
+/** v1.10.10：第一行是否像表头（含常见表头关键词） */
+function looksLikeHeader(cols: string[]): boolean {
+  const lower = cols.map((c) => c.trim().toLowerCase());
+  const keys = ['date', '日期', 'amount', '金额', 'description', '摘要', 'currency', '币种', 'balance', '余额', 'type', '收支', 'transaction', '交易', 'credit', 'debit'];
+  return lower.some((c) => keys.some((k) => c.includes(k)));
+}
+
+/** v1.10.10：表头是否按标准列顺序匹配（date, amount, type, description, currency） */
+function headerMatchesStandard(cols: string[]): boolean {
+  const lower = cols.map((c) => c.trim().toLowerCase());
+  if (lower.length < 5) return false;
+  for (let i = 0; i < STANDARD_COLUMNS.length; i++) {
+    if (!lower[i].includes(STANDARD_COLUMNS[i])) return false;
+  }
+  return true;
+}
+
 function tryStandardFormat(lines: string[]): ParsedBankRecord[] | null {
   const trades: ParsedBankRecord[] = [];
   const firstCols = parseCSVLine(lines[0]);
-  const isHeader = STANDARD_COLUMNS.some((col) =>
-    firstCols.some((c) => c.trim().toLowerCase() === col.toLowerCase())
-  );
+  // v1.10.10：第一行像表头但不匹配标准列顺序（如 6 列 HSBC 表头）→ 放弃标准格式，交给自定义/通用检测
+  if (looksLikeHeader(firstCols) && !headerMatchesStandard(firstCols)) return null;
+  const isHeader = headerMatchesStandard(firstCols);
   const startIdx = isHeader ? 1 : 0;
 
   for (let i = startIdx; i < lines.length; i++) {
@@ -214,9 +231,10 @@ function tryStandardFormat(lines: string[]): ParsedBankRecord[] | null {
 function tryStandardFormatOnRows(rows: string[][]): ParsedBankRecord[] | null {
   const trades: ParsedBankRecord[] = [];
   const firstRow = rows[0];
-  const isHeader = firstRow && STANDARD_COLUMNS.some((col) =>
-    firstRow.some((c) => c.trim().toLowerCase() === col.toLowerCase())
-  );
+  // v1.10.10：第一行像表头但不匹配标准列顺序（如 6 列 HSBC 表头 Date/Description/Billing amount/...）
+  // → 放弃标准格式（避免按位置错位解析），交给自定义格式 / 通用表头检测
+  if (firstRow && looksLikeHeader(firstRow) && !headerMatchesStandard(firstRow)) return null;
+  const isHeader = !!firstRow && headerMatchesStandard(firstRow);
   const startIdx = isHeader ? 1 : 0;
 
   for (let i = startIdx; i < rows.length; i++) {
@@ -287,6 +305,12 @@ function tryCustomFormat(lines: string[], fmt: CustomBankFormat, skipKeywordChec
   if (!skipKeywordCheck && !keywordMatch(lines.join('\n'), fmt)) return null;
 
   const colMap = buildColMap(fmt);
+  // v1.10.10：AI 模板漏映射币种列时按表头自动补齐（避免币种静默回退 CNY）
+  if (colMap['currency'] === undefined && fmt.hasHeader && lines[0]) {
+    const headerCols = parseCSVLine(lines[0]).map((c) => c.trim().toLowerCase());
+    const currIdx = findColumn(headerCols, ['currency', '币种', '货币', 'ccy']);
+    if (currIdx !== -1) colMap['currency'] = currIdx;
+  }
   // v1.10.1：金额可以是单列 amount，也可以是 income/expense 分列
   const hasAmount = colMap['amount'] !== undefined || colMap['income'] !== undefined || colMap['expense'] !== undefined;
   if (colMap['date'] === undefined || !hasAmount) return null;
@@ -304,6 +328,13 @@ function tryCustomFormatOnRows(rows: string[][], fmt: CustomBankFormat, skipKeyw
   if (!skipKeywordCheck && !keywordMatch(rows.map((r) => r.join(',')).join('\n'), fmt)) return null;
 
   const colMap = buildColMap(fmt);
+  // v1.10.10：AI 模板可能漏映射币种列（把 Billing currency 也标成 ignore）→ 按表头自动补齐，
+  // 避免币种静默回退 CNY（HKD 显示成 CNY 的根因）
+  if (colMap['currency'] === undefined && fmt.hasHeader && rows[0]) {
+    const headerCols = rows[0].map((c) => c.trim().toLowerCase());
+    const currIdx = findColumn(headerCols, ['currency', '币种', '货币', 'ccy']);
+    if (currIdx !== -1) colMap['currency'] = currIdx;
+  }
   // v1.10.1：金额可以是单列 amount，也可以是 income/expense 分列
   const hasAmount = colMap['amount'] !== undefined || colMap['income'] !== undefined || colMap['expense'] !== undefined;
   if (colMap['date'] === undefined || !hasAmount) return null;
@@ -395,7 +426,7 @@ function tryGenericDetection(lines: string[]): BankParseResult {
 
     const description = descIdx !== -1 ? cols[descIdx]?.trim() : '';
     const currency = normalizeCurrency(currIdx !== -1 ? cols[currIdx]?.trim() : '', 'CNY');
-    const balance = balIdx !== -1 ? parseFloat(cols[balIdx]) : undefined;
+    const balance = balIdx !== -1 ? parseAmount(cols[balIdx]) ?? undefined : undefined;
 
     records.push({
       date,
@@ -440,22 +471,22 @@ function tryGenericDetectionOnRows(rows: string[][]): BankParseResult {
     let amount: number;
     let type: 'deposit' | 'withdraw';
     if (incomeIdx !== -1 && expenseIdx !== -1) {
-      const inc = parseFloat(rows[i][incomeIdx]) || 0;
-      const exp = parseFloat(rows[i][expenseIdx]) || 0;
+      const inc = parseAmount(rows[i][incomeIdx]) || 0;
+      const exp = parseAmount(rows[i][expenseIdx]) || 0;
       if (inc > 0) { amount = inc; type = 'deposit'; }
       else if (exp > 0) { amount = exp; type = 'withdraw'; }
       else continue;
     } else if (incomeIdx !== -1) {
-      amount = parseFloat(rows[i][incomeIdx]) || 0;
+      amount = parseAmount(rows[i][incomeIdx]) || 0;
       type = 'deposit';
       if (amount === 0) continue;
     } else if (expenseIdx !== -1) {
-      amount = parseFloat(rows[i][expenseIdx]) || 0;
+      amount = parseAmount(rows[i][expenseIdx]) || 0;
       type = 'withdraw';
       if (amount === 0) continue;
     } else {
-      amount = parseFloat(rows[i][combinedAmountIdx]);
-      if (isNaN(amount) || amount === 0) continue;
+      amount = parseAmount(rows[i][combinedAmountIdx]) ?? 0;
+      if (amount === 0) continue;
       const typeRaw = typeIdx !== -1 ? safeTrim(rows[i][typeIdx]) : '';
       type = detectType(typeRaw, amount);
     }
@@ -465,7 +496,7 @@ function tryGenericDetectionOnRows(rows: string[][]): BankParseResult {
 
     const description = descIdx !== -1 ? safeTrim(rows[i][descIdx]) : '';
     const currency = normalizeCurrency(currIdx !== -1 ? safeTrim(rows[i][currIdx]) : '', 'CNY');
-    const balance = balIdx !== -1 ? parseFloat(rows[i][balIdx]) : undefined;
+    const balance = balIdx !== -1 ? parseAmount(rows[i][balIdx]) ?? undefined : undefined;
 
     records.push({
       date,
