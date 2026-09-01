@@ -38,9 +38,11 @@ const FLOW_META: Record<string, { label: string; color: 'success' | 'danger' | '
 interface Props {
   accountId: number;
   onChanged: () => void;
+  /** v1.10.13：外部数据变更后递增，强制重新加载（交易保存后现金余额立即刷新） */
+  refreshKey?: number;
 }
 
-export function CashFlowCard({ accountId, onChanged }: Props) {
+export function CashFlowCard({ accountId, onChanged, refreshKey }: Props) {
   const [flows, setFlows] = useState<CashFlowRow[]>([]);
   const [balance, setBalance] = useState(0);
   const [currency, setCurrency] = useState('CNY');
@@ -62,7 +64,7 @@ export function CashFlowCard({ accountId, onChanged }: Props) {
     } catch { /* ignore */ }
   }, [accountId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   const handleAdjust = async () => {
     const target = parseFloat(adjustInput);

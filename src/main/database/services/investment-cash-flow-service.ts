@@ -46,10 +46,13 @@ export function adjustCashBalance(investmentAccountId: number, targetBalance: nu
   const db = getDatabase();
   const tx = db.transaction(() => {
     const current = getCashBalance(investmentAccountId);
+    // v1.10.13：校正流水必须用账户币种（此前默认 CNY → 美股账户校正记录显示 ¥ 错误）
+    const acc = db.prepare('SELECT currency FROM investment_accounts WHERE id = ?').get(investmentAccountId) as { currency: string } | undefined;
+    const currency = acc?.currency || 'CNY';
     const delta = Math.round((targetBalance - current) * 100) / 100;
     if (delta === 0) return current;
     insertCashFlowInDb(db, {
-      investmentAccountId, type: 'adjust', amount: delta,
+      investmentAccountId, type: 'adjust', amount: delta, currency,
       notes: notes || '余额校正（手动对齐）',
     });
     return recomputeCashBalanceInDb(db, investmentAccountId);

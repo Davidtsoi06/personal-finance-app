@@ -29,6 +29,8 @@ export function HoldingsDetail() {
   const accountId = parseInt(id || '0');
   // v1.8.0：交易历史分页加载
   const [tradeLimit, setTradeLimit] = useState(200);
+  // v1.10.13：交易/校正后递增，触发 CashFlowCard 重新加载（现金余额立即刷新）
+  const [flowRefresh, setFlowRefresh] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -49,6 +51,8 @@ export function HoldingsDetail() {
       }
       // Keep open modals referencing fresh data after reload
       setSelectedHolding(prev => (prev ? (hList || []).find(h => h.id === prev.id) || null : null));
+      // v1.10.13：刷新现金流卡片（现金余额随交易立即更新）
+      setFlowRefresh(k => k + 1);
       setLoading(false);
     } catch (err) { console.error(err); setLoading(false); }
   }, [accountId, tradeLimit]);
@@ -113,7 +117,7 @@ export function HoldingsDetail() {
       )}
 
       {/* Cash Flow (v1.5.6) */}
-      <CashFlowCard accountId={accountId} onChanged={load} />
+      <CashFlowCard accountId={accountId} onChanged={load} refreshKey={flowRefresh} />
 
       {/* Trade Form Modal */}
       <SlidePanel open={showTrade} title="📝 记录交易" onClose={() => setShowTrade(false)} width={520}>
