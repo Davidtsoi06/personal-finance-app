@@ -137,6 +137,8 @@ export function HoldingsTableCard({ holdings, onRowClick, onPriceEdit, onChanged
     <>
       <Card title="💼 当前持仓">
         <Table
+          scrollable
+          maxHeight={420}
           columns={holdingColumns}
           data={holdings}
           rowKey={(r) => r.id}

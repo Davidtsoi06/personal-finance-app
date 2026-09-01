@@ -245,6 +245,11 @@ async function fetchAllPricesWithAlerts(): Promise<{ total: number; updated: num
         n.show();
       }
     }
+    // v1.10.14：价格刷新后合并导出 AI 持仓快照（30 秒节流）
+    try {
+      const { schedulePortfolioExport } = require('./ai-portfolio-service');
+      schedulePortfolioExport();
+    } catch { /* 忽略 */ }
     return { total: result.total, updated: result.updated, alerts: alerts.length };
   } catch {
     return { total: result.total, updated: result.updated, alerts: 0 };

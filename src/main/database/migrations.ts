@@ -823,4 +823,47 @@ export const MIGRATIONS: Migration[] = [
       "  AND currency != (SELECT ia.currency FROM investment_accounts ia WHERE ia.id = investment_cash_flows.investment_account_id)",
     ].join('\n'),
   },
+  {
+    version: 24,
+    sql: [
+      '-- ============================================',
+      '-- Migration v24: v1.10.14 银行内嵌券商现金直达银行账户',
+      '-- 关联银行的券商（funding_account_id 非空）此前现金留在「券商流动金」，',
+      '-- 现转入关联银行账户余额（多币种桶），并清空其券商流水与流动金',
+      '-- ============================================',
+      'SELECT 1;',
+    ].join('\n'),
+    migrate: (db) => {
+      const brokers = db.prepare(
+        'SELECT id, funding_account_id, cash_balance, currency FROM investment_accounts WHERE funding_account_id IS NOT NULL AND cash_balance != 0'
+      ).all() as any[];
+      for (const b of brokers) {
+        const currency = b.currency || 'CNY';
+        const existing = db.prepare(
+          'SELECT balance FROM account_balances WHERE account_id = ? AND currency = ?'
+        ).get(b.funding_account_id, currency) as { balance: number } | undefined;
+        const newBal = Math.round(((existing?.balance || 0) + b.cash_balance) * 100) / 100;
+        if (existing) {
+          db.prepare('UPDATE account_balances SET balance = ? WHERE account_id = ? AND currency = ?')
+            .run(newBal, b.funding_account_id, currency);
+        } else {
+          db.prepare('INSERT INTO account_balances (account_id, currency, balance) VALUES (?, ?, ?)')
+            .run(b.funding_account_id, currency, newBal);
+        }
+        // 现金已在银行：清空券商流动金与流水
+        db.prepare('DELETE FROM investment_cash_flows WHERE investment_account_id = ?').run(b.id);
+        db.prepare('UPDATE investment_accounts SET cash_balance = 0 WHERE id = ?').run(b.id);
+      }
+      // 重算受影响银行账户 accounts.balance（CNY 等值合计）
+      const bankIds = [...new Set(brokers.map((b) => b.funding_account_id))];
+      for (const bankId of bankIds) {
+        const row = db.prepare(
+          'SELECT COALESCE(SUM(ab.balance * COALESCE(c.rate_to_base, 1)), 0) as total_cny' +
+          ' FROM account_balances ab LEFT JOIN currencies c ON ab.currency = c.code' +
+          ' WHERE ab.account_id = ?'
+        ).get(bankId) as { total_cny: number };
+        db.prepare("UPDATE accounts SET balance = ?, updated_at = datetime('now') WHERE id = ?").run(row.total_cny, bankId);
+      }
+    },
+  },
 ];

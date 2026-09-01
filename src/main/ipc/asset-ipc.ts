@@ -8,9 +8,10 @@ import * as transactionService from '../database/services/transaction-service';
 import { parseStatement, parseRows, getBrokerFormats } from '../services/statement-parser';
 import { normalizeDate, normalizeCurrency, normalizeCode, normalizeString } from '../services/data-normalizer';
 import { handleValidated } from './validation';
-import { insertCashFlowInDb, recomputeCashBalanceInDb } from '../database/services/cash-flow-core';
+import { insertCashFlowInDb, recomputeCashBalanceInDb, applyTradeCashToAccountInDb } from '../database/services/cash-flow-core';
 import { reconcileAssetCostBasis } from '../database/services/transaction-service';
 import { detectMarket } from '../../shared/utils/market';
+import { exportPortfolioSnapshot } from '../services/ai-portfolio-service';
 
 export function registerAssetIpcHandlers(): void {
   // ── Assets ──
@@ -35,10 +36,18 @@ export function registerAssetIpcHandlers(): void {
     if (data.currency) data.currency = normalizeCurrency(data.currency, 'CNY');
     if (data.code) data.code = normalizeCode(data.code);
     if (data.name) data.name = normalizeString(data.name);
-    return assetService.updateAsset(id, data);
+    const result = assetService.updateAsset(id, data);
+    // v1.10.14：持仓变化（数量/成本价等）→ 自动更新 AI 分析快照
+    exportPortfolioSnapshot(true);
+    return result;
   });
   handleValidated('asset:delete', (id: number) => assetService.deleteAsset(id));
-  handleValidated('asset:updatePrice', (id: number, price: number) => assetService.updateCurrentPrice(id, price));
+  handleValidated('asset:updatePrice', (id: number, price: number) => {
+    const result = assetService.updateCurrentPrice(id, price);
+    // v1.10.14：现价变化 → 自动更新 AI 分析快照
+    exportPortfolioSnapshot(true);
+    return result;
+  });
   ipcMain.handle('asset:totalMarketValue', (_e, currency?: string) => assetService.getTotalMarketValue(currency));
   ipcMain.handle('asset:listByAccount', (_e, accountId: number) => {
     const db = getDatabase();
@@ -85,15 +94,16 @@ export function registerAssetIpcHandlers(): void {
           db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
             .run(asset.id, data.price);
 
-          // 现金流水：买入扣现金（含手续费）
-          insertCashFlowInDb(db, {
+          // v1.10.14：现金流向——关联银行则直达银行余额，否则记券商流水
+          applyTradeCashToAccountInDb(db, {
             investmentAccountId: data.investmentAccountId, type: 'buy',
             amount: -(data.quantity * data.price + fee),
             assetId: asset.id, transactionId: Number(txnResult.lastInsertRowid),
             currency, date, notes: '买入 ' + name,
           });
-          recomputeCashBalanceInDb(db, data.investmentAccountId);
 
+          // v1.10.14：持仓变化 → 自动更新 AI 分析快照
+          exportPortfolioSnapshot(true);
           return { success: true, assetId: asset.id, transactionId: txnResult.lastInsertRowid };
         } else {
           const totalCost = data.quantity * data.price + fee;
@@ -119,15 +129,16 @@ export function registerAssetIpcHandlers(): void {
             data.quantity * data.price + fee, currency, date, data.notes || '买入');
           // v1.10.8：重放校准（首次买入重放=该笔，与初始值一致）
           reconcileAssetCostBasis(assetId);
-          // v1.10.11：首次买入（新资产）同样扣券商现金（此前漏记现金流）
-          insertCashFlowInDb(db, {
+          // v1.10.11/1.10.14：首次买入（新资产）同样扣现金——关联银行则直达银行余额
+          applyTradeCashToAccountInDb(db, {
             investmentAccountId: data.investmentAccountId, type: 'buy',
             amount: -(data.quantity * data.price + fee),
             assetId, transactionId: Number(txnResult.lastInsertRowid),
             currency, date, notes: '买入 ' + name,
           });
-          recomputeCashBalanceInDb(db, data.investmentAccountId);
 
+          // v1.10.14：持仓变化 → 自动更新 AI 分析快照
+          exportPortfolioSnapshot(true);
           return { success: true, assetId, transactionId: txnResult.lastInsertRowid };
         }
       });
@@ -155,15 +166,16 @@ export function registerAssetIpcHandlers(): void {
         db.prepare("INSERT INTO asset_prices (asset_id, price, date) VALUES (?, ?, date('now'))")
           .run(asset.id, data.price);
 
-        // 现金流水：卖出回笼现金（净额 = 金额 − 手续费）
-        insertCashFlowInDb(db, {
+        // v1.10.14：现金流向——卖出回笼现金（净额 = 金额 − 手续费），关联银行则直达银行余额
+        applyTradeCashToAccountInDb(db, {
           investmentAccountId: data.investmentAccountId, type: 'sell',
           amount: data.quantity * data.price - fee,
           assetId: asset.id, transactionId: Number(txnResult.lastInsertRowid),
           currency, date, notes: '卖出 ' + name,
         });
-        recomputeCashBalanceInDb(db, data.investmentAccountId);
 
+        // v1.10.14：持仓变化 → 自动更新 AI 分析快照
+        exportPortfolioSnapshot(true);
         return { success: true, assetId: asset.id, transactionId: txnResult.lastInsertRowid };
       });
 
@@ -196,9 +208,17 @@ export function registerAssetIpcHandlers(): void {
   handleValidated('transaction:update', (id: number, data: any) => {
     if (data.date) data.date = normalizeDate(data.date);
     if (data.currency) data.currency = normalizeCurrency(data.currency, 'CNY');
-    return transactionService.updateTransaction(id, data);
+    const result = transactionService.updateTransaction(id, data);
+    // v1.10.14：持仓变化 → 自动更新 AI 分析快照
+    exportPortfolioSnapshot(true);
+    return result;
   });
-  handleValidated('transaction:delete', (id: number) => transactionService.deleteTransaction(id));
+  handleValidated('transaction:delete', (id: number) => {
+    const result = transactionService.deleteTransaction(id);
+    // v1.10.14：持仓变化 → 自动更新 AI 分析快照
+    exportPortfolioSnapshot(true);
+    return result;
+  });
   ipcMain.handle('transaction:todayList', () => transactionService.getTodayTransactions());
 
   // ── Trade Statement Import (smart format matching) ──
@@ -258,8 +278,8 @@ export function registerAssetIpcHandlers(): void {
               trade.quantity * trade.price + trade.fee, trade.currency, trade.date, '日结单导入');
             // v1.10.8/1.10.9：重放校准持仓（统一口径）
             reconcileAssetCostBasis(assetId, asset ? asset.quantity + trade.quantity : undefined);
-            // 现金流水：买入扣现金（含手续费）
-            insertCashFlowInDb(db, {
+            // v1.10.14：现金流向——买入扣现金，关联银行则直达银行余额
+            applyTradeCashToAccountInDb(db, {
               investmentAccountId, type: 'buy',
               amount: -(trade.quantity * trade.price + trade.fee),
               assetId, transactionId: Number(txResult.lastInsertRowid),
@@ -277,8 +297,8 @@ export function registerAssetIpcHandlers(): void {
               trade.quantity * trade.price - trade.fee, trade.currency, trade.date, '日结单导入');
             // v1.10.8/1.10.9：重放校准持仓（统一口径，修复清仓残留均价）
             reconcileAssetCostBasis(asset.id, asset.quantity - trade.quantity);
-            // 现金流水：卖出回笼现金（净额）
-            insertCashFlowInDb(db, {
+            // v1.10.14：现金流向——卖出回笼现金，关联银行则直达银行余额
+            applyTradeCashToAccountInDb(db, {
               investmentAccountId, type: 'sell',
               amount: trade.quantity * trade.price - trade.fee,
               assetId: asset.id, transactionId: Number(txResult.lastInsertRowid),
@@ -311,6 +331,8 @@ export function registerAssetIpcHandlers(): void {
 
       // 导入完成后统一重算现金余额（流水派生）
       recomputeCashBalanceInDb(db, investmentAccountId);
+      // v1.10.14：持仓变化 → 自动更新 AI 分析快照
+      exportPortfolioSnapshot(true);
       return { imported, errors };
     });
 

@@ -301,6 +301,26 @@ export function registerSettingsIpcHandlers(): void {
     }
   });
 
+  // ── AI 持仓快照导出（v1.10.14）──
+  const aiPortfolioService = require('../services/ai-portfolio-service');
+  handleValidated('aiPortfolio:getFolder', () => aiPortfolioService.getPortfolioFolder());
+  handleValidated('aiPortfolio:chooseFolder', async () => {
+    const { dialog } = require('electron') as typeof import('electron');
+    const result = await dialog.showOpenDialog({
+      title: '选择 AI 投资分析软件数据文件夹',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true, folder: '' };
+    const folder = result.filePaths[0];
+    aiPortfolioService.setPortfolioFolder(folder);
+    aiPortfolioService.exportPortfolioSnapshot(true);
+    return { canceled: false, folder };
+  });
+  handleValidated('aiPortfolio:clearFolder', () => {
+    aiPortfolioService.clearPortfolioFolder();
+    return { success: true };
+  });
+
   // ── Currencies ──
   ipcMain.handle('currency:list', () => currencyService.listCurrencies());
   ipcMain.handle('currency:getBase', () => currencyService.getBaseCurrency());

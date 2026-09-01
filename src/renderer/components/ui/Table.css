@@ -3,6 +3,17 @@
   overflow-x: auto;
 }
 
+/* v1.10.14：板块内独立滚动——固定可视高度（约 10 行），滚动条浏览全部记录，表头吸顶 */
+.table-wrapper--scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.table-wrapper--scroll .table-th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

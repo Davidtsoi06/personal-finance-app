@@ -15,6 +15,8 @@ export function AiConfigCard() {
   const [status, setStatus] = useState<string | null>(null);
   const [includePortfolio, setIncludePortfolio] = useState(true);
   const [privacySaving, setPrivacySaving] = useState(false);
+  // v1.10.14：AI 投资分析持仓快照导出文件夹
+  const [folder, setFolder] = useState('');
 
   useEffect(() => {
     // Check if key is already configured
@@ -22,7 +24,24 @@ export function AiConfigCard() {
       if (c?.hasApiKey) setApiKey(KEY_MASK);
       if (c && c.includePortfolio !== undefined) setIncludePortfolio(c.includePortfolio);
     });
+    // 已配置的导出文件夹
+    invoke<string>('aiPortfolio:getFolder').then((f) => { if (f) setFolder(f); }).catch(() => {});
   }, []);
+
+  const handleChooseFolder = async () => {
+    try {
+      const r = await invoke<{ canceled: boolean; folder: string }>('aiPortfolio:chooseFolder');
+      if (!r.canceled && r.folder) setFolder(r.folder);
+    } catch (err: any) { setStatus('❌ 选择文件夹失败：' + err.message); }
+  };
+
+  const handleClearFolder = async () => {
+    try {
+      await invoke('aiPortfolio:clearFolder');
+      setFolder('');
+      setStatus('✅ 已清除导出文件夹');
+    } catch (err: any) { setStatus('❌ 清除失败：' + err.message); }
+  };
 
   const handleSave = async () => {
     setSaving(true); setStatus(null);
@@ -120,6 +139,22 @@ export function AiConfigCard() {
           {status}
         </div>
       )}
+
+      {/* v1.10.14：AI 投资分析持仓快照自动导出 */}
+      <div style={{ marginTop: 'var(--spacing-lg)', paddingTop: 'var(--spacing-md)', borderTop: '1px solid var(--color-border-light, #f0f0f0)' }}>
+        <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 600, marginBottom: 6 }}>📤 持仓数据导出（AI 投资分析）</div>
+        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-sm)' }}>
+          选择你的 AI 投资分析软件数据文件夹后，本软件会把持仓记录自动写入该文件夹的 
+          <code style={{ background: '#F0F2F5', padding: '1px 5px', borderRadius: 4 }}>portfolio_snapshot.json</code>。
+          之后任何持仓变化（交易、编辑、价格刷新）都会<strong>自动更新</strong>该文件，无需手动导出——
+          本地文件直接交换，无需下载，不会被安全软件误报。
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
+          <Button variant="secondary" size="sm" onClick={handleChooseFolder}>📂 选择文件夹</Button>
+          <Button variant="secondary" size="sm" onClick={handleClearFolder} disabled={!folder}>🗑 清除</Button>
+          {folder && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>📁 {folder}</span>}
+        </div>
+      </div>
     </Card>
   );
 }

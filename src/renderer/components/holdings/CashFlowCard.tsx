@@ -133,6 +133,8 @@ export function CashFlowCard({ accountId, onChanged, refreshKey }: Props) {
             </Button>
           </div>
           <Table
+            scrollable
+            maxHeight={420}
             columns={columns}
             data={flows}
             rowKey={(r) => r.id}

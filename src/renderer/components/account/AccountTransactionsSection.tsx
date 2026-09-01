@@ -189,6 +189,8 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
           <Button variant="secondary" size="sm" onClick={() => { setTxType('withdraw'); setShowForm(true); }}>📤 取出</Button>
         </div>
         <Table
+          scrollable
+          maxHeight={420}
           columns={columns}
           data={transactions}
           rowKey={(r) => r.id}

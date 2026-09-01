@@ -97,7 +97,7 @@ export function TradesTableCard({ trades, onChanged }: Props) {
     <>
       <div style={{ marginTop: 'var(--spacing-lg)' }}>
         <Card title="📜 交易记录">
-          <Table columns={tradeColumns} data={trades} rowKey={(r) => r.id} emptyText="暂无交易记录" />
+          <Table scrollable maxHeight={420} columns={tradeColumns} data={trades} rowKey={(r) => r.id} emptyText="暂无交易记录" />
         </Card>
       </div>
 

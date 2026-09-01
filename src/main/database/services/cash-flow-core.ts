@@ -32,6 +32,41 @@ export interface CashFlowRow {
   created_at: string;
 }
 
+import { updateAccountBalance } from './account-service';
+
+/**
+ * v1.10.14：交易现金流向——券商关联了银行账户（funding_account_id）时，
+ * 买入/卖出/分红现金直接增减银行账户余额（多币种桶），不记券商流动金；
+ * 未关联银行的券商维持现状（记券商流水并重算流动金）。
+ */
+export function applyTradeCashToAccountInDb(
+  db: Database.Database,
+  data: {
+    investmentAccountId: number;
+    type: CashFlowType;
+    amount: number;
+    assetId?: number | null;
+    transactionId?: number | null;
+    currency?: string;
+    date?: string;
+    notes?: string;
+  }
+): void {
+  const inv = db.prepare('SELECT funding_account_id FROM investment_accounts WHERE id = ?')
+    .get(data.investmentAccountId) as { funding_account_id: number | null } | undefined;
+  if (inv?.funding_account_id) {
+    // 银行内嵌券商：现金直达银行账户余额（不带符号进桶，桶按币种累计）
+    updateAccountBalance(inv.funding_account_id, data.currency || 'CNY', data.amount);
+    return;
+  }
+  insertCashFlowInDb(db, {
+    investmentAccountId: data.investmentAccountId, type: data.type,
+    amount: data.amount, assetId: data.assetId ?? null, transactionId: data.transactionId ?? null,
+    currency: data.currency || 'CNY', date: data.date, notes: data.notes,
+  });
+  recomputeCashBalanceInDb(db, data.investmentAccountId);
+}
+
 /** 插入一条流水（调用方负责事务与重算） */
 export function insertCashFlowInDb(db: Database.Database, data: CashFlowInput): number {
   const result = db.prepare(
@@ -86,21 +121,20 @@ export function syncFlowForTransactionInDb(
 ): void {
   removeFlowsForTransactionInDb(db, tx.id);
   if (!asset.investment_account_id) return;
+  // v1.10.14：关联银行则现金直达银行余额（编辑/删除交易时同样生效）
   if (tx.type === 'buy') {
-    insertCashFlowInDb(db, {
+    applyTradeCashToAccountInDb(db, {
       investmentAccountId: asset.investment_account_id, type: 'buy',
       amount: -(tx.total_amount || tx.quantity * tx.price + tx.fee),
       assetId: asset.id, transactionId: tx.id, currency: tx.currency, date: tx.date,
       notes: '买入 ' + asset.name,
     });
-    recomputeCashBalanceInDb(db, asset.investment_account_id);
   } else if (tx.type === 'sell') {
-    insertCashFlowInDb(db, {
+    applyTradeCashToAccountInDb(db, {
       investmentAccountId: asset.investment_account_id, type: 'sell',
       amount: tx.total_amount || tx.quantity * tx.price - tx.fee,
       assetId: asset.id, transactionId: tx.id, currency: tx.currency, date: tx.date,
       notes: '卖出 ' + asset.name,
     });
-    recomputeCashBalanceInDb(db, asset.investment_account_id);
   }
 }
