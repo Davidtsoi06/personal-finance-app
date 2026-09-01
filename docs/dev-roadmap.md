@@ -587,6 +587,13 @@
 - [x] **AI 持仓快照自动导出**：设置选择 AI 分析软件文件夹后，持仓变化（交易/编辑/价格刷新）自动重写 portfolio_snapshot.json（30 秒节流）；3 个新 IPC（aiPortfolio:getFolder/chooseFolder/clearFolder），IPC 193 频道一致
 - [x] 测试：260/260 通过（含校正币种、迁移 v24）；tsc 无错；双端已重建；版本 1.10.14
 
+## 第 31y 阶段：v1.10.15 AI 持仓快照增强（AI 分析软件数据完整） ✅（代码完成，待发布）
+
+> 需求来源：AI 投资分析软件需要更完整数据——导出文件补充投资账户、交易记录、净值历史。
+
+- [x] exportPortfolioSnapshot 新增：accounts（investment_accounts 全表，camelCase）、transactions（最近 100 条 LEFT JOIN assets 取代码/名称）、netWorth（最近一条）+ netWorthHistory（最近 180 天升序）；version 动态读取 package.json（../../../package.json，src/dist 均三级到根）；holdings 向后兼容不变
+- [x] 测试：261/261 通过（新增 ai-portfolio 导出结构测试：临时目录导出断言全部新字段/camelCase/升序/动态版本）；tsc 无错；双端已重建；版本 1.10.15
+
 ## 第 32 阶段：v1.11.1 批 C 效率工具 + AI 账目体检 ⏸️（暂缓，用户决定留待以后开发）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。
