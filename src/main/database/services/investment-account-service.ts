@@ -3,6 +3,7 @@
  */
 import { getDatabase } from '../index';
 import { recordCashFlow } from './investment-cash-flow-service';
+import { insertCashFlowInDb, recomputeCashBalanceInDb } from './cash-flow-core';
 import type { TransactionRow } from './transaction-service';
 import { ASSET_SORT_SQL } from './asset-service';
 
@@ -52,7 +53,19 @@ export function createInvestmentAccount(data: {
     cash_balance: data.cash_balance || 0,
     notes: data.notes || null,
   });
-  return getInvestmentAccount(result.lastInsertRowid as number) as InvestmentAccountRow;
+  const accountId = result.lastInsertRowid as number;
+  // v1.10.12：期初余额必须落 adjust 流水——现金余额=Σ流水派生，
+  // 否则首次交易重算余额会把初始现金丢失（此前新建带余额的券商账户会变成负数）
+  const opening = data.cash_balance || 0;
+  if (opening !== 0) {
+    insertCashFlowInDb(db, {
+      investmentAccountId: accountId, type: 'adjust', amount: opening,
+      currency: data.currency || 'CNY',
+      date: new Date().toISOString().slice(0, 10), notes: '期初余额',
+    });
+    recomputeCashBalanceInDb(db, accountId);
+  }
+  return getInvestmentAccount(accountId) as InvestmentAccountRow;
 }
 
 export function updateInvestmentAccount(id: number, data: Partial<InvestmentAccountRow>): InvestmentAccountRow | undefined {
@@ -60,10 +73,22 @@ export function updateInvestmentAccount(id: number, data: Partial<InvestmentAcco
   const existing = getInvestmentAccount(id);
   if (!existing) return undefined;
   const merged = { ...existing, ...data, updated_at: new Date().toISOString() };
+  const newBalance = merged.cash_balance ?? 0;
   db.prepare(`
     UPDATE investment_accounts SET name=?, broker=?, currency=?, account_number=?, funding_account_id=?, cash_balance=?, notes=?, updated_at=?
     WHERE id=?
-  `).run(merged.name, merged.broker, merged.currency, merged.account_number, merged.funding_account_id, merged.cash_balance ?? 0, merged.notes, merged.updated_at, id);
+  `).run(merged.name, merged.broker, merged.currency, merged.account_number, merged.funding_account_id, newBalance, merged.notes, merged.updated_at, id);
+  // v1.10.12：余额变化 → adjust 流水同步（现金余额=Σ流水派生，直接改缓存列会导致重算时丢失）
+  const balanceChanged = data.cash_balance !== undefined && Math.abs(newBalance - existing.cash_balance) > 0.005;
+  if (balanceChanged) {
+    const delta = Math.round((newBalance - existing.cash_balance) * 100) / 100;
+    insertCashFlowInDb(db, {
+      investmentAccountId: id, type: 'adjust', amount: delta,
+      currency: merged.currency || 'CNY',
+      date: new Date().toISOString().slice(0, 10), notes: '余额调整',
+    });
+    recomputeCashBalanceInDb(db, id);
+  }
   return getInvestmentAccount(id);
 }
 
