@@ -15,9 +15,22 @@ export function deriveTradeFee(quantity: number, price: number, netAmount: numbe
  * 支持：千分位逗号（1,234.56）、括号负数（(100.00)）、货币符号（¥/$/€/£）、空格。
  * 解析失败返回 null（由调用方决定跳过或报错），绝不静默返回 NaN。
  */
+/**
+ * v1.10.11：剥离 Excel/CSV 公式包裹——单元格或 CSV 字段可能以 = 开头并被引号包裹
+ * （如 ='20260813'、="HKD"、=='2026-08-13'），清洗为实际内容 20260813 / HKD。
+ */
+export function stripFormulaWrapper(raw: unknown): string {
+  let s = String(raw ?? '').trim();
+  while (s.startsWith('=')) s = s.slice(1).trim();
+  if (s.length >= 2 && ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"')))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 export function parseAmount(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null;
-  let s = String(raw).trim();
+  let s = stripFormulaWrapper(raw);
   if (!s) return null;
 
   // 括号负数：(100.00) → -100.00

@@ -560,6 +560,15 @@
 - [x] **AI 模板币种自动补齐**：模板缺 currency 映射时按表头自动找币种列（Billing currency → HKD，不再静默回退 CNY）；AI 提示词强化（第一个含 currency 字样的列必须映射，第二个标 ignore，切勿全 ignore）
 - [x] 测试：251/251 通过（HSBC 样本固化 4 用例：6 列正确解析/模板缺币种补齐/日期回退/币种回归）；tsc 无错；IPC 190 频道一致
 
+## 第 31v 阶段：v1.10.11 券商现金流补漏 + 公式文本清洗（用户反馈） ✅（代码完成，待发布）
+
+> 需求来源：① 美股等券商首次买入（新资产）没有从券商现金流扣钱；② Excel 导入转文本后出现 ='20260813' 等公式包裹（币种/日期/金额识别失败）。
+
+- [x] **现金流补漏**：trade:record 买入新资产分支补 insertCashFlowInDb（amount=-(数量×价格+手续费)）+ recomputeCashBalanceInDb——首次买入美股/新股票不再漏扣券商现金（importParsed 已覆盖）
+- [x] **公式包裹清洗 stripFormulaWrapper**（amount-parse 导出）：剥离前导 = 与引号包裹（='20260813' / ="HKD" / =='...'）；接入 normalizeDate/normalizeCurrency/normalizeCode/normalizeString/normalizeTradeType/parseAmount/excel-utils 全部入口——日期/币种/金额/代码识别恢复
+- [x] **币种再增强**：繁体写法（人民幣/港幣/港圓/美圓/人民幣元/港幣元）与 ISO 码直通（CNY/HKD/USD）
+- [x] 测试：256/256 通过（公式包裹 3 + 繁体币种 1 + 金额公式 1）；tsc 无错；IPC 190 频道一致
+
 ## 第 32 阶段：v1.11.0 前端效率工具（批 C） 📋（已规划，待执行）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。

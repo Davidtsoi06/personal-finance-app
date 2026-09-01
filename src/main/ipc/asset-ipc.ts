@@ -119,6 +119,14 @@ export function registerAssetIpcHandlers(): void {
             data.quantity * data.price + fee, currency, date, data.notes || '买入');
           // v1.10.8：重放校准（首次买入重放=该笔，与初始值一致）
           reconcileAssetCostBasis(assetId);
+          // v1.10.11：首次买入（新资产）同样扣券商现金（此前漏记现金流）
+          insertCashFlowInDb(db, {
+            investmentAccountId: data.investmentAccountId, type: 'buy',
+            amount: -(data.quantity * data.price + fee),
+            assetId, transactionId: Number(txnResult.lastInsertRowid),
+            currency, date, notes: '买入 ' + name,
+          });
+          recomputeCashBalanceInDb(db, data.investmentAccountId);
 
           return { success: true, assetId, transactionId: txnResult.lastInsertRowid };
         }

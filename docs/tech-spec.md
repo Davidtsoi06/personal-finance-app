@@ -393,7 +393,7 @@ npm run release:local
 ### 测试
 
 ```bash
-npm test                # 单元 + 集成测试（vitest，251 个用例）
+npm test                # 单元 + 集成测试（vitest，256 个用例）
 npm run test:unit       # 仅单元测试（共享纯函数：金额/成本/市场/卡号/Markdown/加密）
 npm run test:integration # 仅集成测试（迁移体系，真实 SQLite 内存库）
 npm run test:e2e        # E2E（Playwright + Electron：构建后启动真实应用冒烟测试）

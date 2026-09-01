@@ -80,6 +80,35 @@ describe('normalizeDate 日/月与中文日期（v1.10.1）', () => {
   });
 });
 
+/** v1.10.11：Excel/CSV 公式包裹清洗 + 繁体币种 */
+describe('公式包裹剥离（v1.10.11）', () => {
+  it('日期 =\'20260813\' → 2026-08-13', () => {
+    expect(normalizeDate("='20260813'")).toBe('2026-08-13');
+    expect(normalizeDate("=='2026-08-13'")).toBe('2026-08-13');
+    expect(normalizeDate('20260813')).toBe('2026-08-13'); // 正常值不受影响
+  });
+
+  it('币种 =\"HKD\" → HKD', () => {
+    expect(normalizeCurrency('="HKD"')).toBe('HKD');
+    expect(normalizeCurrency("='人民币元'")).toBe('CNY');
+  });
+
+  it('代码 =\'AAPL\' → AAPL', () => {
+    expect(normalizeCode("='AAPL'")).toBe('AAPL');
+  });
+
+  it('繁体币种写法', () => {
+    expect(normalizeCurrency('人民幣')).toBe('CNY');
+    expect(normalizeCurrency('人民幣元')).toBe('CNY');
+    expect(normalizeCurrency('港幣')).toBe('HKD');
+    expect(normalizeCurrency('港幣元')).toBe('HKD');
+    expect(normalizeCurrency('港圓')).toBe('HKD');
+    expect(normalizeCurrency('美圓')).toBe('USD');
+    expect(normalizeCurrency('HKD')).toBe('HKD');
+    expect(normalizeCurrency('CNY')).toBe('CNY');
+  });
+});
+
 /** v1.10.9：币种识别增强 + 美股代码清理 */
 describe('normalizeCurrency 银行结单币种（v1.10.9）', () => {
   it('人民币元/元/符号 → CNY', () => {

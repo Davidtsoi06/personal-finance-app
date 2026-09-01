@@ -5,6 +5,7 @@
  * - 其他单元格 → 格式化显示文本（金额带符号 HK$25,000.00 / 日期文本 18/08/2026 / 纯数字 25000）。
  */
 import { isDateCellFormat } from './ai-service';
+import { stripFormulaWrapper } from '../../shared/utils/amount-parse';
 
 function colToIndex(letters: string): number {
   let n = 0;
@@ -43,7 +44,8 @@ export function xlsxSheetToTextRows(sheet: any): string[][] {
         row.push(String(addr.v));
       } else if (typeof addr.w === 'string' && addr.w.trim()) {
         // 其他单元格：格式化显示文本（金额 HK$25,000.00 / 日期文本 18/08/2026 / 纯数字）
-        row.push(addr.w.trim());
+        // v1.10.11：剥离公式包裹（Excel 文本公式 ='20260813'）
+        row.push(stripFormulaWrapper(addr.w));
       } else {
         row.push(typeof addr.v === 'number' ? String(addr.v) : String(addr.v ?? ''));
       }

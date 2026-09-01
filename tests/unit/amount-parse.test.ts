@@ -38,6 +38,14 @@ describe('parseAmount（v1.7.1 日结单金额解析）', () => {
     expect(deriveTradeFee(NaN, 345, 34485)).toBe(0);
   });
 
+  it('公式包裹金额（v1.10.11）', () => {
+    expect(parseAmount("='-300,000.00'")).toBe(-300000);
+    expect(parseAmount('="-300,000.00"')).toBe(-300000);
+    expect(parseAmount("='39.00'")).toBe(39);
+    expect(parseAmount('==25000')).toBe(25000);
+    expect(parseAmount('25000')).toBe(25000);
+  });
+
   it('非法输入返回 null（不静默 NaN）', () => {
     expect(parseAmount('abc')).toBeNull();
     expect(parseAmount('')).toBeNull();

@@ -6,12 +6,14 @@
  *   import { normalizeDate, normalizeCurrency, normalizeCode, normalizeTradeType, normalizeString } from './data-normalizer';
  */
 
+import { stripFormulaWrapper } from '../../shared/utils/amount-parse';
+
 // ── Currency name → ISO code ──
 // v1.10.9：扩展银行结单常见写法（人民币元/元/货币符号/主要外币中文名）
 const CURRENCY_NORMALIZE_MAP: Record<string, string> = {
-  '人民币': 'CNY', '人民币元': 'CNY', '元': 'CNY', 'RMB': 'CNY', '¥': 'CNY', '￥': 'CNY',
-  '港元': 'HKD', '港币': 'HKD', '港币元': 'HKD', 'HK$': 'HKD',
-  '美元': 'USD', '美金': 'USD', 'US$': 'USD', '$': 'USD',
+  '人民币': 'CNY', '人民币元': 'CNY', '人民幣': 'CNY', '人民幣元': 'CNY', '元': 'CNY', 'RMB': 'CNY', '¥': 'CNY', '￥': 'CNY', 'CNY': 'CNY',
+  '港元': 'HKD', '港币': 'HKD', '港幣': 'HKD', '港币元': 'HKD', '港幣元': 'HKD', '港圓': 'HKD', '港圆': 'HKD', 'HK$': 'HKD', 'HKD': 'HKD', 'HK DOLLAR': 'HKD',
+  '美元': 'USD', '美金': 'USD', '美元元': 'USD', '美圓': 'USD', 'US$': 'USD', '$': 'USD', 'USD': 'USD', 'US DOLLAR': 'USD',
   '欧元': 'EUR', '英镑': 'GBP', '日元': 'JPY', '日圆': 'JPY',
   '新加坡元': 'SGD', '澳元': 'AUD', '澳大利亚元': 'AUD',
   '加元': 'CAD', '加拿大元': 'CAD', '新台币': 'TWD',
@@ -34,7 +36,8 @@ export function normalizeDate(raw: string | number | Date | undefined | null): s
     return `${raw.getUTCFullYear()}-${String(raw.getUTCMonth() + 1).padStart(2, '0')}-${String(raw.getUTCDate()).padStart(2, '0')}`;
   }
 
-  const trimmed = typeof raw === 'number' ? String(raw) : raw.trim();
+  // v1.10.11：剥离公式包裹（='20260813' → 20260813）
+  const trimmed = typeof raw === 'number' ? String(raw) : stripFormulaWrapper(raw);
 
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
@@ -157,7 +160,7 @@ function toValidDate(y: string, m: string, d: string): string | null {
  */
 export function normalizeCurrency(raw: string | undefined | null, fallback = 'CNY'): string {
   if (!raw) return fallback;
-  const upper = raw.trim().toUpperCase();
+  const upper = stripFormulaWrapper(raw).toUpperCase();
   const direct = CURRENCY_NORMALIZE_MAP[upper];
   if (direct) return direct;
   // v1.10.9：尾部「元」剥离再匹配（人民币元→人民币、美元元→美元）
@@ -175,7 +178,7 @@ export function normalizeCurrency(raw: string | undefined | null, fallback = 'CN
  */
 export function normalizeCode(raw: string | undefined | null): string {
   if (!raw) return '';
-  const trimmed = raw.trim().toUpperCase();
+  const trimmed = stripFormulaWrapper(raw).toUpperCase();
   return trimmed.replace(/\.(US|NYSE|NASDAQ)$/, '');
 }
 
@@ -186,7 +189,7 @@ export function normalizeCode(raw: string | undefined | null): string {
  */
 export function normalizeTradeType(raw: string | undefined | null): 'buy' | 'sell' | 'split' | 'other' {
   if (!raw) return 'other';
-  const lower = raw.trim().toLowerCase();
+  const lower = stripFormulaWrapper(raw).toLowerCase();
 
   if (lower.includes('买') || lower === 'buy' || lower === 'b') return 'buy';
   if (lower.includes('卖') || lower === 'sell' || lower === 's') return 'sell';
@@ -199,7 +202,7 @@ export function normalizeTradeType(raw: string | undefined | null): 'buy' | 'sel
  * Normalize a general-purpose string: trim, empty → ''.
  */
 export function normalizeString(raw: string | undefined | null): string {
-  return (raw || '').trim();
+  return stripFormulaWrapper(raw || '');
 }
 
 /** Return today's date as YYYY-MM-DD */
