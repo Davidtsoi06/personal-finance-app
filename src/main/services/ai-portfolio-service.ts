@@ -40,6 +40,8 @@ export function exportPortfolioSnapshot(immediate = false): void {
     const fs = require('fs') as typeof import('fs');
     const path = require('path') as typeof import('path');
     const db = getDatabase();
+    // v1.10.15：版本号从 package.json 动态读取，不硬编码（src/dist 均为三级到项目根）
+    const appVersion = (require('../../../package.json') as { version?: string }).version || 'unknown';
     const assets = db.prepare(`
       SELECT a.id, a.name, a.code, a.type, a.market, a.currency, a.quantity,
         a.cost_price, a.current_price, a.market_value, a.total_cost, a.profit_loss, a.profit_loss_pct,
@@ -50,9 +52,28 @@ export function exportPortfolioSnapshot(immediate = false): void {
       LEFT JOIN accounts acc ON a.account_id = acc.id
       ORDER BY a.market_value DESC
     `).all() as any[];
+    // v1.10.15：投资账户列表（含现金余额）
+    const accounts = db.prepare(
+      'SELECT id, name, broker, currency, cash_balance FROM investment_accounts ORDER BY id'
+    ).all() as any[];
+    // v1.10.15：最近 100 条交易（含持仓代码/名称）
+    const transactions = db.prepare(`
+      SELECT t.id, t.asset_id, t.type, t.quantity, t.price, t.fee, t.total_amount,
+        t.currency, t.date, t.notes, a.code as asset_code, a.name as asset_name
+      FROM transactions t
+      LEFT JOIN assets a ON t.asset_id = a.id
+      ORDER BY t.date DESC, t.id DESC
+      LIMIT 100
+    `).all() as any[];
+    // v1.10.15：最近 180 天净值历史（升序返回）+ 最近一条作为 netWorth
+    const netWorthRows = db.prepare(
+      'SELECT date, total_cash, total_investments, net_worth FROM net_worth_history ORDER BY date DESC LIMIT 180'
+    ).all() as any[];
+    netWorthRows.reverse(); // 升序
+    const latest = netWorthRows.length > 0 ? netWorthRows[netWorthRows.length - 1] : null;
     const snapshot = {
       app: 'personal-finance',
-      version: '1.10.14',
+      version: appVersion,
       exportedAt: new Date().toISOString(),
       count: assets.length,
       holdings: assets.map((a) => ({
@@ -61,6 +82,20 @@ export function exportPortfolioSnapshot(immediate = false): void {
         marketValue: a.market_value, totalCost: a.total_cost, profitLoss: a.profit_loss,
         profitLossPct: a.profit_loss_pct,
         broker: a.broker_name || null, bank: a.bank_name || null,
+      })),
+      accounts: accounts.map((a) => ({
+        id: a.id, name: a.name, broker: a.broker, currency: a.currency, cashBalance: a.cash_balance,
+      })),
+      transactions: transactions.map((t) => ({
+        id: t.id, assetCode: t.asset_code, assetName: t.asset_name, type: t.type,
+        quantity: t.quantity, price: t.price, fee: t.fee, totalAmount: t.total_amount,
+        currency: t.currency, date: t.date, notes: t.notes,
+      })),
+      netWorth: latest ? {
+        date: latest.date, totalCash: latest.total_cash, totalInvestments: latest.total_investments, netWorth: latest.net_worth,
+      } : null,
+      netWorthHistory: netWorthRows.map((n) => ({
+        date: n.date, totalCash: n.total_cash, totalInvestments: n.total_investments, netWorth: n.net_worth,
       })),
     };
     const file = path.join(folder, FILE_NAME);
