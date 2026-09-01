@@ -594,7 +594,7 @@
 - [x] exportPortfolioSnapshot 新增：accounts（investment_accounts 全表，camelCase）、transactions（最近 100 条 LEFT JOIN assets 取代码/名称）、netWorth（最近一条）+ netWorthHistory（最近 180 天升序）；version 动态读取 package.json（../../../package.json，src/dist 均三级到根）；holdings 向后兼容不变
 - [x] 测试：261/261 通过（新增 ai-portfolio 导出结构测试：临时目录导出断言全部新字段/camelCase/升序/动态版本）；tsc 无错；双端已重建；版本 1.10.15
 
-## 第 31z 阶段：v1.10.16 银行内嵌券商逻辑修复（用户反馈重复+缺记录） ✅（代码完成，待发布）
+## 第 31z 阶段：v1.10.16 银行内嵌券商逻辑修复（用户反馈重复+缺记录） ✅（已发布 v1.10.16）
 
 > 需求来源：① 券商卖出直达银行 + 银行日结单导入都记一次 → 重复；② 卖出后银行现金增长但看不到存取记录。
 
