@@ -808,4 +808,19 @@ export const MIGRATIONS: Migration[] = [
       ");",
     ].join('\n'),
   },
+  {
+    version: 23,
+    sql: [
+      '-- ============================================',
+      '-- Migration v23: v1.10.13 修正历史「校正」流水币种为账户币种',
+      '-- adjustCashBalance 此前默认 CNY；把 type=adjust 且币种与账户不符的流水改正',
+      '-- （仅改币种不改金额，balance_after 链不受影响）',
+      '-- ============================================',
+      "UPDATE investment_cash_flows",
+      "SET currency = (SELECT ia.currency FROM investment_accounts ia WHERE ia.id = investment_cash_flows.investment_account_id)",
+      "WHERE type = 'adjust'",
+      "  AND EXISTS (SELECT 1 FROM investment_accounts ia WHERE ia.id = investment_cash_flows.investment_account_id)",
+      "  AND currency != (SELECT ia.currency FROM investment_accounts ia WHERE ia.id = investment_cash_flows.investment_account_id)",
+    ].join('\n'),
+  },
 ];

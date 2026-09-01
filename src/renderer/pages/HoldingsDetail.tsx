@@ -10,6 +10,7 @@ import { HoldingsTableCard, Holding } from '../components/holdings/HoldingsTable
 import { TradesTableCard, TradeRecord } from '../components/holdings/TradesTableCard';
 import { TradeHistoryModal } from '../components/holdings/TradeHistoryModal';
 import { PriceModal } from '../components/holdings/PriceModal';
+import { CostPriceModal } from '../components/holdings/CostPriceModal';
 import { BrokerStatementImportModal } from '../components/holdings/BrokerStatementImportModal';
 import { CashFlowCard } from '../components/holdings/CashFlowCard';
 
@@ -25,6 +26,7 @@ export function HoldingsDetail() {
   const [showImport, setShowImport] = useState(false);
   const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
   const [priceTarget, setPriceTarget] = useState<Holding | null>(null);
+  const [costTarget, setCostTarget] = useState<Holding | null>(null); // v1.10.13：修改成本价
 
   const accountId = parseInt(id || '0');
   // v1.8.0：交易历史分页加载
@@ -95,6 +97,7 @@ export function HoldingsDetail() {
         holdings={holdings}
         onRowClick={setSelectedHolding}
         onPriceEdit={setPriceTarget}
+        onCostPriceEdit={setCostTarget}
         onChanged={load}
       />
 
@@ -134,6 +137,8 @@ export function HoldingsDetail() {
 
       {/* ── Manual Current Price Modal ── */}
       <PriceModal target={priceTarget} onClose={() => setPriceTarget(null)} onChanged={load} />
+      {/* ── Manual Cost Price Modal（v1.10.13） ── */}
+      <CostPriceModal target={costTarget} onClose={() => setCostTarget(null)} onChanged={load} />
     </div>
   );
 }

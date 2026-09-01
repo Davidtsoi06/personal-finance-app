@@ -23,9 +23,11 @@ interface Props {
   onRowClick: (row: Holding) => void;
   onPriceEdit: (h: Holding) => void;
   onChanged: () => void;
+  /** v1.10.13：修改成本价入口（与现价编辑并列，像现价一样便捷） */
+  onCostPriceEdit?: (h: Holding) => void;
 }
 
-export function HoldingsTableCard({ holdings, onRowClick, onPriceEdit, onChanged }: Props) {
+export function HoldingsTableCard({ holdings, onRowClick, onPriceEdit, onChanged, onCostPriceEdit }: Props) {
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
   const [deleteHolding, setDeleteHolding] = useState<Holding | null>(null);
   const [invAccounts, setInvAccounts] = useState<Array<{id: number; name: string; broker: string | null}>>([]);
@@ -89,7 +91,15 @@ export function HoldingsTableCard({ holdings, onRowClick, onPriceEdit, onChanged
     { key: 'type', title: '类型', render: (r) => ASSET_TYPE_LABELS[r.type] || r.type },
     { key: 'currency', title: '货币', align: 'center', render: (r) => <span style={{ fontWeight: 500 }}>{r.currency}</span> },
     { key: 'quantity', title: '持仓数量', align: 'right', render: (r) => r.quantity.toLocaleString() },
-    { key: 'cost_price', title: '成本价', align: 'right', render: (r) => <Amount value={r.cost_price} currency={r.currency} showSign={false} size="sm" /> },
+    {
+      key: 'cost_price', title: '成本价', align: 'right',
+      render: (r) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+          <Amount value={r.cost_price} currency={r.currency} showSign={false} size="sm" />
+          {onCostPriceEdit && <Button variant="secondary" size="sm" onClick={() => onCostPriceEdit(r)}>✏️</Button>}
+        </div>
+      ),
+    },
     {
       key: 'current_price', title: '最新价', align: 'right',
       render: (r) => (
