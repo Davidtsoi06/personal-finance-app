@@ -12,7 +12,7 @@ import * as cfService from '../database/services/custom-format-service';
 import * as bfService from '../database/services/bank-format-service';
 import * as bankParser from '../services/bank-statement-parser';
 import { classifyBankRecord } from '../services/statement-classifier';
-import { txFingerprint, findTxByHashInDb, findFdForOutRowInDb, findFdForInRowInDb } from '../database/services/statement-pairing';
+import { txFingerprint, findTxByHashInDb, findFdForOutRowInDb, findFdForInRowInDb, findBrokerDirectTxInDb } from '../database/services/statement-pairing';
 
 export function registerSettingsIpcHandlers(): void {
   // ── Investment Accounts ──
@@ -109,12 +109,17 @@ export function registerSettingsIpcHandlers(): void {
       const classification: string = rec.classification || classifyBankRecord(rec);
       const hash = txFingerprint(rec);
       const duplicate = !!findTxByHashInDb(db, accountId, hash);
+      // v1.10.16：券商交易直达银行生成的存取记录（同日同金额同方向）→ 自动跳过
+      const brokerDirect = !duplicate ? findBrokerDirectTxInDb(db, accountId, rec.date, Math.abs(Number(rec.amount) || 0), rec.type) : undefined;
       let matchFdId: number | null = null;
       let note = '';
       let defaultAction: 'import' | 'skip' | 'create_fd' | 'settle_fd' = 'import';
       if (duplicate) {
         defaultAction = 'skip';
         note = '重复行（同一笔已导入过，自动跳过）';
+      } else if (brokerDirect) {
+        defaultAction = 'skip';
+        note = '该笔已由券商交易记录（银行直达）处理，自动跳过';
       } else if (classification === 'fd_out' && rec.type === 'withdraw') {
         const fd = findFdForOutRowInDb(db, accountId, Number(rec.amount), rec.date);
         if (fd) {
@@ -183,6 +188,8 @@ export function registerSettingsIpcHandlers(): void {
 
           // 防重复导入：指纹已存在 → 跳过
           if (findTxByHashInDb(db, accountId, hash)) { duplicates++; continue; }
+          // v1.10.16：券商交易直达银行生成的存取记录（同日同金额同方向）→ 跳过避免重复
+          if (findBrokerDirectTxInDb(db, accountId, date, amount, type)) { duplicates++; continue; }
           if (action === 'skip') { skipped++; continue; }
 
           let txId: number | null = null;

@@ -55,7 +55,19 @@ export function applyTradeCashToAccountInDb(
   const inv = db.prepare('SELECT funding_account_id FROM investment_accounts WHERE id = ?')
     .get(data.investmentAccountId) as { funding_account_id: number | null } | undefined;
   if (inv?.funding_account_id) {
-    // 银行内嵌券商：现金直达银行账户余额（不带符号进桶，桶按币种累计）
+    // v1.10.16：银行内嵌券商——生成带来源标记的银行存取记录（statement_hash=broker:交易id），
+    // 银行日结单导入时按同日/同金额/同方向识别该笔并跳过，避免重复计入
+    const atType = data.type === 'buy' ? 'withdraw' : 'deposit'; // 买入=取出，卖出/分红=存入
+    db.prepare(`
+      INSERT INTO account_transactions (account_id, type, amount, currency, date, notes, investment_account_id, statement_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      inv.funding_account_id, atType, Math.abs(data.amount),
+      data.currency || 'CNY', data.date || new Date().toISOString().slice(0, 10),
+      data.notes || (atType === 'deposit' ? '券商资金到账' : '券商资金转出'),
+      data.investmentAccountId, 'broker:' + (data.transactionId ?? ''),
+    );
+    // 银行余额直达（多币种桶）
     updateAccountBalance(inv.funding_account_id, data.currency || 'CNY', data.amount);
     return;
   }
@@ -110,6 +122,14 @@ export function removeFlowsForTransactionInDb(db: Database.Database, transaction
     .all(transactionId) as { investment_account_id: number }[];
   const result = db.prepare('DELETE FROM investment_cash_flows WHERE transaction_id = ?').run(transactionId);
   for (const r of rows) recomputeCashBalanceInDb(db, r.investment_account_id);
+  // v1.10.16：删除券商直达银行生成的存取记录，并还原银行余额（编辑/删除交易联动）
+  const brokerTxs = db.prepare('SELECT id, account_id, type, amount, currency FROM account_transactions WHERE statement_hash = ?')
+    .all('broker:' + transactionId) as { id: number; account_id: number; type: string; amount: number; currency: string }[];
+  for (const b of brokerTxs) {
+    const delta = b.type === 'deposit' ? -b.amount : b.amount; // 删除存入→减回；删除取出→加回
+    updateAccountBalance(b.account_id, b.currency || 'CNY', delta);
+    db.prepare('DELETE FROM account_transactions WHERE id = ?').run(b.id);
+  }
   return result.changes;
 }
 

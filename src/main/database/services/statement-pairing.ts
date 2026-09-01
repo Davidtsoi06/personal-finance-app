@@ -21,6 +21,19 @@ export function findTxByHashInDb(db: Database.Database, accountId: number, hash:
   return db.prepare('SELECT * FROM account_transactions WHERE account_id = ? AND statement_hash = ? LIMIT 1').get(accountId, hash);
 }
 
+/**
+ * v1.10.16：查找「券商交易直达银行」生成的存取记录（investment_account_id 非空 + 同日同金额同方向）。
+ * 银行日结单里的同一笔到账（股票买卖）应由此行表示，导入时跳过避免重复计入。
+ */
+export function findBrokerDirectTxInDb(db: Database.Database, accountId: number, date: string, amount: number, type: string): any | undefined {
+  return db.prepare(`
+    SELECT * FROM account_transactions
+    WHERE account_id = ? AND investment_account_id IS NOT NULL
+      AND date = ? AND amount = ? AND type = ?
+    LIMIT 1
+  `).get(accountId, date, amount, type);
+}
+
 /** ISO 日期是否在 base 的 ±days 天内 */
 function withinDays(a: string, b: string, days = 3): boolean {
   const ta = new Date(a + 'T00:00:00').getTime();

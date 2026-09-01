@@ -594,6 +594,15 @@
 - [x] exportPortfolioSnapshot 新增：accounts（investment_accounts 全表，camelCase）、transactions（最近 100 条 LEFT JOIN assets 取代码/名称）、netWorth（最近一条）+ netWorthHistory（最近 180 天升序）；version 动态读取 package.json（../../../package.json，src/dist 均三级到根）；holdings 向后兼容不变
 - [x] 测试：261/261 通过（新增 ai-portfolio 导出结构测试：临时目录导出断言全部新字段/camelCase/升序/动态版本）；tsc 无错；双端已重建；版本 1.10.15
 
+## 第 31z 阶段：v1.10.16 银行内嵌券商逻辑修复（用户反馈重复+缺记录） ✅（代码完成，待发布）
+
+> 需求来源：① 券商卖出直达银行 + 银行日结单导入都记一次 → 重复；② 卖出后银行现金增长但看不到存取记录。
+
+- [x] **买卖生成银行存取记录**：applyTradeCashToAccountInDb 关联银行分支——INSERT account_transactions（买入=withdraw/卖出及分红=deposit，notes 备注，investment_account_id 标记来源，statement_hash=broker:交易id）+ updateAccountBalance；卖出后银行立即有增长且有记录
+- [x] **日结单智能去重**：statement-pairing 新增 findBrokerDirectTxInDb（同日+同金额+同方向+investment_account_id 非空）；bank:suggestActions 预览提示「该笔已由券商交易记录（银行直达）处理」并默认跳过；bank:importParsed 导入时同样查重跳过
+- [x] **编辑/删除联动**：removeFlowsForTransactionInDb 清理 statement_hash=broker:交易id 的银行存取记录并还原银行余额（删除存入→减回/删除取出→加回）
+- [x] 测试：264/264 通过（新增 3 用例：买卖生成存取记录+余额、删除联动还原、去重命中/不命中）；tsc 无错；双端已重建；版本 1.10.16
+
 ## 第 32 阶段：v1.11.1 批 C 效率工具 + AI 账目体检 ⏸️（暂缓，用户决定留待以后开发）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。
