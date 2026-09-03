@@ -603,7 +603,7 @@
 - [x] **编辑/删除联动**：removeFlowsForTransactionInDb 清理 statement_hash=broker:交易id 的银行存取记录并还原银行余额（删除存入→减回/删除取出→加回）
 - [x] 测试：264/264 通过（新增 3 用例：买卖生成存取记录+余额、删除联动还原、去重命中/不命中）；tsc 无错；双端已重建；版本 1.10.16
 
-## 第 31aa 阶段：v1.10.17 AI 快照不生成根因修复 ✅（代码完成，待发布）
+## 第 31aa 阶段：v1.10.17 AI 快照不生成根因修复 ✅（已发布 v1.10.17）
 
 > 根因：require('../../../package.json') 在打包产物（dist/main/main/services，四级到根）解析失败 MODULE_NOT_FOUND 被静默吞 → 快照从不写文件（v1.10.15~16；AI v1.0.5 移除 finance.db 兜底后持仓消失）。
 
