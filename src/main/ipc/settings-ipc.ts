@@ -327,6 +327,7 @@ export function registerSettingsIpcHandlers(): void {
     aiPortfolioService.clearPortfolioFolder();
     return { success: true };
   });
+  handleValidated('aiPortfolio:lastError', () => aiPortfolioService.getLastExportError());
 
   // ── Currencies ──
   ipcMain.handle('currency:list', () => currencyService.listCurrencies());

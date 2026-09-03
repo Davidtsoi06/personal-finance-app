@@ -231,7 +231,7 @@ Renderer (React)  ──→  window.electronAPI.invoke(channel, ...args)
 ### IPC 入参运行时校验（zod，v1.5.5，v1.7.1 全局门禁）
 
 - **边界防护**：渲染进程传错类型/缺字段/非法枚举时在 IPC 边界直接拒绝（报错含具体字段与原因），防止脏数据落库
-- **实现**：`src/shared/ipc-validation.ts` 定义 78 个频道的参数元组 schema（对象一律 `.passthrough()` 向前兼容；数字字段 `z.coerce` 兼容表单字符串）；`src/main/ipc/validation.ts` 提供 `handleValidated(channel, handler)` 包装器
+- **实现**：`src/shared/ipc-validation.ts` 定义 79 个频道的参数元组 schema（对象一律 `.passthrough()` 向前兼容；数字字段 `z.coerce` 兼容表单字符串）；`src/main/ipc/validation.ts` 提供 `handleValidated(channel, handler)` 包装器
 - **全局密码锁门禁（v1.7.1）**：`ipc/index.ts` 对 `ipcMain.handle` 统一打补丁，全部频道（含裸注册的只读/报表/更新频道）在未解锁时一律拒绝，`auth:*` 频道放行
 - **覆盖范围**：全部 `:create` / `:update` / `:delete` 及 addCash/withdrawCash、trade:record、日结单导入、清空（含主进程二次确认）/归档等频道
 - **测试**：`tests/unit/validation.test.ts` 13 个用例（合法通过/字符串转数字/负数与 NaN 拒绝/非法枚举/缺字段/日期格式/超长字段/联动字段归一化/auth 频道）
@@ -305,7 +305,7 @@ AI 对话支持 SSE 流式响应，通过 Electron 的 `event.sender.send()` 推
 | **Context Isolation** | `contextIsolation: true`，渲染进程不暴露 Node.js API |
 | **API Key 保护** | AI API Key 仅存主进程 `app_settings` 表（AES-256-GCM 密文，密钥存 `userData/secret.key`，与数据库分离），`getAiConfigPublic()` 只返回 `hasApiKey` 布尔值，Key 明文永不到达渲染进程，且不随备份导出 |
 | **卡号保护** | 银行卡号仅存后 4 位（服务层 `normalizeCardNumber` 截断 + 迁移 v13 清洗存量数据），完整卡号不落库 |
-| **IPC 白名单** | preload 仅放行主进程已注册的 190 个频道（含 `app:ping`），未授权频道调用直接拒绝；锁屏窗口使用独立最小权限 `lock-preload`（v1.7.0） |
+| **IPC 白名单** | preload 仅放行主进程已注册的 194 个频道（含 `app:ping`），未授权频道调用直接拒绝；锁屏窗口使用独立最小权限 `lock-preload`（v1.7.0） |
 | **AI 渲染安全** | AI 回复先整体 HTML 转义再做 Markdown 转换，模型输出中的原始 HTML 不会进入 DOM（防 XSS） |
 | **单实例运行** | `app.requestSingleInstanceLock()`：双开时第二个实例直接退出并聚焦已有窗口，防止双进程写库/重复调度 |
 | **迁移前自动备份** | 有待执行迁移时自动把数据库复制到 `userData/backups/`（WAL checkpoint 后），仅保留最近 5 份 |

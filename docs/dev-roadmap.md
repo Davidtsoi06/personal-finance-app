@@ -603,6 +603,12 @@
 - [x] **编辑/删除联动**：removeFlowsForTransactionInDb 清理 statement_hash=broker:交易id 的银行存取记录并还原银行余额（删除存入→减回/删除取出→加回）
 - [x] 测试：264/264 通过（新增 3 用例：买卖生成存取记录+余额、删除联动还原、去重命中/不命中）；tsc 无错；双端已重建；版本 1.10.16
 
+## 第 31aa 阶段：v1.10.17 AI 快照不生成根因修复 ✅（代码完成，待发布）
+
+> 根因：require('../../../package.json') 在打包产物（dist/main/main/services，四级到根）解析失败 MODULE_NOT_FOUND 被静默吞 → 快照从不写文件（v1.10.15~16；AI v1.0.5 移除 finance.db 兜底后持仓消失）。
+
+- [x] getAppVersion()：Electron app.getVersion() 优先 + 兜底不抛错；mkdirSync recursive 防御；失败写 app_settings aiPortfolio.lastError（设置页可见）+ IPC aiPortfolio:lastError（194 频道）；264/264 通过；版本 1.10.17
+
 ## 第 32 阶段：v1.11.1 批 C 效率工具 + AI 账目体检 ⏸️（暂缓，用户决定留待以后开发）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。

@@ -17,6 +17,8 @@ export function AiConfigCard() {
   const [privacySaving, setPrivacySaving] = useState(false);
   // v1.10.14：AI 投资分析持仓快照导出文件夹
   const [folder, setFolder] = useState('');
+  // v1.10.17：最近一次导出错误（非静默，便于排查）
+  const [exportError, setExportError] = useState('');
 
   useEffect(() => {
     // Check if key is already configured
@@ -24,14 +26,17 @@ export function AiConfigCard() {
       if (c?.hasApiKey) setApiKey(KEY_MASK);
       if (c && c.includePortfolio !== undefined) setIncludePortfolio(c.includePortfolio);
     });
-    // 已配置的导出文件夹
+    // 已配置的导出文件夹与最近错误
     invoke<string>('aiPortfolio:getFolder').then((f) => { if (f) setFolder(f); }).catch(() => {});
+    invoke<string>('aiPortfolio:lastError').then((e) => { if (e) setExportError(e); }).catch(() => {});
   }, []);
 
   const handleChooseFolder = async () => {
     try {
       const r = await invoke<{ canceled: boolean; folder: string }>('aiPortfolio:chooseFolder');
-      if (!r.canceled && r.folder) setFolder(r.folder);
+      if (!r.canceled && r.folder) { setFolder(r.folder); setExportError(''); }
+      const e = await invoke<string>('aiPortfolio:lastError').catch(() => '');
+      if (e) setExportError(e);
     } catch (err: any) { setStatus('❌ 选择文件夹失败：' + err.message); }
   };
 
@@ -154,6 +159,12 @@ export function AiConfigCard() {
           <Button variant="secondary" size="sm" onClick={handleClearFolder} disabled={!folder}>🗑 清除</Button>
           {folder && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>📁 {folder}</span>}
         </div>
+        {/* v1.10.17：导出失败可见（此前静默导致文件缺失无从排查） */}
+        {exportError && (
+          <div style={{ marginTop: 'var(--spacing-sm)', padding: 'var(--spacing-sm)', background: '#FFF2F0', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-xs)', color: 'var(--color-danger)' }}>
+            ⚠️ 上次自动导出失败：{exportError}
+          </div>
+        )}
       </div>
     </Card>
   );

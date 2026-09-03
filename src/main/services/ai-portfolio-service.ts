@@ -27,6 +27,26 @@ export function getPortfolioFolder(): string {
 }
 
 /**
+ * v1.10.17 修复：版本号获取不再用相对路径 require package.json——
+ * 打包后产物位于 dist/main/main/services（相对根为 4 级），3 级 require 会抛
+ * MODULE_NOT_FOUND 并被静默吞掉（v1.10.15~v1.10.16 快照从不写文件的根因）。
+ * 优先 Electron app.getVersion()（开发/打包一致），非 Electron（测试）回退 src 树相对 require。
+ */
+function getAppVersion(): string {
+  try {
+    const { app } = require('electron') as typeof import('electron');
+    const v = app?.getVersion?.();
+    if (v) return v;
+  } catch { /* 非 Electron 环境（vitest） */ }
+  try {
+    // src 源码树：src/main/services → 三级到项目根（仅测试环境可达）
+    return (require('../../../package.json') as { version?: string }).version || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
  * 导出持仓快照到已配置文件夹（未配置则跳过）。
  * @param immediate 交易/编辑等即时变更传 true（立即写盘）；价格批量刷新用节流合并。
  */
@@ -40,8 +60,7 @@ export function exportPortfolioSnapshot(immediate = false): void {
     const fs = require('fs') as typeof import('fs');
     const path = require('path') as typeof import('path');
     const db = getDatabase();
-    // v1.10.15：版本号从 package.json 动态读取，不硬编码（src/dist 均为三级到项目根）
-    const appVersion = (require('../../../package.json') as { version?: string }).version || 'unknown';
+    const appVersion = getAppVersion();
     const assets = db.prepare(`
       SELECT a.id, a.name, a.code, a.type, a.market, a.currency, a.quantity,
         a.cost_price, a.current_price, a.market_value, a.total_cost, a.profit_loss, a.profit_loss_pct,
@@ -99,9 +118,25 @@ export function exportPortfolioSnapshot(immediate = false): void {
       })),
     };
     const file = path.join(folder, FILE_NAME);
+    // v1.10.17：目标目录不存在时自动创建（防御 AI 侧目录被清/未建）
+    fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(file, JSON.stringify(snapshot, null, 2), 'utf-8');
+    // 成功后清除上次错误记录
+    try { setSetting('aiPortfolio.lastError', ''); } catch { /* ignore */ }
   } catch (err) {
+    // v1.10.17：失败不再静默——错误写入 app_settings 供设置页展示
+    const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
     console.error('[aiPortfolio] 导出失败：', err);
+    try { setSetting('aiPortfolio.lastError', msg); } catch { /* ignore */ }
+  }
+}
+
+/** v1.10.17：读取最近一次导出错误（设置页展示用）；无错误返回空串 */
+export function getLastExportError(): string {
+  try {
+    return getSetting('aiPortfolio.lastError') || '';
+  } catch {
+    return '';
   }
 }
 
