@@ -609,7 +609,7 @@
 
 - [x] getAppVersion()：Electron app.getVersion() 优先 + 兜底不抛错；mkdirSync recursive 防御；失败写 app_settings aiPortfolio.lastError（设置页可见）+ IPC aiPortfolio:lastError（194 频道）；264/264 通过；版本 1.10.17
 
-## 第 31ab 阶段：v1.10.18 AI 持仓快照自动关联（方案 E） ✅（代码完成，待发布）
+## 第 31ab 阶段：v1.10.18 AI 持仓快照自动关联（方案 E） ✅（已发布 v1.10.18）
 
 > 需求来源：AI 投资分析软件侧输出改造清单（docs/理财软件-快照自动关联改造清单.md）——用户手动选文件夹易错，换电脑目录变化；目标免配置自动关联。
 
