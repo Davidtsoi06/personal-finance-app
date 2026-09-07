@@ -268,6 +268,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'aiPortfolio:chooseFolder': z.tuple([]),
   'aiPortfolio:clearFolder': z.tuple([]),
   'aiPortfolio:lastError': z.tuple([]),
+  'aiPortfolio:status': z.tuple([]),
   'fixedDeposit:create': z.tuple([fixedDepositData]),
   'fixedDeposit:update': z.tuple([id, fixedDepositData.partial(), z.enum(['sync', 'record_only']).optional()]),
   'fixedDeposit:delete': z.tuple([id, z.boolean().optional()]),

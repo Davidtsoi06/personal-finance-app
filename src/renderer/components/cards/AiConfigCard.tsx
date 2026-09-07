@@ -19,6 +19,18 @@ export function AiConfigCard() {
   const [folder, setFolder] = useState('');
   // v1.10.17：最近一次导出错误（非静默，便于排查）
   const [exportError, setExportError] = useState('');
+  // v1.10.18：自动关联状态（manual / auto / none）
+  const [linkMode, setLinkMode] = useState<'manual' | 'auto' | 'none'>('manual');
+  const [linkDetected, setLinkDetected] = useState(false);
+
+  const refreshLinkStatus = async () => {
+    try {
+      const s = await invoke<{ folder: string; mode: 'manual' | 'auto' | 'none'; detected: boolean }>('aiPortfolio:status');
+      setLinkMode(s.mode);
+      setLinkDetected(s.detected);
+      if (s.folder) setFolder(s.folder);
+    } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     // Check if key is already configured
@@ -29,6 +41,8 @@ export function AiConfigCard() {
     // 已配置的导出文件夹与最近错误
     invoke<string>('aiPortfolio:getFolder').then((f) => { if (f) setFolder(f); }).catch(() => {});
     invoke<string>('aiPortfolio:lastError').then((e) => { if (e) setExportError(e); }).catch(() => {});
+    // v1.10.18：自动关联状态（不触发任何写入）
+    refreshLinkStatus();
   }, []);
 
   const handleChooseFolder = async () => {
@@ -37,6 +51,7 @@ export function AiConfigCard() {
       if (!r.canceled && r.folder) { setFolder(r.folder); setExportError(''); }
       const e = await invoke<string>('aiPortfolio:lastError').catch(() => '');
       if (e) setExportError(e);
+      refreshLinkStatus();
     } catch (err: any) { setStatus('❌ 选择文件夹失败：' + err.message); }
   };
 
@@ -44,7 +59,8 @@ export function AiConfigCard() {
     try {
       await invoke('aiPortfolio:clearFolder');
       setFolder('');
-      setStatus('✅ 已清除导出文件夹');
+      setStatus('✅ 已清除手动文件夹（将回到自动关联/未检测状态）');
+      refreshLinkStatus();
     } catch (err: any) { setStatus('❌ 清除失败：' + err.message); }
   };
 
@@ -145,19 +161,30 @@ export function AiConfigCard() {
         </div>
       )}
 
-      {/* v1.10.14：AI 投资分析持仓快照自动导出 */}
+      {/* v1.10.14：AI 投资分析持仓快照自动导出（v1.10.18 自动关联） */}
       <div style={{ marginTop: 'var(--spacing-lg)', paddingTop: 'var(--spacing-md)', borderTop: '1px solid var(--color-border-light, #f0f0f0)' }}>
         <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 600, marginBottom: 6 }}>📤 持仓数据导出（AI 投资分析）</div>
+        {/* v1.10.18：关联状态提示 */}
+        {linkMode === 'auto' && (
+          <div style={{ marginBottom: 'var(--spacing-sm)', padding: 'var(--spacing-sm)', background: '#F6FFED', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-success)' }}>
+            ✅ 已自动关联 AI 投资分析软件：📁 {folder}（本机检测自动跟随；可点下方按钮手动更换）
+          </div>
+        )}
+        {linkMode === 'none' && !linkDetected && (
+          <div style={{ marginBottom: 'var(--spacing-sm)', padding: 'var(--spacing-sm)', background: '#FFFBE6', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: '#AD6800' }}>
+            ℹ️ 未检测到「AI 投资分析软件」数据目录——安装或启动过 AI 投资分析软件后，重启本软件即可自动关联（也可手动选择文件夹）
+          </div>
+        )}
         <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-sm)' }}>
-          选择你的 AI 投资分析软件数据文件夹后，本软件会把持仓记录自动写入该文件夹的 
+          本软件会把持仓记录自动写入该文件夹的 
           <code style={{ background: '#F0F2F5', padding: '1px 5px', borderRadius: 4 }}>portfolio_snapshot.json</code>。
           之后任何持仓变化（交易、编辑、价格刷新）都会<strong>自动更新</strong>该文件，无需手动导出——
           本地文件直接交换，无需下载，不会被安全软件误报。
         </div>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
           <Button variant="secondary" size="sm" onClick={handleChooseFolder}>📂 选择文件夹</Button>
-          <Button variant="secondary" size="sm" onClick={handleClearFolder} disabled={!folder}>🗑 清除</Button>
-          {folder && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>📁 {folder}</span>}
+          <Button variant="secondary" size="sm" onClick={handleClearFolder} disabled={!folder && linkMode !== 'manual'}>🗑 清除</Button>
+          {(folder || linkMode === 'auto') && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>📁 {folder || '（自动关联路径）'}</span>}
         </div>
         {/* v1.10.17：导出失败可见（此前静默导致文件缺失无从排查） */}
         {exportError && (

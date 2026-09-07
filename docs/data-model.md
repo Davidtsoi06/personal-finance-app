@@ -423,6 +423,39 @@
 
 ---
 
+## 23. ai_sessions — AI 会话表（v22 新增）
+
+AI 助手的会话（每轮问答自动持久化，v1.10.6）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| title | TEXT | 会话标题 |
+| created_at | TEXT | 创建时间 |
+| updated_at | TEXT | 最后更新时间 |
+
+## 24. ai_messages — AI 会话消息表（v22 新增）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| session_id | INTEGER FK | 关联会话（ON DELETE CASCADE） |
+| role | TEXT | user / assistant |
+| content | TEXT | 消息内容 |
+| created_at | TEXT | 创建时间 |
+
+## 25. ai_reports — AI 报告归档表（v22 新增）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 主键 |
+| session_id | INTEGER FK | 关联会话（ON DELETE SET NULL） |
+| title | TEXT | 报告标题 |
+| content | TEXT | 报告内容（Markdown） |
+| created_at | TEXT | 创建时间 |
+
+---
+
 ## 迁移历史
 
 | 版本 | 变更内容 |
@@ -448,6 +481,9 @@
 | v19 | + social_obligations.completed_at（债务债权完成日期，v1.7.4） |
 | v20 | 定期全自动体系（v1.9.0）：+ fixed_deposits.source / linked_tx_id / settle_tx_id；+ account_transactions.transfer_type / linked_fd_id / statement_hash（含索引）；+ fixed_deposit_flows 定存流水表；存量扣款/回款流水自动回填打标并补本金流水 |
 | v21 | 成本价历史重放修复（v1.9.1）：无结构变更——按 (日期,id) 重放买卖历史重算每只持仓的成本价/数量/总成本/市值/盈亏并写回 assets；旧值快照存 `app_settings['cost_recalc.snapshot']` |
+| v22 | + ai_sessions / ai_messages / ai_reports 表（AI 会话持久化与报告归档，v1.10.6） |
+| v23 | 修正历史「校正」（adjust）流水币种为账户币种（v1.10.13） |
+| v24 | 银行内嵌券商现金迁移：关联银行的券商（funding_account_id 非空）cash_balance 转入银行账户余额桶（多币种），清空其券商流水与流动金（v1.10.14） |
 
 ---
 

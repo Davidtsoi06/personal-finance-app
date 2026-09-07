@@ -6,6 +6,7 @@
  */
 import { getDatabase } from '../database';
 import { getSetting, setSetting } from '../database/services/settings-service';
+import { getAppDataPath, getAppVersionValue } from './electron-access';
 
 const FOLDER_KEY = 'aiPortfolio.folder';
 const FILE_NAME = 'portfolio_snapshot.json';
@@ -33,13 +34,10 @@ export function getPortfolioFolder(): string {
  * 优先 Electron app.getVersion()（开发/打包一致），非 Electron（测试）回退 src 树相对 require。
  */
 function getAppVersion(): string {
+  const v = getAppVersionValue();
+  if (v) return v;
   try {
-    const { app } = require('electron') as typeof import('electron');
-    const v = app?.getVersion?.();
-    if (v) return v;
-  } catch { /* 非 Electron 环境（vitest） */ }
-  try {
-    // src 源码树：src/main/services → 三级到项目根（仅测试环境可达）
+    // 非 Electron（vitest 直载）：src 树三级到项目根
     return (require('../../../package.json') as { version?: string }).version || 'unknown';
   } catch {
     return 'unknown';
@@ -147,4 +145,85 @@ export function schedulePortfolioExport(): void {
     pendingTimer = null;
     exportPortfolioSnapshot(false);
   }, THROTTLE_MS);
+}
+
+// ── v1.10.18：自动关联（方案 E）──
+
+export type PortfolioLinkMode = 'manual' | 'auto' | 'none';
+
+/**
+ * v1.10.18：探测 AI 投资分析软件数据目录（%APPDATA%/ai-investment-analyst/data）。
+ * 更强判据：data 目录下存在 ai_invest.db 或 secret.key 视为「已安装」。
+ * 惰性取 electron app，vitest 可 mock。
+ */
+export function detectAIDataDir(): string | null {
+  try {
+    const appData = getAppDataPath();
+    if (!appData) return null;
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const dataDir = path.join(appData, 'ai-investment-analyst', 'data');
+    if (!fs.existsSync(dataDir)) return null;
+    // 更强判据：存在 ai_invest.db / secret.key，或 portfolio 快照目录（AI 软件创建的标志）
+    const stronger = fs.existsSync(path.join(dataDir, 'ai_invest.db'))
+      || fs.existsSync(path.join(dataDir, 'secret.key'))
+      || fs.existsSync(path.join(dataDir, 'portfolio'));
+    return stronger ? dataDir : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * v1.10.18：自动关联（三态，优先级 manual > auto > none）。
+ * - manual：已保存文件夹且存在 → 尊重手动选择，不覆盖
+ * - auto：未保存，或已保存但文件夹已不存在（换电脑/目录被删）→ 探测命中则自动设置并立即导出
+ * - none：未保存且未探测到 → 不设置不导出
+ */
+export function ensureAutoLinked(): { mode: PortfolioLinkMode; folder: string; detected: boolean } {
+  try {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const saved = getPortfolioFolder();
+    // manual：已保存且目录存在
+    if (saved && fs.existsSync(saved)) {
+      return { mode: 'manual', folder: saved, detected: true };
+    }
+    // auto：未保存或已失效 → 探测 AI 数据目录
+    const dataDir = detectAIDataDir();
+    if (dataDir) {
+      const folder = path.join(dataDir, 'portfolio');
+      setPortfolioFolder(folder);
+      exportPortfolioSnapshot(true);
+      console.log('[aiPortfolio] 自动关联: ' + folder + ' (mode=auto)');
+      return { mode: 'auto', folder, detected: true };
+    }
+    return { mode: 'none', folder: '', detected: false };
+  } catch (err) {
+    console.error('[aiPortfolio] 自动关联失败（非致命）:', err);
+    return { mode: 'none', folder: '', detected: false };
+  }
+}
+
+/**
+ * v1.10.18：纯查询（不写设置）——设置页展示关联状态。
+ * mode 判据与 ensureAutoLinked 一致，但绝不触发 setPortfolioFolder / 导出。
+ */
+export function getPortfolioStatus(): { folder: string; mode: PortfolioLinkMode; detected: boolean } {
+  try {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const saved = getPortfolioFolder();
+    if (saved && fs.existsSync(saved)) {
+      return { mode: 'manual', folder: saved, detected: true };
+    }
+    const dataDir = detectAIDataDir();
+    if (dataDir) {
+      const folder = path.join(dataDir, 'portfolio');
+      return { mode: 'auto', folder, detected: true };
+    }
+    return { mode: 'none', folder: '', detected: false };
+  } catch {
+    return { mode: 'none', folder: '', detected: false };
+  }
 }

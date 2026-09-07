@@ -323,7 +323,7 @@
 
 ---
 
-## 第 28 阶段：v1.6.0 投资市值口径完善 🔄（代码完成，待本机验证后发布）
+## 第 28 阶段：v1.6.0 投资市值口径完善 ✅（已发布 2026-08-16）
 
 - [x] 银行理财独立为投资类（bank_wealth 顶级类别计入投资市值；银行子项=余额+定存CNY；定存跨币种换算修正）
 - [x] 删除券商级联删除持仓/交易/价格/现金流（防孤儿）
@@ -608,6 +608,15 @@
 > 根因：require('../../../package.json') 在打包产物（dist/main/main/services，四级到根）解析失败 MODULE_NOT_FOUND 被静默吞 → 快照从不写文件（v1.10.15~16；AI v1.0.5 移除 finance.db 兜底后持仓消失）。
 
 - [x] getAppVersion()：Electron app.getVersion() 优先 + 兜底不抛错；mkdirSync recursive 防御；失败写 app_settings aiPortfolio.lastError（设置页可见）+ IPC aiPortfolio:lastError（194 频道）；264/264 通过；版本 1.10.17
+
+## 第 31ab 阶段：v1.10.18 AI 持仓快照自动关联（方案 E） ✅（代码完成，待发布）
+
+> 需求来源：AI 投资分析软件侧输出改造清单（docs/理财软件-快照自动关联改造清单.md）——用户手动选文件夹易错，换电脑目录变化；目标免配置自动关联。
+
+- [x] detectAIDataDir（%APPDATA%/ai-investment-analyst/data + portfolio/ai_invest.db/secret.key 判据）；ensureAutoLinked 三态（manual 已存且存在→不覆盖；auto 未存/失效→重设+立即导出；none 不写）；getPortfolioStatus 纯查询不触发写入
+- [x] electron-access 小模块（appData/version 惰性访问，vitest 可 mock——修复函数内 require('electron') 不被 vi.mock 拦截问题）；IPC aiPortfolio:status（195 频道）；主进程启动后台 setTimeout 自动关联；设置页三态展示（已自动关联/未检测到/手动路径）
+- [x] 测试：270/270 通过（新增自动关联 6 用例：manual 不覆盖/auto 重设+真实写文件/none/status 纯查询/detect 判据）；tsc 无错；版本 1.10.18
+- [x] 文档同步：roadmap 第 28 阶段（v1.6.0）状态 🔄→✅；tech-spec 迁移 v1~v14→v1~v24、表清单 22→25 张、schema 80、IPC 195；data-model 补迁移 v22~v24 与 ai_sessions/ai_messages/ai_reports 三张表
 
 ## 第 32 阶段：v1.11.1 批 C 效率工具 + AI 账目体检 ⏸️（暂缓，用户决定留待以后开发）
 

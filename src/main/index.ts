@@ -181,6 +181,14 @@ electron.app.whenReady().then(() => {
       } catch (err: any) {
         console.error(`[Main] 后台: ⚠ 净资产记录失败（非致命）: ${err.message}`);
       }
+      // v1.10.18：AI 持仓快照自动关联（检测到 AI 投资分析软件数据目录即自动导出；manual 优先）
+      try {
+        const { ensureAutoLinked } = require('./services/ai-portfolio-service');
+        const link = ensureAutoLinked();
+        if (link.mode === 'auto') console.log('[Main] 后台: ✓ AI 持仓快照自动关联（mode=auto）');
+      } catch (err: any) {
+        console.error(`[Main] 后台: ⚠ AI 快照自动关联失败（非致命）: ${err.message}`);
+      }
     }, 0);
   } catch (err: any) {
     console.error('[Main] ❌ 启动失败:', err);
