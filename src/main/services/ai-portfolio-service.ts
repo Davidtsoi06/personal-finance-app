@@ -185,8 +185,9 @@ export function ensureAutoLinked(): { mode: PortfolioLinkMode; folder: string; d
     const fs = require('fs') as typeof import('fs');
     const path = require('path') as typeof import('path');
     const saved = getPortfolioFolder();
-    // manual：已保存且目录存在
+    // manual：已保存且目录存在——启动时也刷新一次快照（保证 AI 分析软件侧为最新持仓）
     if (saved && fs.existsSync(saved)) {
+      exportPortfolioSnapshot(true);
       return { mode: 'manual', folder: saved, detected: true };
     }
     // auto：未保存或已失效 → 探测 AI 数据目录

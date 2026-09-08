@@ -32,6 +32,17 @@ export function AiConfigCard() {
     } catch { /* ignore */ }
   };
 
+  // v1.10.19：手动「重新检测」——执行自动关联逻辑（命中 auto 即写入并立即导出；manual 不覆盖）
+  const handleRedetect = async () => {
+    try {
+      const s = await invoke<{ folder: string; mode: 'manual' | 'auto' | 'none'; detected: boolean }>('aiPortfolio:redetect');
+      setLinkMode(s.mode);
+      setLinkDetected(s.detected);
+      if (s.folder) setFolder(s.folder);
+      setStatus(s.mode === 'auto' ? '✅ 已自动关联并导出快照' : s.mode === 'manual' ? '✅ 保持手动关联路径' : '未检测到 AI 投资分析软件数据目录');
+    } catch (err: any) { setStatus('❌ 重新检测失败：' + err.message); }
+  };
+
   useEffect(() => {
     // Check if key is already configured
     invoke<{ hasApiKey: boolean; includePortfolio?: boolean }>('settings:getAiConfig').then((c) => {
@@ -164,15 +175,20 @@ export function AiConfigCard() {
       {/* v1.10.14：AI 投资分析持仓快照自动导出（v1.10.18 自动关联） */}
       <div style={{ marginTop: 'var(--spacing-lg)', paddingTop: 'var(--spacing-md)', borderTop: '1px solid var(--color-border-light, #f0f0f0)' }}>
         <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 600, marginBottom: 6 }}>📤 持仓数据导出（AI 投资分析）</div>
-        {/* v1.10.18：关联状态提示 */}
+        {/* v1.10.18/1.10.19：关联状态提示（三态全可见，含 manual 与重新检测） */}
         {linkMode === 'auto' && (
           <div style={{ marginBottom: 'var(--spacing-sm)', padding: 'var(--spacing-sm)', background: '#F6FFED', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-success)' }}>
             ✅ 已自动关联 AI 投资分析软件：📁 {folder}（本机检测自动跟随；可点下方按钮手动更换）
           </div>
         )}
+        {linkMode === 'manual' && folder && (
+          <div style={{ marginBottom: 'var(--spacing-sm)', padding: 'var(--spacing-sm)', background: '#E8F4FD', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-primary-600, #3B7BC9)' }}>
+            ✅ 已关联（手动指定）：📁 {folder}（手动路径优先，不会被自动关联覆盖）
+          </div>
+        )}
         {linkMode === 'none' && !linkDetected && (
           <div style={{ marginBottom: 'var(--spacing-sm)', padding: 'var(--spacing-sm)', background: '#FFFBE6', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)', color: '#AD6800' }}>
-            ℹ️ 未检测到「AI 投资分析软件」数据目录——安装或启动过 AI 投资分析软件后，重启本软件即可自动关联（也可手动选择文件夹）
+            ℹ️ 未检测到「AI 投资分析软件」数据目录——安装或启动过 AI 投资分析软件后，点下方「🔍 重新检测」或重启本软件即可自动关联（也可手动选择文件夹）
           </div>
         )}
         <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-sm)' }}>
@@ -183,6 +199,7 @@ export function AiConfigCard() {
         </div>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
           <Button variant="secondary" size="sm" onClick={handleChooseFolder}>📂 选择文件夹</Button>
+          <Button variant="secondary" size="sm" onClick={handleRedetect}>🔍 重新检测</Button>
           <Button variant="secondary" size="sm" onClick={handleClearFolder} disabled={!folder && linkMode !== 'manual'}>🗑 清除</Button>
           {(folder || linkMode === 'auto') && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>📁 {folder || '（自动关联路径）'}</span>}
         </div>

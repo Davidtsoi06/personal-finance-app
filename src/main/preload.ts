@@ -116,6 +116,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set<string>([
   'aiPortfolio:clearFolder',
   'aiPortfolio:lastError',
   'aiPortfolio:status',
+  'aiPortfolio:redetect',
   'customFormat:create',
   'customFormat:delete',
   'customFormat:list',

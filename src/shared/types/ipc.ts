@@ -110,6 +110,7 @@ export type IpcChannel =
   | 'aiPortfolio:clearFolder'
   | 'aiPortfolio:lastError'
   | 'aiPortfolio:status'
+  | 'aiPortfolio:redetect'
   | 'customFormat:create'
   | 'customFormat:delete'
   | 'customFormat:list'

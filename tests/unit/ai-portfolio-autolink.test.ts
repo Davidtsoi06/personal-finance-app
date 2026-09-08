@@ -75,7 +75,8 @@ describe('AI 持仓快照自动关联（v1.10.18）', () => {
     expect(r.mode).toBe('manual');
     expect(r.folder).toBe(manualDir);
     expect(mockSettings.map.get('aiPortfolio.folder')).toBe(manualDir); // 不被覆盖
-    expect(fs.existsSync(path.join(manualDir, 'portfolio_snapshot.json'))).toBe(false); // 未触发导出
+    // v1.10.19：manual 启动也会刷新一次快照（保证 AI 侧最新），但路径不被改写
+    expect(fs.existsSync(path.join(manualDir, 'portfolio_snapshot.json'))).toBe(true);
   });
 
   it('已配置但目录不存在（换电脑模拟）→ auto：重设 folder + 自动导出文件', () => {

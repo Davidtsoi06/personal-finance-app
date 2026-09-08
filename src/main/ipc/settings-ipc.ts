@@ -329,6 +329,8 @@ export function registerSettingsIpcHandlers(): void {
   });
   handleValidated('aiPortfolio:lastError', () => aiPortfolioService.getLastExportError());
   handleValidated('aiPortfolio:status', () => aiPortfolioService.getPortfolioStatus());
+  // v1.10.19：重新检测（执行自动关联三态逻辑：命中 auto 则设置+立即导出；manual 不覆盖；none 不变）
+  handleValidated('aiPortfolio:redetect', () => aiPortfolioService.ensureAutoLinked());
 
   // ── Currencies ──
   ipcMain.handle('currency:list', () => currencyService.listCurrencies());
