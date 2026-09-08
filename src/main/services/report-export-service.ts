@@ -186,7 +186,13 @@ export function getRecentSellPnl(days = 3): RecentSellDay[] {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const dateStr = localDateStr(d);
-    const { rows } = getDailyTrades(dateStr);
+    // v1.10.19：单天查询失败不拖垮整批（返回空天，其余天照常显示）
+    let rows: any[] = [];
+    try {
+      rows = getDailyTrades(dateStr).rows;
+    } catch (err) {
+      console.error('[recentSellPnl] 查询失败 ' + dateStr + ':', err);
+    }
     const sells: RecentSellRow[] = [];
     let realizedPnl = 0;
     let sellAmount = 0;

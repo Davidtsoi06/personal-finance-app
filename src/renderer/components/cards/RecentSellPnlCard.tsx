@@ -5,6 +5,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
 import { Table, Column } from '../ui/Table';
 import { NetAmount } from '../ui/Amount';
 import { invoke } from '../../hooks/useIpc';
@@ -23,7 +24,11 @@ export interface RecentSellDay {
   sellAmount: number;
 }
 
-const DAY_LABELS = ['今天', '昨天', '前天'];
+function dayLabel(i: number): string {
+  if (i === 0) return '今天';
+  if (i === 1) return '昨天';
+  return i + ' 天前';
+}
 
 function fmtPnl(v: number | null): { text: string; color: string } {
   if (v === null || v === undefined) return { text: '—', color: 'var(--color-text-muted)' };
@@ -62,23 +67,53 @@ const columns: Column<RecentSellRow>[] = [
   }},
 ];
 
+// v1.10.19：天数窗口选择（3/7/30 天）
+const DAY_OPTIONS = [3, 7, 30];
+
 export function RecentSellPnlCard() {
   const [days, setDays] = useState<RecentSellDay[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [range, setRange] = useState(3);
+  const [loadError, setLoadError] = useState('');
 
   const load = useCallback(() => {
     setLoading(true);
-    invoke<RecentSellDay[]>('report:recentSellPnl', 3)
+    setLoadError('');
+    invoke<RecentSellDay[]>('report:recentSellPnl', range)
       .then((d) => setDays(d || []))
-      .catch((err) => { console.error('Failed to load recent sell pnl:', err); setDays([]); })
+      .catch((err: any) => {
+        // v1.10.19：加载失败不再静默当成无数据——展示错误与重试
+        console.error('Failed to load recent sell pnl:', err);
+        setLoadError(err?.message || '加载失败，请重试');
+        setDays([]);
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [range]);
 
   useEffect(() => { load(); }, [load]);
 
   return (
-    <Card title="📋 投资收益明细（近 3 天卖出收益）">
-      {loading && days === null ? (
+    <Card>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 'var(--spacing-sm)' }}>
+        <h3 className="card-title" style={{ margin: 0 }}>📋 投资收益明细（近 {range} 天卖出收益）</h3>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <select
+            className="form-select"
+            style={{ width: 96, padding: '3px 6px', fontSize: 'var(--font-size-xs)' }}
+            value={range}
+            onChange={(e) => setRange(parseInt(e.target.value, 10))}
+          >
+            {DAY_OPTIONS.map((d) => <option key={d} value={d}>{'近 ' + d + ' 天'}</option>)}
+          </select>
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>🔄 刷新</Button>
+        </div>
+      </div>
+      {loadError ? (
+        <div style={{ padding: 'var(--spacing-md)', textAlign: 'center' }}>
+          <div style={{ color: 'var(--color-danger)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-sm)' }}>⚠️ 加载失败：{loadError}</div>
+          <Button variant="secondary" size="sm" onClick={load}>🔄 重试</Button>
+        </div>
+      ) : loading && days === null ? (
         <div className="card-placeholder">加载中...</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
@@ -87,7 +122,7 @@ export function RecentSellPnlCard() {
               {/* 天分组头 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-xs)' }}>
                 <span style={{ fontWeight: 700, fontSize: 'var(--font-size-sm)' }}>
-                  📅 {DAY_LABELS[i] || '更早'} · {day.date}
+                  📅 {dayLabel(i)} · {day.date}
                 </span>
                 {day.sellCount > 0 ? (
                   <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
@@ -110,8 +145,8 @@ export function RecentSellPnlCard() {
               )}
             </div>
           ))}
-          {days && days.every((d) => d.sellCount === 0) && (
-            <div className="card-placeholder">近 3 天没有卖出交易</div>
+          {days && days.every((d) => d.sellCount === 0) && !loadError && (
+            <div className="card-placeholder">{'近 ' + range + ' 天没有卖出交易'}</div>
           )}
         </div>
       )}

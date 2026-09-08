@@ -223,10 +223,11 @@ function parseStandardLine(cols: string[]): ParsedTrade | null {
 
   const base = { date: sDate, code: sCode, name: sName, type: 'buy' as const, quantity, price, fee, currency: sCurrency };
 
-  if (type === 'buy' || type.includes('买')) {
+  // v1.10.19：繁体（買/賣）与「沽出」识别——此前繁体日结单卖出会被误判 other 而漏显示
+  if (type === 'buy' || type.includes('买') || type.includes('買')) {
     return { ...base, type: 'buy' as const };
   }
-  if (type === 'sell' || type.includes('卖')) {
+  if (type === 'sell' || type.includes('卖') || type.includes('賣') || type.includes('沽出')) {
     return { ...base, type: 'sell' as const };
   }
   if (type.includes('分拆') || type.includes('拆分') || type === 'split') {

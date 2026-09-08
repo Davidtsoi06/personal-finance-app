@@ -618,6 +618,14 @@
 - [x] 测试：270/270 通过（新增自动关联 6 用例：manual 不覆盖/auto 重设+真实写文件/none/status 纯查询/detect 判据）；tsc 无错；版本 1.10.18
 - [x] 文档同步：roadmap 第 28 阶段（v1.6.0）状态 🔄→✅；tech-spec 迁移 v1~v14→v1~v24、表清单 22→25 张、schema 80、IPC 195；data-model 补迁移 v22~v24 与 ai_sessions/ai_messages/ai_reports 三张表
 
+## 第 31ac 阶段：v1.10.19 投资收益明细窗口与容错 + 空闲锁误锁修复（用户反馈） ✅（代码完成，待发布）
+
+> 需求来源：① 报表投资收益明细间歇性看不到港股卖出（加载失败静默成无数据 + 窗口固定 3 天）；② 空闲自动锁屏后输入密码，主窗闪现又被重新锁定。
+
+- [x] **明细窗口与容错**：RecentSellPnlCard 3/7/30 天窗口 + 刷新 + 失败可见重试（不再静默）；getRecentSellPnl 单天 try/catch；繁体卖出识别（賣/買/沽出，statement-parser + normalizeTradeType）
+- [x] **空闲锁误锁修复**：useIdleLock 感知 visibilitychange（隐藏停钟、恢复重置 lastActivity）；主窗 render-process-gone 崩溃自愈
+- [x] 测试：272/272 通过（normalizer 繁体 2 用例）；tsc 无错；版本 1.10.19
+
 ## 第 32 阶段：v1.11.1 批 C 效率工具 + AI 账目体检 ⏸️（暂缓，用户决定留待以后开发）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。

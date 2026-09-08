@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDate, normalizeCurrency, normalizeCode } from '../../src/main/services/data-normalizer';
+import { normalizeDate, normalizeCurrency, normalizeCode, normalizeTradeType } from '../../src/main/services/data-normalizer';
 
 describe('normalizeDate 美式月/日/年（银行日结单，v1.7.0）', () => {
   it('M/D/YYYY', () => {
@@ -174,5 +174,23 @@ describe('normalizeCode 美股代码清理（v1.10.9）', () => {
   it('普通代码大写化', () => {
     expect(normalizeCode('  aapl ')).toBe('AAPL');
     expect(normalizeCode('00700')).toBe('00700');
+  });
+});
+
+/** v1.10.19：繁体/沽出卖出识别 */
+describe('normalizeTradeType 繁体（v1.10.19）', () => {
+  it('繁体 賣出 / 沽出 → sell；買入 → buy', () => {
+    expect(normalizeTradeType('賣出')).toBe('sell');
+    expect(normalizeTradeType('沽出')).toBe('sell');
+    expect(normalizeTradeType('沽')).toBe('sell');
+    expect(normalizeTradeType('買入')).toBe('buy');
+    expect(normalizeTradeType('買')).toBe('buy');
+  });
+  it('简体与英文不受影响', () => {
+    expect(normalizeTradeType('卖出')).toBe('sell');
+    expect(normalizeTradeType('买入')).toBe('buy');
+    expect(normalizeTradeType('sell')).toBe('sell');
+    expect(normalizeTradeType('buy')).toBe('buy');
+    expect(normalizeTradeType('股息')).toBe('other');
   });
 });

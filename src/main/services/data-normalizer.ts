@@ -191,8 +191,9 @@ export function normalizeTradeType(raw: string | undefined | null): 'buy' | 'sel
   if (!raw) return 'other';
   const lower = stripFormulaWrapper(raw).toLowerCase();
 
-  if (lower.includes('买') || lower === 'buy' || lower === 'b') return 'buy';
-  if (lower.includes('卖') || lower === 'sell' || lower === 's') return 'sell';
+  if (lower.includes('买') || lower.includes('買') || lower === 'buy' || lower === 'b') return 'buy';
+  // v1.10.19：繁体 賣 / 沽出（港股日结单常见）同样识别为卖出
+  if (lower.includes('卖') || lower.includes('賣') || lower.includes('沽出') || lower.includes('沽') || lower === 'sell' || lower === 's') return 'sell';
   if (lower.includes('分拆') || lower.includes('拆分') || lower === 'split') return 'split';
 
   return 'other';

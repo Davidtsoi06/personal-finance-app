@@ -16,15 +16,39 @@ export function useIdleLock(idleMinutes: number | null | undefined): void {
     const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
     events.forEach((ev) => window.addEventListener(ev, bump, { passive: true }));
 
-    const timer = window.setInterval(() => {
-      if (Date.now() - lastActivity.current >= idleMinutes * 60_000) {
-        invoke('auth:lock').catch(() => {});
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let hidden = document.hidden;
+
+    const stopTimer = () => { if (timer) { window.clearInterval(timer); timer = null; } };
+    const startTimer = () => {
+      if (timer || hidden) return;
+      timer = window.setInterval(() => {
+        if (Date.now() - lastActivity.current >= idleMinutes * 60_000) {
+          invoke('auth:lock').catch(() => {});
+        }
+      }, 30_000);
+    };
+
+    // v1.10.19：窗口隐藏（锁屏/最小化）期间停止空闲计时——
+    // 此前主窗渲染进程在锁屏期间持续 tick 且 lastActivity 停留在旧值，
+    // 解锁恢复可见后下一次 tick 会立即误判超时再次锁定（表现：输密码→闪退→又回锁屏）
+    const onVisibility = () => {
+      if (document.hidden) {
+        hidden = true;
+        stopTimer();
+      } else {
+        hidden = false;
+        lastActivity.current = Date.now(); // 解锁/恢复可见：重置空闲起点
+        startTimer();
       }
-    }, 30_000);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    startTimer();
 
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
       events.forEach((ev) => window.removeEventListener(ev, bump));
-      window.clearInterval(timer);
+      stopTimer();
     };
   }, [idleMinutes]);
 }

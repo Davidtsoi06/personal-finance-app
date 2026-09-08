@@ -77,6 +77,18 @@ function createMainWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // v1.10.19：渲染进程崩溃自愈——reload 而非放任白屏/关窗（长时间隐藏后恢复可能触发）
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[Main] 主窗口渲染进程异常退出:', details.reason);
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    // 若因崩溃而非正常退出：延迟 reload 恢复（避免与解锁流程竞争）
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.reload();
+      }
+    }, 500);
+  });
 }
 
 /** 锁屏窗口（v1.7.0）：最小权限 preload，只暴露 auth 频道 */
