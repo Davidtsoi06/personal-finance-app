@@ -8,6 +8,7 @@ import { Amount } from '../ui/Amount';
 import { Badge } from '../ui/Badge';
 import type { Holding } from './HoldingsTableCard';
 import type { TradeRecord } from './TradesTableCard';
+import { formatDate } from '../../../shared/utils/date-format';
 
 interface Props {
   holding: Holding | null;
@@ -39,8 +40,9 @@ export function TradeHistoryModal({ holding, trades, onClose, onPriceEdit }: Pro
             <Button variant="secondary" size="sm" onClick={() => onPriceEdit(holding)}>✏️ 改价</Button>
           </div>
           <Table
+            scrollable
             columns={[
-              { key: 'date', title: '日期', render: (r: TradeRecord) => r.date },
+              { key: 'date', title: '日期', render: (r: TradeRecord) => formatDate(r.date) },
               {
                 key: 'type', title: '方向', align: 'center',
                 render: (r: TradeRecord) => (

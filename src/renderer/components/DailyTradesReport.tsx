@@ -218,7 +218,7 @@ export function DailyTradesReport() {
         {dailyLoading ? (
           <div className="card-placeholder">加载中...</div>
         ) : hasTrades ? (
-          <Table columns={columns} data={dailyTrades!.rows} rowKey={(r) => r.id} />
+          <Table scrollable columns={columns} data={dailyTrades!.rows} rowKey={(r) => r.id} />
         ) : (
           <div className="card-placeholder">当日无交易记录</div>
         )}

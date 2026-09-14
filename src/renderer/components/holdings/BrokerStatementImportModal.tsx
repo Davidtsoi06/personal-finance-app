@@ -62,7 +62,8 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
       if (result.success && result.trades.length > 0) {
         setParseFormat(result.format);
         setParsedTrades(result.trades);
-        setImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.trades.length + ' 条交易，请预览确认后导入');
+        setImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.trades.length + ' 条交易，请预览确认后导入'
+          + ((result.errors || []).length > 0 ? '（' + (result.errors || []).join('；') + '）' : ''));
       } else {
         setImportStatus('❌ 无法识别格式：' + (result.errors || ['未知格式']).join('，'));
       }
@@ -102,7 +103,8 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
       if (result.success && result.trades && result.trades.length > 0) {
         setParseFormat(result.format + ' · ' + result.fileName);
         setParsedTrades(result.trades);
-        setImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.trades.length + ' 条交易，请预览确认后导入');
+        setImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.trades.length + ' 条交易，请预览确认后导入'
+          + ((result.errors || []).length > 0 ? '（' + (result.errors || []).join('；') + '）' : ''));
       } else {
         setImportStatus('❌ 无法识别格式：' + (result.errors || ['未知格式']).join('，'));
       }

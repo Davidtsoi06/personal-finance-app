@@ -5,6 +5,7 @@
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
 import { NET_WORTH_COLORS, NET_WORTH_AREA_GRADIENT } from '@shared/constants/chart-colors';
+import { formatDate } from '../../../shared/utils/date-format';
 
 interface NetWorthRecord {
   date: string;
@@ -37,7 +38,8 @@ export function NetWorthTrendChart({
     if (!chartRef.current || data.length === 0) return;
     const chart = echarts.init(chartRef.current);
 
-    const dates = data.map((r) => r.date);
+    // v1.10.20：走势图横轴与提示统一 YYYY/MM/DD
+    const dates = data.map((r) => formatDate(r.date));
     const nwValues = data.map((r) => r.net_worth);
     const cashValues = data.map((r) => r.total_cash);
     const invValues = data.map((r) => r.total_investments);

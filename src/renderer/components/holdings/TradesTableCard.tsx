@@ -9,6 +9,7 @@ import { Table, Column } from '../ui/Table';
 import { Amount } from '../ui/Amount';
 import { Badge } from '../ui/Badge';
 import { invoke } from '../../hooks/useIpc';
+import { formatDate } from '../../../shared/utils/date-format';
 
 export interface TradeRecord {
   id: number; asset_id: number; type: string; quantity: number; price: number;
@@ -52,7 +53,7 @@ export function TradesTableCard({ trades, onChanged }: Props) {
   };
 
   const tradeColumns: Column<TradeRecord>[] = [
-    { key: 'date', title: '日期', render: (r) => r.date },
+    { key: 'date', title: '日期', render: (r) => formatDate(r.date) },
     {
       key: 'type', title: '方向', align: 'center',
       render: (r) => (

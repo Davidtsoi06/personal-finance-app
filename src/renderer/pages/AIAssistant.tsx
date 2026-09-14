@@ -465,7 +465,7 @@ export function AIAssistant() {
             {reports.length === 0 ? (
               <div className="card-placeholder">暂无归档报告——在对话中点「⭐ 保存为报告」即可归档</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+              <div className="panel-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
                 {reports.map((r) => (
                   <div key={r.id} style={{
                     display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)',

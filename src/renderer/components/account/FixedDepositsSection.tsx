@@ -8,6 +8,7 @@ import { Modal } from '../ui/Modal';
 import { Badge } from '../ui/Badge';
 import { invoke } from '../../hooks/useIpc';
 import { useToast } from '../ui/Toast';
+import { formatDate } from '../../../shared/utils/date-format';
 
 export interface FixedDeposit {
   id: number; account_id: number; amount: number; currency: string;
@@ -261,7 +262,7 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
         {fixedDeposits.length === 0 ? (
           <div className="card-placeholder">暂无定期存款</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+          <div className="panel-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
             {fixedDeposits.map(fd => (
               <div key={fd.id} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -292,7 +293,7 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
                     })()}
                   </div>
                   <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-                    年利率 {fd.interest_rate}% · {fd.start_date} ~ {fd.maturity_date || '待定（回款后自动确定）'}
+                    年利率 {fd.interest_rate}% · {formatDate(fd.start_date)} ~ {fd.maturity_date ? formatDate(fd.maturity_date) : '待定（回款后自动确定）'}
                     {fd.status === 'settled' && (fd.interest_earned || 0) > 0 &&
                       ' · 已结利息 ' + fdCurrencySymbol(fd.currency) + (fd.interest_earned || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     {fd.notes && ' · ' + fd.notes}
@@ -458,7 +459,7 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', minWidth: 400 }}>
           {settlingFd && (
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: 'var(--spacing-sm)', borderRadius: 'var(--radius-sm)' }}>
-              {settlingFd.currency} {settlingFd.amount.toLocaleString()} · 年利率 {settlingFd.interest_rate}% · {settlingFd.start_date} ~ {settlingFd.maturity_date}
+              {settlingFd.currency} {settlingFd.amount.toLocaleString()} · 年利率 {settlingFd.interest_rate}% · {formatDate(settlingFd.start_date)} ~ {formatDate(settlingFd.maturity_date)}
             </div>
           )}
           <div className="form-group">
@@ -509,7 +510,7 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
           <p>确认删除此定期存款吗？</p>
           {deletingFd && (
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: 'var(--spacing-sm)', borderRadius: 'var(--radius-sm)' }}>
-              {deletingFd.currency} {deletingFd.amount.toLocaleString()} · 年利率 {deletingFd.interest_rate}% · {deletingFd.start_date} ~ {deletingFd.maturity_date}
+              {deletingFd.currency} {deletingFd.amount.toLocaleString()} · 年利率 {deletingFd.interest_rate}% · {formatDate(deletingFd.start_date)} ~ {formatDate(deletingFd.maturity_date)}
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
@@ -552,7 +553,7 @@ export function FixedDepositsSection({ accountId, accountCurrency, onChanged }: 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', minWidth: 420 }}>
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
             检测到一笔金额与日期（±3 天）匹配的银行存取流水
-            （{pendingLink?.date} · {pendingLink?.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}），
+            （{formatDate(pendingLink?.date)} · {pendingLink?.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}），
             很可能就是这笔定期的日结单记录。若关联，本次创建将<b>不再重复扣款</b>。
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>

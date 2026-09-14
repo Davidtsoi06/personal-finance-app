@@ -6,6 +6,7 @@
 import { getDatabase } from '../index';
 import { updateAccountBalance } from './account-service';
 import { addCashBalance, withdrawCashBalance } from './investment-account-service';
+import { parseDateStrict } from '../../services/data-normalizer';
 
 export interface AccountTransactionRow {
   id: number;
@@ -267,7 +268,9 @@ export function importWalletBills(accountId: number, records: BillRecord[]): { i
       try {
         const currency = rec.currency || 'CNY';
         const amount = Math.abs(Number(rec.amount) || 0);
-        const date = rec.date || new Date().toISOString().slice(0, 10);
+        // v1.10.20：日期先识别再落库，识别不出明确报错（不再兜底「今天」）
+        const date = parseDateStrict(rec.date);
+        if (!date) { errors.push(`日期无法识别已跳过：${rec.date || '（空）'}`); continue; }
         const txType = rec.type === 'income' ? 'deposit' : 'withdraw';
 
         if (amount <= 0) { errors.push(`金额无效：${rec.description}`); continue; }

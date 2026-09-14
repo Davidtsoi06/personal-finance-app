@@ -7,6 +7,7 @@ import { Card } from '../ui/Card';
 import { ProgressBar } from '../ui/ProgressBar';
 import { invoke } from '../../hooks/useIpc';
 import './BudgetCard.css';
+import { formatMonth } from '../../../shared/utils/date-format';
 
 interface BudgetStatus {
   budget: { id: number; name: string; amount: number; month: string; notify_at: number } | null;
@@ -48,7 +49,7 @@ export function BudgetCard() {
   const budget = status.budget;
 
   return (
-    <Card title={`📊 本月预算  ${budget.month}`}>
+    <Card title={`📊 本月预算  ${formatMonth(budget.month)}`}>
       <div className="budget-card">
         <div className="budget-card__summary">
           <div className="budget-card__item">

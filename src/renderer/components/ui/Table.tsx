@@ -19,6 +19,9 @@ interface TableProps<T> {
   maxHeight?: number;
 }
 
+/** v1.10.20：板块内滚动的默认可视高度（约 10 行），调用处只写 scrollable 即可 */
+const DEFAULT_SCROLL_HEIGHT = 420;
+
 export function Table<T>({ columns, data, rowKey, onRowClick, emptyText = '暂无数据', scrollable, maxHeight }: TableProps<T>) {
   const getRowKey = rowKey || ((row: any) => row.id);
 
@@ -29,7 +32,7 @@ export function Table<T>({ columns, data, rowKey, onRowClick, emptyText = '暂�
   return (
     <div
       className={'table-wrapper' + (scrollable ? ' table-wrapper--scroll' : '')}
-      style={scrollable && maxHeight ? { maxHeight } : undefined}
+      style={scrollable ? { maxHeight: maxHeight || DEFAULT_SCROLL_HEIGHT } : undefined}
     >
       <table className="table">
         <thead>

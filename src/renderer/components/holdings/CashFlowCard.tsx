@@ -9,6 +9,7 @@ import { Table, Column } from '../ui/Table';
 import { Amount } from '../ui/Amount';
 import { Badge } from '../ui/Badge';
 import { invoke } from '../../hooks/useIpc';
+import { formatDate } from '../../../shared/utils/date-format';
 
 interface CashFlowRow {
   id: number;
@@ -79,7 +80,7 @@ export function CashFlowCard({ accountId, onChanged, refreshKey }: Props) {
   };
 
   const columns: Column<CashFlowRow>[] = [
-    { key: 'date', title: '日期', render: (r) => r.date },
+    { key: 'date', title: '日期', render: (r) => formatDate(r.date) },
     {
       key: 'type', title: '类型', align: 'center',
       render: (r) => {

@@ -8,6 +8,7 @@ import { Amount } from '../components/ui/Amount';
 import { Badge } from '../components/ui/Badge';
 import { invoke } from '../hooks/useIpc';
 import { useToast } from '../components/ui/Toast';
+import { formatDate } from '../../shared/utils/date-format';
 
 interface SystemWallet {
   id: number; name: string; type: string; currency: string; balance: number;
@@ -153,15 +154,20 @@ export function WalletFlow() {
         errors?: string[];
       }>('wallet:parseFile');
       if (r.canceled) { setImportStatus(''); return; }
-      if (r.errors && r.errors.length > 0) {
-        setImportStatus('❌ ' + r.errors.join('；'));
-      }
+      // v1.10.20：日期无法识别的行会出现在 errors 里——有记录时也要一并提示，不能吞掉
+      const warnings = r.errors || [];
       if (r.records && r.records.length > 0) {
         setParsedBills(r.records);
         setBillFormat(r.format === 'wechat' ? '微信账单' : '支付宝账单');
         setBillFileName(r.fileName || '');
-        setImportStatus(`✅ 解析出 ${r.records.length} 条记录，可逐行删除后确认导入`);
-      } else if (!r.errors || r.errors.length === 0) {
+        setImportStatus(
+          warnings.length > 0
+            ? `⚠️ 解析出 ${r.records.length} 条记录：${warnings.join('；')}`
+            : `✅ 解析出 ${r.records.length} 条记录，可逐行删除后确认导入`
+        );
+      } else if (warnings.length > 0) {
+        setImportStatus('❌ ' + warnings.join('；'));
+      } else {
         setImportStatus('⚠️ 未解析到有效记录');
       }
     } catch (err: any) {
@@ -178,7 +184,11 @@ export function WalletFlow() {
         date: r.date, description: r.description, amount: r.amount, type: r.type, currency: r.currency,
       }));
       const result = await invoke<{ imported: number; errors: string[]; txIds: number[]; ledgerIds: number[] }>('wallet:importBills', wallet.id, records);
-      setImportStatus(`✅ 成功导入 ${result.imported} 条记录`);
+      setImportStatus(
+        (result.errors || []).length > 0
+          ? `⚠️ 成功导入 ${result.imported} 条；${result.errors.length} 条被跳过：${result.errors.slice(0, 3).join('；')}`
+          : `✅ 成功导入 ${result.imported} 条记录`
+      );
       setParsedBills(null);
       setBillFormat('');
       if (result.imported > 0) {
@@ -216,7 +226,11 @@ export function WalletFlow() {
         };
       }).filter(r => r.date && r.amount > 0);
       const result = await invoke<{ imported: number; errors: string[]; txIds: number[]; ledgerIds: number[] }>('wallet:importBills', wallet.id, records);
-      setImportStatus(`✅ 成功导入 ${result.imported} 条记录`);
+      setImportStatus(
+        (result.errors || []).length > 0
+          ? `⚠️ 成功导入 ${result.imported} 条；${result.errors.length} 条被跳过：${result.errors.slice(0, 3).join('；')}`
+          : `✅ 成功导入 ${result.imported} 条记录`
+      );
       setCsvText('');
       // v1.8.0：操作后撤销——一键回滚本次导入（删存取记录与记账，余额自动反冲）
       if (result.imported > 0) {
@@ -240,7 +254,7 @@ export function WalletFlow() {
   const ledgerColumns: Column<LedgerRow>[] = [
     {
       key: 'date', title: '日期',
-      render: (r) => r.date,
+      render: (r) => formatDate(r.date),
     },
     {
       key: 'type', title: '类型', align: 'center',
@@ -338,6 +352,7 @@ export function WalletFlow() {
       {/* Ledger list */}
       <Card title="📋 收支流水">
         <Table
+          scrollable
           columns={ledgerColumns}
           data={ledgers}
           rowKey={(r) => r.id}
@@ -495,7 +510,7 @@ export function WalletFlow() {
                 <tbody>
                   {parsedBills.map((r, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                      <td style={{ padding: '6px 8px' }}>{r.date}</td>
+                      <td style={{ padding: '6px 8px' }}>{formatDate(r.date)}</td>
                       <td style={{ padding: '6px 8px' }}>{r.description || '—'}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                         <Badge label={r.type === 'income' ? '📥 收入' : '📤 支出'} color={r.type === 'income' ? 'success' : 'danger'} />

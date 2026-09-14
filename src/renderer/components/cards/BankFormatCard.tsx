@@ -166,7 +166,7 @@ export function BankFormatCard({ refreshKey = 0 }: Props) {
         </div>
         {bankFormats.length > 0 ? (
           <div style={{ marginBottom: 'var(--spacing-md)' }}>
-            <Table columns={bankFormatColumns_} data={bankFormats} rowKey={(r) => r.id} />
+            <Table scrollable columns={bankFormatColumns_} data={bankFormats} rowKey={(r) => r.id} />
           </div>
         ) : (
           <div className="card-placeholder" style={{ marginBottom: 'var(--spacing-md)' }}>暂无自定义格式</div>

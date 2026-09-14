@@ -2,7 +2,7 @@
 
 一款运行在 Windows 电脑上的**个人财产投资管理软件**，以投资管理为核心，统一管理现金、银行卡、股票、基金、黄金、加密货币等全部资产，提供深度财务洞察、智能记账与 AI 投资分析。
 
-**最新版本：v1.10.19**（2026-09-07） · [更新说明](RELEASE_NOTES.md) · [开发路线图](docs/dev-roadmap.md)
+**最新版本：v1.10.20**（2026-09-14） · [更新说明](RELEASE_NOTES.md) · [开发路线图](docs/dev-roadmap.md)
 
 📥 下载：[GitHub Releases](https://github.com/Davidtsoi06/personal-finance-app/releases/latest)（Windows 安装包，支持自动更新）
 
@@ -62,6 +62,8 @@
 
 ## 🆕 近期更新
 
+**v1.10.20（2026-09-14）· 日期识别严格化 + 历史日期重整 + 显示统一 YYYY/MM/DD**：① 导入（银行/券商日结单、微信/支付宝账单、钱包粘贴）先识别年月日再落库，识别不出不再偷偷写成今天，而是跳过该行并在导入结果里明确提示；② 升级自动执行迁移 v25，把库里历史日期的各种写法（2026/8/7、20260807、带时间等）一次性重整为标准日期；③ 界面与报表导出一律显示 2026/08/17 形式（存储保持 ISO，不影响区间查询与按月归档）；④ 板块内滚动全覆盖——微信/支付宝流水、记账流水、交易历史弹窗、股票查询结果、当日成交、已实现盈亏、币种/格式列表、保单、定期存款、人情债、AI 报告都改为板块内独立滚动（约 10 行可视 + 滚动条 + 表头吸顶），记录再多页面也不拉长。详见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
+
 **v1.10.19（2026-09-07）· 投资收益明细窗口 + 空闲锁修复 + 自动关联体验增强**：① 投资收益明细支持 3/7/30 天窗口与手动刷新，加载失败可见可重试；繁体（賣出/沽出）卖出识别；② 修复空闲自动锁屏后解锁被 30 秒内再次误锁；③ 自动关联设置页三态状态行（已自动关联/已关联（手动指定）/未检测到）+「🔍 重新检测」按钮（装完 AI 软件即可手动触发，无需重启）。详见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
 
 **v1.10.18（2026-09-07）· AI 持仓快照自动关联**：本机检测到「AI 投资分析软件」数据目录即自动把持仓快照写入其中（%APPDATA% 自动跟随，换电脑零配置）；已手动选择过文件夹的完全尊重手动路径；清除手动文件夹后回到自动关联；设置页显示关联状态（已自动关联/未检测到）。详见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
@@ -108,10 +110,10 @@
 |----|------|
 | 桌面框架 | Electron 41（Windows 10/11） |
 | 前端 | React 19 + TypeScript + Vite 8 + ECharts 6（路由级代码分割） |
-| 数据 | SQLite（better-sqlite3，WAL 模式，迁移 v1~v21） |
+| 数据 | SQLite（better-sqlite3，WAL 模式，迁移 v1~v25） |
 | 校验 | zod IPC 入参校验 + 全局密码锁门禁 |
 | 安全 | AES-256-GCM（敏感配置）、scrypt（启动密码）、CSP |
-| 测试 | Vitest（272 项单元/集成测试）+ 端到端验证脚本 |
+| 测试 | Vitest（286 项单元/集成测试）+ 端到端验证脚本 |
 
 ---
 
@@ -159,11 +161,11 @@ node scripts/upload-release.js # 上传 GitHub Releases（exe + blockmap + lates
 
 ```
 src/
-├── main/          # Electron 主进程：数据库(迁移 v1~v24 + 服务层)、IPC(195 频道 + 校验 + 门禁)、
+├── main/          # Electron 主进程：数据库(迁移 v1~v25 + 服务层)、IPC(196 频道 + 校验 + 门禁)、
 │                  #   后台调度(价格/汇率/AI)、日结单解析、启动密码锁、自动更新
 ├── shared/        # 主/渲染共用：类型、IPC schema、纯函数（金额舍入/资产口径/金额解析/URL 校验）
 └── renderer/      # React 渲染进程：13 个页面 + 组件库 + hooks（汇率刷新/空闲锁）
-tests/             # Vitest 单元 + 集成测试（272 项）
+tests/             # Vitest 单元 + 集成测试（286 项）
 scripts/           # 演示数据、端到端验证、只读诊断、IPC 白名单校验、发布上传
 docs/              # 需求 / 技术 / 设计 / 数据模型 / 路线图 / API 参考 / 发布指南
 dev-logs/          # 每次开发会话的日志
@@ -177,7 +179,7 @@ dev-logs/          # 每次开发会话的日志
 |------|------|
 | [docs/requirements.md](docs/requirements.md) | 完整功能需求与状态 |
 | [docs/tech-spec.md](docs/tech-spec.md) | 架构、服务、IPC 频道、安全设计 |
-| [docs/data-model.md](docs/data-model.md) | 数据库表结构与迁移历史（v1~v21） |
+| [docs/data-model.md](docs/data-model.md) | 数据库表结构与迁移历史（v1~v25） |
 | [docs/design-spec.md](docs/design-spec.md) | 设计令牌与页面布局 |
 | [docs/dev-roadmap.md](docs/dev-roadmap.md) | 分阶段开发计划（含 v1.8.0 前端交互升级规划） |
 | [docs/api-reference.md](docs/api-reference.md) | 外部数据源 API 与降级策略 |
@@ -191,6 +193,7 @@ dev-logs/          # 每次开发会话的日志
 
 | 版本 | 日期 | 重点 |
 |------|------|------|
+| v1.10.20 | 2026-09-14 | 日期识别严格化（不再兜底今天）+ 历史日期重整（迁移 v25）+ 界面/导出统一 YYYY/MM/DD |
 | v1.10.19 | 2026-09-07 | 投资收益明细窗口/容错 + 空闲锁修复 + 自动关联状态与重新检测 |
 | v1.10.5 | 2026-08-16 | AI 余额与今日用量 + AI 样例金额误转日期修复 |
 | v1.10.4 | 2026-08-16 | Excel 日期序列号修复（银行/券商/AI 样例） |

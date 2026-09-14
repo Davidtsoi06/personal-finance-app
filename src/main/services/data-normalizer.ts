@@ -28,19 +28,31 @@ const CURRENCY_NORMALIZE_MAP: Record<string, string> = {
  *   Excel 里「日期格式」单元格经 xlsx 读取后是序列号数字（如 46251 = 2026-08-17），不再漏转。
  * Falls back to today if no valid date provided.
  */
-export function normalizeDate(raw: string | number | Date | undefined | null): string {
-  if (!raw) return today();
+export function normalizeDate(
+  raw: string | number | Date | undefined | null,
+  opts?: { strict?: boolean }
+): string {
+  // v1.10.20：strict 模式——无法识别时返回 ''（不兜底今天、不原样返回），供导入路径提示错误
+  const strict = opts?.strict === true;
+  const miss = (original: string) => (strict ? '' : original);
+  if (!raw) return strict ? '' : today();
 
   if (raw instanceof Date) {
-    if (Number.isNaN(raw.getTime())) return today();
+    if (Number.isNaN(raw.getTime())) return strict ? '' : today();
     return `${raw.getUTCFullYear()}-${String(raw.getUTCMonth() + 1).padStart(2, '0')}-${String(raw.getUTCDate()).padStart(2, '0')}`;
   }
 
   // v1.10.11：剥离公式包裹（='20260813' → 20260813）
   const trimmed = typeof raw === 'number' ? String(raw) : stripFormulaWrapper(raw);
 
-  // Already YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  // Already YYYY-MM-DD（strict 下校验真实有效性，如 2026-13-45 视为无法识别）
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    if (strict) {
+      const [y, m, d] = trimmed.split('-');
+      return toValidDate(y, m, d) || '';
+    }
+    return trimmed;
+  }
 
   // v1.10.6：YYYY-MM-DD 带时间（微信账单：2026-08-16 12:30:45）
   const withTime = trimmed.match(/^(\d{4}-\d{2}-\d{2})(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?$/);
@@ -137,8 +149,17 @@ export function normalizeDate(raw: string | number | Date | undefined | null): s
     }
   }
 
-  // Unrecognized format — return as-is
-  return trimmed;
+  // v1.10.20：未识别——strict 返回 ''（调用方据此报错），非 strict 保持原样返回（兼容既有语义）
+  return strict ? '' : trimmed;
+}
+
+/**
+ * v1.10.20：严格日期解析（导入路径用）——识别出年月日返回 ISO(YYYY-MM-DD)，否则返回 null。
+ * 与 normalizeDate 的区别：不兜底"今天"、不原样返回，便于对无法识别的行明确报错而非静默记错日期。
+ */
+export function parseDateStrict(raw: string | number | Date | undefined | null): string | null {
+  const out = normalizeDate(raw, { strict: true });
+  return out || null;
 }
 
 /** 组装并校验日期：月 1~12、日 1~31 且与构造结果一致；无效返回 null。 */

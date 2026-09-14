@@ -168,7 +168,7 @@ export function BrokerFormatCard({ refreshKey = 0 }: Props) {
         </div>
         {customFormats.length > 0 ? (
           <div style={{ marginBottom: 'var(--spacing-md)' }}>
-            <Table columns={formatColumns_} data={customFormats} rowKey={(r) => r.id} />
+            <Table scrollable columns={formatColumns_} data={customFormats} rowKey={(r) => r.id} />
           </div>
         ) : (
           <div className="card-placeholder" style={{ marginBottom: 'var(--spacing-md)' }}>暂无自定义格式</div>

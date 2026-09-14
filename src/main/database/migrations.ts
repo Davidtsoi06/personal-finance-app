@@ -6,6 +6,7 @@
 import type Database from 'better-sqlite3';
 import { recomputeCostBasisFromTrades } from '../../shared/utils/investment';
 import { roundMoney, roundPct } from '../../shared/utils/money';
+import { parseDateStrict } from '../services/data-normalizer';
 
 export interface Migration {
   version: number;
@@ -863,6 +864,66 @@ export const MIGRATIONS: Migration[] = [
           ' WHERE ab.account_id = ?'
         ).get(bankId) as { total_cny: number };
         db.prepare("UPDATE accounts SET balance = ?, updated_at = datetime('now') WHERE id = ?").run(row.total_cny, bankId);
+      }
+    },
+  },
+  {
+    version: 25,
+    sql: [
+      '-- ============================================',
+      '-- Migration v25: v1.10.20 历史日期重整（统一存储为 ISO YYYY-MM-DD）',
+      '-- 导入解析此前对无法识别的日期兜底「今天」，历史数据混有 2026/8/7、20260807、',
+      '-- Excel 日期序列号、2026-08-17 10:00:00 等写法；本迁移扫描所有以 date 结尾的 TEXT 列，',
+      '-- 统一重整为 ISO。显示层再按 YYYY/MM/DD 渲染，存储保持 ISO 以兼容区间查询与归档。',
+      '-- ============================================',
+      'SELECT 1;',
+    ].join('\n'),
+    migrate: (db) => {
+      const tables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+      ).all() as { name: string }[];
+      for (const t of tables) {
+        const quoted = '"' + t.name.replace(/"/g, '""') + '"';
+        let cols: { name: string; type: string }[];
+        try {
+          cols = db.pragma('table_info(' + quoted + ')') as { name: string; type: string }[];
+        } catch {
+          continue;
+        }
+        // 仅重整「date / *_date」列（排除 updated_at / created_at 等时间戳列）
+        const dateCols = cols
+          .filter((c) => typeof c.type === 'string' && /TEXT/i.test(c.type))
+          .filter((c) => /^(date|.*_date)$/i.test(c.name))
+          .map((c) => c.name);
+        for (const colName of dateCols) {
+          const col = '"' + colName.replace(/"/g, '""') + '"';
+          let rows: { __rid: number; __val: string }[];
+          try {
+            rows = db.prepare(
+              'SELECT rowid AS __rid, ' + col + ' AS __val FROM ' + quoted +
+              ' WHERE ' + col + ' IS NOT NULL AND TRIM(' + col + ") != ''" +
+              ' AND TRIM(' + col + ") NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+            ).all() as { __rid: number; __val: string }[];
+          } catch {
+            continue;
+          }
+          if (rows.length === 0) continue;
+          let stmt: Database.Statement;
+          try {
+            stmt = db.prepare('UPDATE ' + quoted + ' SET ' + col + ' = ? WHERE rowid = ?');
+          } catch {
+            continue;
+          }
+          for (const row of rows) {
+            const iso = parseDateStrict(row.__val);
+            if (!iso) continue; // 无法识别：保留原值，由界面提示用户修正
+            try {
+              stmt.run(iso, row.__rid);
+            } catch {
+              /* 唯一约束冲突等：跳过该行，不阻断迁移 */
+            }
+          }
+        }
       }
     },
   },

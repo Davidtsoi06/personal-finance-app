@@ -508,6 +508,7 @@ export function Dashboard() {
           {/* Results table */}
           {filteredAssets.length > 0 ? (
             <Table
+              scrollable
               columns={[
                 { key: 'name', title: '名称', render: (row: AssetRow) => (
                   <div>

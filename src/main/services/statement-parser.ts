@@ -5,7 +5,16 @@
  */
 import { getDatabase } from '../database';
 import { parseAmount, deriveTradeFee } from '../../shared/utils/amount-parse';
-import { normalizeDate, normalizeCurrency, normalizeCode, normalizeTradeType } from './data-normalizer';
+import { normalizeDate, parseDateStrict, normalizeCurrency, normalizeCode, normalizeTradeType } from './data-normalizer';
+
+/** v1.10.20：日期无法识别的行数（解析入口重置，汇总进 errors） */
+let badDateRows = 0;
+function markBadDate(): void { badDateRows += 1; }
+function withDateWarning(errors: string[]): string[] {
+  if (badDateRows <= 0) return errors;
+  const msg = '有 ' + badDateRows + ' 行日期无法识别已跳过（请把日期写成 2026/08/17 或 2026-08-17 后重新导入）';
+  return errors.length > 0 ? [...errors, msg] : [msg];
+}
 
 /** Safely convert a cell value (string/number from xlsx or CSV) to a trimmed string. */
 function safeTrim(v: unknown): string {
@@ -54,6 +63,7 @@ const STANDARD_COLUMNS = ['date', 'code', 'name', 'type', 'quantity', 'price', '
  * @param forceFormat If specified, skip auto-detection and use this exact format name
  */
 export function parseStatement(csvText: string, forceFormat?: string): ParseResult {
+  badDateRows = 0;
   const lines = csvText.split('\n').filter((l) => l.trim());
   if (lines.length < 2) {
     return { success: false, format: '未知', trades: [], errors: ['内容为空或行数不足'] };
@@ -67,7 +77,7 @@ export function parseStatement(csvText: string, forceFormat?: string): ParseResu
       // skipKeywordCheck=true: user manually selected this format, trust it
       const result = tryCustomFormat(lines, custom, true);
       if (result && result.length > 0) {
-        return { success: true, format: custom.name, trades: result, errors: [] };
+        return { success: true, format: custom.name, trades: result, errors: withDateWarning([]) };
       }
       return { success: false, format: forceFormat, trades: [], errors: ['该格式未能解析出有效交易记录'] };
     }
@@ -102,7 +112,7 @@ export function parseStatement(csvText: string, forceFormat?: string): ParseResu
   // Step 3: Generic auto-detect — try to identify columns by position and keywords
   const genericResult = tryGenericDetection(lines);
   if (genericResult.trades.length > 0) {
-    return { ...genericResult, success: true };
+    return { ...genericResult, success: true, errors: withDateWarning(genericResult.errors || []) };
   }
 
   return {
@@ -120,6 +130,7 @@ export function parseStatement(csvText: string, forceFormat?: string): ParseResu
  * @param forceFormat If specified, skip auto-detection and use this exact format name
  */
 export function parseRows(rows: string[][], forceFormat?: string): ParseResult {
+  badDateRows = 0;
   if (rows.length < 2) {
     return { success: false, format: '未知', trades: [], errors: ['内容为空或行数不足'] };
   }
@@ -131,7 +142,7 @@ export function parseRows(rows: string[][], forceFormat?: string): ParseResult {
     if (custom) {
       const result = tryCustomFormatOnRows(rows, custom, true);
       if (result && result.length > 0) {
-        return { success: true, format: custom.name, trades: result, errors: [] };
+        return { success: true, format: custom.name, trades: result, errors: withDateWarning([]) };
       }
       return { success: false, format: forceFormat, trades: [], errors: ['该格式未能解析出有效交易记录'] };
     }
@@ -141,7 +152,7 @@ export function parseRows(rows: string[][], forceFormat?: string): ParseResult {
   // Step 1: Try standard CSV format on rows
   const standardResult = tryStandardFormatOnRows(rows);
   if (standardResult && standardResult.length > 0) {
-    return { success: true, format: '标准 CSV 格式', trades: standardResult, errors: [] };
+    return { success: true, format: '标准 CSV 格式', trades: standardResult, errors: withDateWarning([]) };
   }
 
   // Step 2: Try each custom user-defined format
@@ -149,14 +160,14 @@ export function parseRows(rows: string[][], forceFormat?: string): ParseResult {
   for (const broker of customFormats) {
     const result = tryCustomFormatOnRows(rows, broker);
     if (result && result.length > 0) {
-      return { success: true, format: broker.name, trades: result, errors: [] };
+      return { success: true, format: broker.name, trades: result, errors: withDateWarning([]) };
     }
   }
 
   // Step 3: Generic auto-detect on rows
   const genericResult = tryGenericDetectionOnRows(rows);
   if (genericResult.trades.length > 0) {
-    return { ...genericResult, success: true };
+    return { ...genericResult, success: true, errors: withDateWarning(genericResult.errors || []) };
   }
 
   return {
@@ -214,8 +225,9 @@ function parseStandardLine(cols: string[]): ParsedTrade | null {
   const fee = parseAmount(feeStr) || 0;
   if (quantity === null || price === null) return null;
 
-  // v1.10.3：Excel 日期序列号（46251 等）统一转换；空值回退今天
-  const sDate = normalizeDate(safeTrim(date)) || new Date().toISOString().slice(0, 10);
+  // v1.10.20：日期先识别再落库——无法识别的行不算有效交易（此前会落库空日期/今天）
+  const sDate = parseDateStrict(safeTrim(date));
+  if (!sDate) { markBadDate(); return null; }
   const sCode = safeTrim(code);
   const sName = safeTrim(name) || sCode;
   const sCurrency = (safeTrim(currency) || 'HKD').toUpperCase();
@@ -252,7 +264,9 @@ function buildColMap(broker: CustomBrokerFormat): Record<string, number> {
 function mapRowToTrade(cols: string[], colMap: Record<string, number>): ParsedTrade | null {
   if (cols.length < 4) return null;
 
-  const date = normalizeDate(colMap['date'] !== undefined ? safeTrim(cols[colMap['date']]) : '');
+  const rawDate = colMap['date'] !== undefined ? safeTrim(cols[colMap['date']]) : '';
+  const date = parseDateStrict(rawDate);
+  if (!date) { if (rawDate) markBadDate(); return null; }
   const code = normalizeCode(colMap['code'] !== undefined ? safeTrim(cols[colMap['code']]) : '');
   const name = colMap['name'] !== undefined ? safeTrim(cols[colMap['name']]) : code;
   const typeRaw = colMap['type'] !== undefined ? safeTrim(cols[colMap['type']]) : '';
@@ -358,7 +372,9 @@ function tryGenericDetection(lines: string[]): ParseResult {
     if (cols.length < Math.max(dateIdx, qtyIdx, priceIdx) + 1) continue;
 
     // v1.10.3：safeTrim 兼容数字单元格（Excel 日期序列号），避免 number.trim() 抛错
-    const date = normalizeDate(safeTrim(cols[dateIdx]));
+    const rawDate = safeTrim(cols[dateIdx]);
+  const date = parseDateStrict(rawDate);
+  if (!date) { if (rawDate) markBadDate(); continue; }
     const qty = parseAmount(cols[qtyIdx]);
     const price = parseAmount(cols[priceIdx]);
     if (qty === null || price === null || !date) continue;

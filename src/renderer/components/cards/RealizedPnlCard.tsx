@@ -99,7 +99,7 @@ export function RealizedPnlCard() {
               </div>
             </div>
             {data.byAsset.length > 0 ? (
-              <Table columns={columns} data={data.byAsset} rowKey={(r) => r.assetId} />
+              <Table scrollable columns={columns} data={data.byAsset} rowKey={(r) => r.assetId} />
             ) : (
               <div className="card-placeholder">{year} 年暂无卖出记录（已实现盈亏为 0）</div>
             )}

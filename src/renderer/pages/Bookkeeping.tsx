@@ -6,6 +6,7 @@ import { Modal } from '../components/ui/Modal';
 import { Amount } from '../components/ui/Amount';
 import { AddLedgerForm } from '../components/forms/AddLedgerForm';
 import { invoke } from '../hooks/useIpc';
+import { formatDate } from '../../shared/utils/date-format';
 
 interface Ledger {
   id: number; type: string; amount: number; currency: string;
@@ -75,7 +76,7 @@ export function Bookkeeping() {
     { key: 'amount', title: '金额', align: 'right', render: (r) => (
       <Amount value={r.type === 'income' ? r.amount : -r.amount} currency={r.currency} colored />
     )},
-    { key: 'date', title: '日期' },
+    { key: 'date', title: '日期', render: (r) => formatDate(r.date) },
   ];
 
   if (loading) return <div className="page-loading">加载中...</div>;
@@ -91,7 +92,7 @@ export function Bookkeeping() {
       </div>
 
       <Card>
-        <Table columns={columns} data={ledgers} rowKey={(r) => r.id} emptyText="暂无记账记录" />
+        <Table scrollable columns={columns} data={ledgers} rowKey={(r) => r.id} emptyText="暂无记账记录" />
         {ledgers.length >= limit && (
           <div style={{ marginTop: 'var(--spacing-sm)', textAlign: 'center' }}>
             <Button variant="secondary" size="sm" onClick={() => setLimit((l) => l + 100)}>

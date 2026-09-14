@@ -4,7 +4,21 @@
  * Supports built-in auto-detection and custom user-defined formats.
  */
 import { getDatabase } from '../database';
-import { normalizeDate, normalizeCurrency } from './data-normalizer';
+import { normalizeDate, parseDateStrict, normalizeCurrency } from './data-normalizer';
+
+/**
+ * v1.10.20：本次解析中「日期无法识别」的行数（解析入口重置，结束前汇总进 errors）。
+ * 主进程同步解析，单线程内使用安全。
+ */
+let badDateRows = 0;
+function markBadDate(): void { badDateRows += 1; }
+
+/** v1.10.20：把「日期无法识别」汇总进 errors（有则追加提示） */
+function withDateWarning(errors: string[]): string[] {
+  if (badDateRows <= 0) return errors;
+  const msg = '有 ' + badDateRows + ' 行日期无法识别已跳过（请在文件中把日期写成 2026/08/17 或 2026-08-17 后重新导入）';
+  return errors.length > 0 ? [...errors, msg] : [msg];
+}
 import { parseAmount } from '../../shared/utils/amount-parse';
 
 /** Safely convert a cell value (string/number from xlsx or CSV) to a trimmed string. */
@@ -47,6 +61,7 @@ const STANDARD_COLUMNS = ['date', 'amount', 'type', 'description', 'currency'];
  * Parse a bank statement text and return normalized records.
  */
 export function parseBankStatement(csvText: string, forceFormat?: string): BankParseResult {
+  badDateRows = 0;
   const lines = csvText.split('\n').filter((l) => l.trim());
   if (lines.length < 2) {
     return { success: false, format: '未知', records: [], errors: ['内容为空或行数不足'] };
@@ -59,7 +74,7 @@ export function parseBankStatement(csvText: string, forceFormat?: string): BankP
     if (custom) {
       const result = tryCustomFormat(lines, custom, true);
       if (result && result.length > 0) {
-        return { success: true, format: custom.name, records: result, errors: [] };
+        return { success: true, format: custom.name, records: result, errors: withDateWarning([]) };
       }
       return { success: false, format: forceFormat, records: [], errors: ['该格式未能解析出有效记录'] };
     }
@@ -69,7 +84,7 @@ export function parseBankStatement(csvText: string, forceFormat?: string): BankP
   // Step 1: Try standard CSV format
   const standardResult = tryStandardFormat(lines);
   if (standardResult && standardResult.length > 0) {
-    return { success: true, format: '标准 CSV 格式', records: standardResult, errors: [] };
+    return { success: true, format: '标准 CSV 格式', records: standardResult, errors: withDateWarning([]) };
   }
 
   // Step 2: Try each custom user-defined format
@@ -77,19 +92,19 @@ export function parseBankStatement(csvText: string, forceFormat?: string): BankP
   for (const fmt of customFormats) {
     const result = tryCustomFormat(lines, fmt);
     if (result && result.length > 0) {
-      return { success: true, format: fmt.name, records: result, errors: [] };
+      return { success: true, format: fmt.name, records: result, errors: withDateWarning([]) };
     }
   }
 
   // Step 3: Generic auto-detect
   const genericResult = tryGenericDetection(lines);
   if (genericResult.records.length > 0) {
-    return { ...genericResult, success: true };
+    return { ...genericResult, success: true, errors: withDateWarning(genericResult.errors || []) };
   }
 
   return {
     success: false, format: '未知', records: [],
-    errors: ['无法识别银行日结单格式，请检查格式后重试'],
+    errors: withDateWarning(['无法识别银行日结单格式，请检查格式后重试']),
   };
 }
 
@@ -97,6 +112,7 @@ export function parseBankStatement(csvText: string, forceFormat?: string): BankP
  * Parse pre-parsed rows (2D string array from Excel).
  */
 export function parseBankRows(rows: string[][], forceFormat?: string): BankParseResult {
+  badDateRows = 0;
   if (rows.length < 2) {
     return { success: false, format: '未知', records: [], errors: ['内容为空或行数不足'] };
   }
@@ -107,34 +123,34 @@ export function parseBankRows(rows: string[][], forceFormat?: string): BankParse
     if (custom) {
       const result = tryCustomFormatOnRows(rows, custom, true);
       if (result && result.length > 0) {
-        return { success: true, format: custom.name, records: result, errors: [] };
+        return { success: true, format: custom.name, records: result, errors: withDateWarning([]) };
       }
-      return { success: false, format: forceFormat, records: [], errors: ['该格式未能解析出有效记录'] };
+      return { success: false, format: forceFormat, records: [], errors: withDateWarning(['该格式未能解析出有效记录']) };
     }
     return { success: false, format: forceFormat, records: [], errors: [`未找到名为 "${forceFormat}" 的格式`] };
   }
 
   const standardResult = tryStandardFormatOnRows(rows);
   if (standardResult && standardResult.length > 0) {
-    return { success: true, format: '标准 CSV 格式', records: standardResult, errors: [] };
+    return { success: true, format: '标准 CSV 格式', records: standardResult, errors: withDateWarning([]) };
   }
 
   const customFormats = loadCustomBankFormats();
   for (const fmt of customFormats) {
     const result = tryCustomFormatOnRows(rows, fmt);
     if (result && result.length > 0) {
-      return { success: true, format: fmt.name, records: result, errors: [] };
+      return { success: true, format: fmt.name, records: result, errors: withDateWarning([]) };
     }
   }
 
   const genericResult = tryGenericDetectionOnRows(rows);
   if (genericResult.records.length > 0) {
-    return { ...genericResult, success: true };
+    return { ...genericResult, success: true, errors: withDateWarning(genericResult.errors || []) };
   }
 
   return {
     success: false, format: '未知', records: [],
-    errors: ['无法识别银行日结单格式，请检查格式后重试'],
+    errors: withDateWarning(['无法识别银行日结单格式，请检查格式后重试']),
   };
 }
 
@@ -186,7 +202,7 @@ function parseStandardLine(cols: string[]): ParsedBankRecord | null {
   const type = detectType(safeTrim(typeStr), amount);
 
   return {
-    date: normalizeDate(safeTrim(date)) || new Date().toISOString().slice(0, 10),
+    date: parseDateStrict(safeTrim(date)) || (markBadDate(), ''),
     amount: absAmount,
     type,
     description: safeTrim(description),
@@ -259,8 +275,9 @@ function buildColMap(fmt: CustomBankFormat): Record<string, number> {
 function mapRowToBankRecord(cols: string[], colMap: Record<string, number>): ParsedBankRecord | null {
   if (cols.length < 3) return null;
 
-  const date = normalizeDate(colMap['date'] !== undefined ? safeTrim(cols[colMap['date']]) : '');
-  if (!date) return null;
+  const rawDate = colMap['date'] !== undefined ? safeTrim(cols[colMap['date']]) : '';
+  const date = parseDateStrict(rawDate);
+  if (!date) { if (rawDate) markBadDate(); return null; }
 
   const description = colMap['description'] !== undefined ? safeTrim(cols[colMap['description']]) : '';
   const currency = normalizeCurrency(
@@ -421,7 +438,9 @@ function tryGenericDetection(lines: string[]): BankParseResult {
       type = detectType(typeRaw, amount);
     }
 
-    const date = normalizeDate(cols[dateIdx]?.trim());
+    const rawDate = cols[dateIdx]?.trim() || '';
+    const date = parseDateStrict(rawDate);
+    if (!date) { if (rawDate) markBadDate(); continue; }
     if (!date) continue;
 
     const description = descIdx !== -1 ? cols[descIdx]?.trim() : '';
@@ -491,8 +510,9 @@ function tryGenericDetectionOnRows(rows: string[][]): BankParseResult {
       type = detectType(typeRaw, amount);
     }
 
-    const date = normalizeDate(safeTrim(rows[i][dateIdx]));
-    if (!date) continue;
+    const rawDate = safeTrim(rows[i][dateIdx]);
+    const date = parseDateStrict(rawDate);
+    if (!date) { if (rawDate) markBadDate(); continue; }
 
     const description = descIdx !== -1 ? safeTrim(rows[i][descIdx]) : '';
     const currency = normalizeCurrency(currIdx !== -1 ? safeTrim(rows[i][currIdx]) : '', 'CNY');

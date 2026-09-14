@@ -13,6 +13,7 @@ import * as bfService from '../database/services/bank-format-service';
 import * as bankParser from '../services/bank-statement-parser';
 import { classifyBankRecord } from '../services/statement-classifier';
 import { txFingerprint, findTxByHashInDb, findFdForOutRowInDb, findFdForInRowInDb, findBrokerDirectTxInDb } from '../database/services/statement-pairing';
+import { parseDateStrict } from '../services/data-normalizer';
 
 export function registerSettingsIpcHandlers(): void {
   // ── Investment Accounts ──
@@ -176,7 +177,9 @@ export function registerSettingsIpcHandlers(): void {
     const transaction = db.transaction(() => {
       for (const rec of records) {
         try {
-          const date = rec.date || new Date().toISOString().slice(0, 10);
+          // v1.10.20：日期先识别再落库，识别不出明确报错（不再兜底「今天」）
+          const date = parseDateStrict(rec.date);
+          if (!date) { errors.push(`日期无法识别已跳过：${rec.date || '（空）'}`); skipped++; continue; }
           const currency = rec.currency || 'CNY';
           const amount = Math.abs(Number(rec.amount) || 0);
           const type = rec.type === 'withdraw' ? 'withdraw' : 'deposit';

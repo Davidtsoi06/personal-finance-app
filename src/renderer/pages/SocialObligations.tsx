@@ -167,7 +167,7 @@ export function SocialObligations() {
           </div>
         </Card>
       ) : (
-        <div className="obl-grid">
+        <div className="obl-grid panel-scroll">
           {displayList.map((o) => (
             <div key={o.id} className={`obl-card ${o.status === 'done' ? 'obl-card--done' : ''}`}>
               <div className="obl-card-header">

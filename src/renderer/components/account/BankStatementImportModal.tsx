@@ -149,7 +149,8 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
         setBankParseFormat(result.format);
         setParsedBankRecords(result.records);
         setEditableRecords(result.records.map((r) => ({ ...r }))); // v1.10.2：可编辑副本
-        setBankImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.records.length + ' 条记录，预览可修改后导入');
+        setBankImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.records.length + ' 条记录，预览可修改后导入'
+          + ((result.errors || []).length > 0 ? '（' + (result.errors || []).join('；') + '）' : ''));
         await applySuggestions(result.records);
       } else {
         setBankImportStatus('❌ 无法识别格式：' + (result.errors || ['未知格式']).join('，'));
@@ -191,7 +192,8 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
         setBankParseFormat(result.format + ' · ' + result.fileName);
         setParsedBankRecords(result.records);
         setEditableRecords(result.records.map((r) => ({ ...r }))); // v1.10.2：可编辑副本
-        setBankImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.records.length + ' 条记录，预览可修改后导入');
+        setBankImportStatus('✅ 识别为「' + result.format + '」，共 ' + result.records.length + ' 条记录，预览可修改后导入'
+          + ((result.errors || []).length > 0 ? '（' + (result.errors || []).join('；') + '）' : ''));
         await applySuggestions(result.records);
       } else {
         setBankImportStatus('❌ 无法识别格式：' + (result.errors || ['未知格式']).join('，'));

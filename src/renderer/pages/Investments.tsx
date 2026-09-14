@@ -171,6 +171,7 @@ export function Investments() {
           <div className="card-placeholder">暂无今日交易</div>
         ) : (
           <Table
+            scrollable
             columns={[
               { key: 'time', title: '时间', render: (row: TodayTrade) => formatTime(row.created_at) },
               { key: 'assetName', title: '标的', render: (row: TodayTrade) => row.assetName },

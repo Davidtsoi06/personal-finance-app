@@ -214,7 +214,7 @@ export function Settings() {
 
       <div style={{ marginTop: 'var(--spacing-lg)' }}>
         <Card title="货币与汇率">
-          <Table columns={currencyColumns} data={currencies} rowKey={(r) => r.id} />
+          <Table scrollable columns={currencyColumns} data={currencies} rowKey={(r) => r.id} />
         </Card>
       </div>
 

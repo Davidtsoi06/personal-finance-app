@@ -9,6 +9,7 @@ import { Button } from '../ui/Button';
 import { Table, Column } from '../ui/Table';
 import { NetAmount } from '../ui/Amount';
 import { invoke } from '../../hooks/useIpc';
+import { formatDate } from '../../../shared/utils/date-format';
 
 export interface RecentSellRow {
   id: number; name: string; code: string; currency: string;
@@ -122,7 +123,7 @@ export function RecentSellPnlCard() {
               {/* 天分组头 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-xs)' }}>
                 <span style={{ fontWeight: 700, fontSize: 'var(--font-size-sm)' }}>
-                  📅 {dayLabel(i)} · {day.date}
+                  📅 {dayLabel(i)} · {formatDate(day.date)}
                 </span>
                 {day.sellCount > 0 ? (
                   <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
@@ -136,7 +137,7 @@ export function RecentSellPnlCard() {
                 ) : null}
               </div>
               {day.sellCount > 0 ? (
-                <Table columns={columns} data={day.sells} rowKey={(r) => r.id} />
+                <Table scrollable columns={columns} data={day.sells} rowKey={(r) => r.id} />
               ) : (
                 <div className="card-placeholder">当日无卖出</div>
               )}

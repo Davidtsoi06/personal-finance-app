@@ -6,6 +6,7 @@ import { Modal } from '../components/ui/Modal';
 import { Amount } from '../components/ui/Amount';
 import { Badge } from '../components/ui/Badge';
 import { invoke } from '../hooks/useIpc';
+import { formatDate } from '../../shared/utils/date-format';
 
 interface Policy {
   id: number; name: string; company: string | null; policy_number: string | null;
@@ -158,7 +159,7 @@ export function Insurance() {
       {policies.length === 0 ? (
         <Card><div className="card-placeholder">暂无保单，点击「添加保单」开始</div></Card>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+        <div className="panel-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
           {policies.map(policy => {
             const isActive = !!policy.is_active;
             const dueDate = policy.premium_due_month && policy.premium_due_day
@@ -178,7 +179,7 @@ export function Insurance() {
                       {policy.company && <span>🏢 {policy.company} · </span>}
                       {policy.policy_number && <span>📋 {policy.policy_number} · </span>}
                       {policy.insured_person && <span>👤 {policy.insured_person} · </span>}
-                      {policy.start_date && <span>📅 生效 {policy.start_date} · </span>}
+                      {policy.start_date && <span>📅 生效 {formatDate(policy.start_date)} · </span>}
                       🔔 缴费日 {dueDate}
                       {policy.notes && <span> · 📝 {policy.notes}</span>}
                     </div>

@@ -10,6 +10,7 @@ import { ACCOUNT_TYPE_LABELS, ASSET_TYPE_LABELS } from '@shared/constants/labels
 import { AccountTransactionsSection, AccountTransaction } from '../components/account/AccountTransactionsSection';
 import { FixedDepositsSection } from '../components/account/FixedDepositsSection';
 import { BankStatementImportModal } from '../components/account/BankStatementImportModal';
+import { formatDate } from '../../shared/utils/date-format';
 
 interface AccountBalance {
   id: number; account_id: number; currency: string; balance: number;
@@ -101,7 +102,7 @@ export function AccountDetail() {
         <div className="stat-card">
           <div className="stat-card-label">最近交易</div>
           <div className="stat-card-value" style={{ fontSize: 'var(--font-size-sm)' }}>
-            {transactions.length > 0 ? transactions[0].date : '暂无'}
+            {transactions.length > 0 ? formatDate(transactions[0].date) : '暂无'}
           </div>
         </div>
       </div>

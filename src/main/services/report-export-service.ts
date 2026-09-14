@@ -7,6 +7,7 @@ import { ASSET_SORT_SQL } from '../database/services/asset-service';
 import { ASSET_TYPE_LABELS, MARKET_LABELS, TRADE_TYPE_LABELS } from '../../shared/constants/labels';
 import { roundMoney, roundPct } from '../../shared/utils/money';
 import { addPosition, removePosition, type AssetState } from '../../shared/utils/investment';
+import { formatDate } from '../../shared/utils/date-format';
 
 /** 本地时区的 YYYY-MM-DD（toISOString 是 UTC，跨时区会错一天） */
 export function localDateStr(d: Date): string {
@@ -383,6 +384,9 @@ export function buildAssetSummarySheets(): SheetData[] {
 
 // ─── 导出转换与表头 ──────────────────────────────────────────────
 
+/** v1.10.20：导出时按 YYYY/MM/DD 呈现的日期列 */
+const DATE_EXPORT_KEYS = new Set(['date', 'start_date', 'maturity_date', 'completed_at', 'created_date']);
+
 export type ExportHeader = { key: string; label: string };
 
 export function transformRows(
@@ -407,6 +411,8 @@ export function transformRows(
       if (h.key === 'market') value = MARKET_LABELS[value as string] || value;
       if (h.key === 'asset_type') value = value === 'e_wallet' ? '电子钱包' : value === 'cash' ? '现金' : value;
       if (h.key === 'card_number' && value) value = `尾号${String(value).slice(-4)}`;
+      // v1.10.20：导出日期统一 YYYY/MM/DD（与界面一致）
+      if (DATE_EXPORT_KEYS.has(h.key) && value) value = formatDate(String(value));
       out[h.label] = value !== undefined && value !== null ? value : '';
     }
     return out;

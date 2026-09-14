@@ -12,6 +12,7 @@ import { insertCashFlowInDb, recomputeCashBalanceInDb, applyTradeCashToAccountIn
 import { reconcileAssetCostBasis } from '../database/services/transaction-service';
 import { detectMarket } from '../../shared/utils/market';
 import { exportPortfolioSnapshot } from '../services/ai-portfolio-service';
+import { parseDateStrict } from '../services/data-normalizer';
 
 export function registerAssetIpcHandlers(): void {
   // ── Assets ──
@@ -238,7 +239,10 @@ export function registerAssetIpcHandlers(): void {
 
       for (const trade of trades) {
         try {
-          trade.date = normalizeDate(trade.date);
+          // v1.10.20：日期先识别再落库，识别不出明确报错（不再兜底「今天」）
+          const strictDate = parseDateStrict(trade.date);
+          if (!strictDate) { errors.push(`日期无法识别已跳过：${trade.date || '（空）'}`); continue; }
+          trade.date = strictDate;
           trade.currency = normalizeCurrency(trade.currency, 'HKD');
           trade.code = normalizeCode(trade.code);
           trade.name = normalizeString(trade.name);

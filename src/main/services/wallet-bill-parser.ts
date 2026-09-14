@@ -4,8 +4,17 @@
  *   第 18 行表头、第 19 行起数据，尾部统计行自动截断；金额支持 ¥ 符号/千分位/正负号。
  * 支付宝 CSV：完整字段映射，容错尾部逗号/空值/引号包裹；方向取「收/支」列。
  */
-import { normalizeDate } from './data-normalizer';
+import { parseDateStrict } from './data-normalizer';
 import { parseAmount } from '../../shared/utils/amount-parse';
+
+/** v1.10.20：日期无法识别的行数（解析入口重置，汇总进 errors） */
+let badDateRows = 0;
+function markBadDate(): void { badDateRows += 1; }
+function withDateWarning(errors: string[]): string[] {
+  if (badDateRows <= 0) return errors;
+  const msg = '有 ' + badDateRows + ' 行日期无法识别已跳过（请把日期写成 2026/08/17 或 2026-08-17 后重新导入）';
+  return errors.length > 0 ? [...errors, msg] : [msg];
+}
 
 export interface ParsedWalletBill {
   date: string;
@@ -53,6 +62,7 @@ function findHeaderIndex(rows: (unknown[] | string[])[], keys: string[]): number
 
 /** 微信账单数据行（二维数组：Excel sheet 行 或 CSV 行）→ 记录。headIdx=表头行号，数据从 headIdx+1 开始。 */
 function parseWechatRows(rows: unknown[][], currency: string): WalletParseResult {
+  badDateRows = 0;
   const errors: string[] = [];
   const records: ParsedWalletBill[] = [];
   const headIdx = findHeaderIndex(rows, ['交易时间', '收/支']);
@@ -63,10 +73,12 @@ function parseWechatRows(rows: unknown[][], currency: string): WalletParseResult
     const c0 = cell(row, 0);
     // 尾部统计区：总笔数/收入(元)/支出(元)/零钱明细/微信支付账单明细 等
     if (!c0 || /^(总|收入|支出|零钱|微信支付|已|本月|生成时间|微信昵称)/.test(c0)) break;
-    const date = normalizeDate(c0);
     const direction = cell(row, 4);
     const amount = parseAmount(cell(row, 5));
-    if (!date || amount === null || amount <= 0) continue;
+    const date = parseDateStrict(c0);
+    // v1.10.20：日期识别不出时不再兜底"今天"，明确计入警告
+    if (!date) { if (c0 && amount !== null) markBadDate(); continue; }
+    if (amount === null || amount <= 0) continue;
     if (direction !== '收入' && direction !== '支出') continue;
     const tradeType = cell(row, 1);
     const counterparty = cell(row, 2);
@@ -80,7 +92,7 @@ function parseWechatRows(rows: unknown[][], currency: string): WalletParseResult
       category: tradeType || undefined,
     });
   }
-  return { format: 'wechat', records, errors };
+  return { format: 'wechat', records, errors: withDateWarning(errors) };
 }
 
 /** 微信 Excel（sheet 行） */
@@ -96,6 +108,7 @@ export function parseWechatCsv(text: string, currency = 'CNY'): WalletParseResul
 
 /** 支付宝 CSV 文本 */
 export function parseAlipayCsv(text: string, currency = 'CNY'): WalletParseResult {
+  badDateRows = 0;
   const errors: string[] = [];
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   // 表头行：含 交易时间 与 收/支 与 金额
@@ -132,10 +145,13 @@ export function parseAlipayCsv(text: string, currency = 'CNY'): WalletParseResul
   const records: ParsedWalletBill[] = [];
   for (let i = headIdx + 1; i < lines.length; i++) {
     const c = splitCsv(lines[i], sep);
-    const date = normalizeDate(cell(c, iDate));
+    const rawDate = cell(c, iDate);
     const direction = cell(c, iDirection);
     const amount = parseAmount(cell(c, iAmount));
-    if (!date || amount === null || amount <= 0) continue;
+    const date = parseDateStrict(rawDate);
+    // v1.10.20：日期识别不出时不再兜底"今天"，明确计入警告
+    if (!date) { if (rawDate && amount !== null) markBadDate(); continue; }
+    if (amount === null || amount <= 0) continue;
     if (direction !== '收入' && direction !== '支出') continue;
     const type = cell(c, iType);
     const counterparty = cell(c, iCounterparty);
@@ -150,7 +166,7 @@ export function parseAlipayCsv(text: string, currency = 'CNY'): WalletParseResul
       category: type || undefined,
     });
   }
-  return { format: 'alipay', records, errors };
+  return { format: 'alipay', records, errors: withDateWarning(errors) };
 }
 
 /**

@@ -44,6 +44,20 @@ a:hover {
 
 /* 滚动条：使用 Windows 原生样式（移除全部自定义滚动条样式，v1.6.0） */
 
+/* v1.10.20：板块内独立滚动（卡片式长列表）——记录多时页面不拉长，板块内滚动浏览 */
+.panel-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 表格外的板块内滚动容器（与 .panel-scroll 同高，供自定义表格使用） */
+.panel-scroll--table {
+  max-height: 420px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 /* 选中颜色 */
 ::selection {
   background: var(--color-primary-100);

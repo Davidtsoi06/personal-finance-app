@@ -626,6 +626,18 @@
 - [x] **空闲锁误锁修复**：useIdleLock 感知 visibilitychange（隐藏停钟、恢复重置 lastActivity）；主窗 render-process-gone 崩溃自愈
 - [x] 测试：272/272 通过（normalizer 繁体 2 用例）；tsc 无错；版本 1.10.19
 
+## 第 31ad 阶段：v1.10.20 日期识别严格化 + 历史日期重整 + 展示统一 YYYY/MM/DD ✅（已发布 v1.10.20）
+
+> 需求来源：用户反馈「导入的日期还是有问题」——要求先识别年月日再记录、日期格式做成 YYYY/MM/DD，并把现有历史记录一次性重整。方案 A（用户确认）：存储保持 ISO `YYYY-MM-DD`（60+ 处 SQL 区间查询/按月归档与 14 个 `<input type="date">` 依赖它），展示与导出统一 `YYYY/MM/DD`。
+
+- [x] **日期识别严格化**：normalizeDate 增加 strict 模式（不兜底今天、不原样返回）+ parseDateStrict；statement-parser / bank-statement-parser / wallet-bill-parser 全量接入；parseStandardLine 识别不出日期的行不再生成空日期交易
+- [x] **导入路径不静默**：account-transaction-service.importWalletBills、bank:importParsed、trade:importParsed 先识别日期，识别不出的行跳过并计入 errors；银行/券商导入弹窗与钱包流水页把日期警告显示出来（此前有记录时警告被覆盖）
+- [x] **迁移 v25 历史日期重整**：动态扫描所有「以 date 结尾的 TEXT 列」（date / start_date / maturity_date / paid_date / completed_at…），把非 ISO 写法（2026/8/7、20260807、2026.08.07、带时间等）统一重整；无法识别的值保持原值，唯一约束冲突逐行跳过，不触碰 updated_at/created_at
+- [x] **展示层统一**：新增 `src/shared/utils/date-format.ts`（formatDate/formatMonth）；日常收支、存取记录、投资交易、券商现金流水、定期存款、保单生效日、账户最近交易、投资收益明细，以及报表导出的 Excel 全部改为 YYYY/MM/DD
+- [x] **板块内滚动全覆盖**（用户要求：流水多了页面不要被拉长）：Table `scrollable` 默认 420px（调用处只写 scrollable）+ 新增全局 `.panel-scroll` 容器；补齐微信/支付宝收支流水、记账流水、交易历史弹窗、股票查询结果、今日交易、当日成交明细、已实现盈亏、每日卖出明细、币种列表、自定义银行/券商格式列表；卡片式长列表（保单/定期/人情债/AI 报告归档）同样板块内滚动
+- [x] 测试：286/286 通过（新增 date-strict 9 用例 + date-normalize-v25 5 用例）；tsc 双配置无错；版本 1.10.20
+- [x] 文档同步：README（版本/近期更新/技术栈 286 项、迁移 v1~v25、IPC 196）、RELEASE_NOTES、data-model 补迁移 v25、tech-spec 迁移与频道数
+
 ## 第 32 阶段：v1.11.1 批 C 效率工具 + AI 账目体检 ⏸️（暂缓，用户决定留待以后开发）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。

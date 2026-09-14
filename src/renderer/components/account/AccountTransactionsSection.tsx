@@ -10,6 +10,7 @@ import { Amount } from '../ui/Amount';
 import { Badge } from '../ui/Badge';
 import { invoke } from '../../hooks/useIpc';
 import { AccountTxFormModal } from './AccountTxFormModal';
+import { formatDate } from '../../../shared/utils/date-format';
 
 export interface AccountTransaction {
   id: number; account_id: number; type: 'deposit' | 'withdraw';
@@ -132,7 +133,7 @@ export function AccountTransactionsSection({ accountId, accountCurrency, transac
   };
 
   const columns: Column<AccountTransaction>[] = [
-    { key: 'date', title: '日期', render: (r) => r.date },
+    { key: 'date', title: '日期', render: (r) => formatDate(r.date) },
     {
       key: 'type', title: '类型', align: 'center',
       render: (r) => (
