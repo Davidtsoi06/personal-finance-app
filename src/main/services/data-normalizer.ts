@@ -203,14 +203,20 @@ export function normalizeCode(raw: string | undefined | null): string {
   return trimmed.replace(/\.(US|NYSE|NASDAQ)$/, '');
 }
 
+/** v1.10.21：股息/分红类业务关键字（小写比较） */
+const DIVIDEND_TYPE_KEYWORDS = ['股息', '股利', '派息', '派發', '派发', '红利', '紅利', '分红', '分紅', '紅股', '红股', '利息收入', '存款利息', 'dividend', 'interest', 'distribution'];
+
 /**
  * Normalize a trade direction / business type string.
  * Accepts Chinese, English, and mixed variants.
  * Returns 'other' for unrecognized values (instead of skipping).
  */
-export function normalizeTradeType(raw: string | undefined | null): 'buy' | 'sell' | 'split' | 'other' {
+export function normalizeTradeType(raw: string | undefined | null): 'buy' | 'sell' | 'split' | 'dividend' | 'other' {
   if (!raw) return 'other';
   const lower = stripFormulaWrapper(raw).toLowerCase();
+
+  // v1.10.21：股息/分红（含港美股 DIVIDEND/派息/红利）——先判，避免被买入卖出词干扰
+  if (DIVIDEND_TYPE_KEYWORDS.some((k) => lower.includes(k))) return 'dividend';
 
   if (lower.includes('买') || lower.includes('買') || lower === 'buy' || lower === 'b') return 'buy';
   // v1.10.19：繁体 賣 / 沽出（港股日结单常见）同样识别为卖出

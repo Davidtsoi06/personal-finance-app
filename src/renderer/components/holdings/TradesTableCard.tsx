@@ -46,7 +46,12 @@ export function TradesTableCard({ trades, onChanged }: Props) {
   const handleDeleteTrade = async () => {
     if (!deletingTrade) return;
     try {
-      await invoke('transaction:delete', deletingTrade.id);
+      // v1.10.21：股息记录走专用删除（连带清理记账与现金流；普通交易沿用原通道）
+      if (deletingTrade.type === 'dividend') {
+        await invoke('investmentAccount:deleteDividend', deletingTrade.id);
+      } else {
+        await invoke('transaction:delete', deletingTrade.id);
+      }
       setDeletingTrade(null);
       onChanged();
     } catch (err: any) { console.error(err); }
@@ -56,7 +61,9 @@ export function TradesTableCard({ trades, onChanged }: Props) {
     { key: 'date', title: '日期', render: (r) => formatDate(r.date) },
     {
       key: 'type', title: '方向', align: 'center',
-      render: (r) => (
+      render: (r) => r.type === 'dividend' ? (
+        <Badge label="💰 股息" color="success" />
+      ) : (
         <Badge
           label={r.type === 'buy' ? '🟢 买入' : '🔴 卖出'}
           color={r.type === 'buy' ? 'success' : 'danger'}
@@ -87,7 +94,10 @@ export function TradesTableCard({ trades, onChanged }: Props) {
       key: 'actions', title: '操作', align: 'center',
       render: (r) => (
         <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-          <Button variant="secondary" size="sm" onClick={() => setEditingTrade(r)}>✏️</Button>
+          {/* v1.10.21：股息行请在「现金流水 → 💰 登记分红」里修改（避免误改数量/价格） */}
+          {r.type !== 'dividend' && (
+            <Button variant="secondary" size="sm" onClick={() => setEditingTrade(r)}>✏️</Button>
+          )}
           <Button variant="secondary" size="sm" onClick={() => setDeletingTrade(r)}>🗑</Button>
         </div>
       ),
@@ -158,10 +168,16 @@ export function TradesTableCard({ trades, onChanged }: Props) {
       {/* ── Delete Trade Modal ── */}
       <Modal open={!!deletingTrade} title="🗑 删除交易记录" onClose={() => setDeletingTrade(null)}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-          <p>确认删除此交易记录吗？持仓数据将自动回滚。</p>
+          <p>
+            {deletingTrade?.type === 'dividend'
+              ? '确认删除此股息记录吗？对应的现金流水与「股息收入」记账会一并清理。'
+              : '确认删除此交易记录吗？持仓数据将自动回滚。'}
+          </p>
           {deletingTrade && (
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', background: 'var(--color-bg-secondary)', padding: 'var(--spacing-sm)', borderRadius: 'var(--radius-sm)' }}>
-              {deletingTrade.type === 'buy' ? '🟢 买入' : '🔴 卖出'} · {deletingTrade.asset_name} · {deletingTrade.quantity}股@{deletingTrade.price} · {deletingTrade.date}
+              {deletingTrade.type === 'dividend'
+                ? '💰 股息 · ' + deletingTrade.asset_name + ' · ' + deletingTrade.total_amount + ' ' + deletingTrade.currency
+                : (deletingTrade.type === 'buy' ? '🟢 买入' : '🔴 卖出') + ' · ' + deletingTrade.asset_name + ' · ' + deletingTrade.quantity + '股@' + deletingTrade.price} · {deletingTrade.date}
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)' }}>

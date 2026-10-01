@@ -164,6 +164,22 @@ const premiumData = z.object({
   notes: z.string().nullish(),
 }).passthrough();
 
+/** v1.10.21：股息登记（税前/预扣税/日期/是否记账） */
+const dividendData = z.object({
+  investmentAccountId: id,
+  assetId: id.nullish(),
+  code: z.string().max(20).optional(),
+  name: z.string().max(100).optional(),
+  currency: optStr,
+  date: dateStr,
+  grossAmount: z.coerce.number().min(0),
+  taxAmount: z.coerce.number().min(0).optional(),
+  perShare: z.coerce.number().min(0).optional(),
+  quantity: z.coerce.number().min(0).optional(),
+  writeLedger: z.boolean().optional(),
+  notes: z.string().max(200).nullish(),
+}).passthrough();
+
 const investmentAccountData = z.object({
   name: z.string().min(1).max(100),
   broker: z.string().nullish(),
@@ -286,6 +302,10 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'investmentAccount:cashFlows': z.tuple([id, z.coerce.number().int().positive().optional()]),
   'investmentAccount:adjustCash': z.tuple([id, z.coerce.number().finite(), z.string().max(200).optional()]),
   'investmentAccount:addCash': z.tuple([id, z.coerce.number().positive()]),
+  'investmentAccount:listDividends': z.tuple([id, z.coerce.number().int().positive().optional()]),
+  'investmentAccount:recordDividend': z.tuple([dividendData]),
+  'investmentAccount:updateDividend': z.tuple([id, dividendData.partial()]),
+  'investmentAccount:deleteDividend': z.tuple([id]),
   'investmentAccount:withdrawCash': z.tuple([id, z.coerce.number().positive()]),
   'socialObligation:create': z.tuple([socialData]),
   'socialObligation:update': z.tuple([id, socialData.partial()]),
@@ -307,6 +327,7 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
   'archive:execute': z.tuple([z.array(z.string())]),
   'report:realizedPnl': z.tuple([z.coerce.number().int().positive()]),
   'report:recentSellPnl': z.tuple([z.coerce.number().int().min(1).max(7).optional()]),
+  'report:dividendIncome': z.tuple([z.coerce.number().int().positive()]),
   'ai:generateFormat': z.tuple([z.string().min(1).max(20000), z.enum(['bank', 'broker'])]),
   'ai:readSampleFile': z.tuple([]),
   'ai:balance': z.tuple([]),

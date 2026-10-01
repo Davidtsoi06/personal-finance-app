@@ -14,6 +14,8 @@ interface DailyTradeRow {
   id: number; date: string; type: string; quantity: number; price: number;
   fee: number; total_amount: number; currency: string; notes: string | null;
   created_at: string; name: string; code: string;
+  /** v1.10.21：交易所在券商账户（成本按「代码+币种」跨账户合并） */
+  accountId?: number | null; accountName?: string | null;
   /** v1.8.2：单笔已实现盈亏（卖出有值，买入 null） */
   realized_pnl: number | null;
   /** v1.8.4：成本价（卖出=成本基础，买入=持仓加权成本；无则 null） */
@@ -88,6 +90,9 @@ export function DailyTradesReport() {
     { key: 'type', title: '方向', render: (r) => (
       <Badge label={TRADE_TYPE_LABELS[r.type] || r.type}
         color={r.type === 'buy' ? 'success' : r.type === 'sell' ? 'danger' : 'info'} />
+    )},
+    { key: 'accountName', title: '账户', render: (r) => (
+      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>{r.accountName || '—'}</span>
     )},
     { key: 'quantity', title: '数量', align: 'right', render: (r) => r.quantity.toLocaleString() },
     { key: 'price', title: '价格', align: 'right', render: (r) => (r.price || 0).toFixed(2) },

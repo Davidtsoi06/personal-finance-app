@@ -14,6 +14,19 @@ import * as bankParser from '../services/bank-statement-parser';
 import { classifyBankRecord } from '../services/statement-classifier';
 import { txFingerprint, findTxByHashInDb, findFdForOutRowInDb, findFdForInRowInDb, findBrokerDirectTxInDb } from '../database/services/statement-pairing';
 import { parseDateStrict } from '../services/data-normalizer';
+import * as dividendService from '../database/services/dividend-service';
+import * as cashFlowService from '../database/services/investment-cash-flow-service';
+import * as fdService from '../database/services/fixed-deposit-service';
+import * as aiPortfolioService from '../services/ai-portfolio-service';
+import { runManualUpdate } from '../services/scheduler';
+import * as budgetService from '../database/services/budget-service';
+import * as alertService from '../database/services/alert-service';
+import * as socialObligationService from '../database/services/social-obligation-service';
+import * as settingsService from '../database/services/settings-service';
+import * as aiService from '../services/ai-service';
+import * as aiSession from '../database/services/ai-session-service';
+import * as archiveService from '../services/archive-service';
+import { exportPortfolioSnapshot } from '../services/ai-portfolio-service';
 
 export function registerSettingsIpcHandlers(): void {
   // ── Investment Accounts ──
@@ -34,7 +47,6 @@ export function registerSettingsIpcHandlers(): void {
     return { success: true };
   });
   // 现金流水（v1.5.6）
-  const cashFlowService = require('../database/services/investment-cash-flow-service');
   handleValidated('investmentAccount:cashFlows', (id: number, limit?: number) =>
     cashFlowService.listCashFlows(id, limit || 200)
   );
@@ -42,6 +54,25 @@ export function registerSettingsIpcHandlers(): void {
     success: true,
     balance: cashFlowService.adjustCashBalance(id, targetBalance, notes),
   }));
+  // ── v1.10.21：股息/分红登记（写 transactions + 现金流 + 可选记账，持仓成本不变）──
+  handleValidated('investmentAccount:listDividends', (accountId: number, year?: number) =>
+    dividendService.listDividendsByAccount(accountId, year)
+  );
+  handleValidated('investmentAccount:recordDividend', (data: any) => {
+    const result = dividendService.recordDividend(data);
+    exportPortfolioSnapshot(true); // 股息进账 → 刷新 AI 持仓快照
+    return { success: true, ...result };
+  });
+  handleValidated('investmentAccount:updateDividend', (id: number, data: any) => {
+    const result = dividendService.updateDividend(id, data);
+    exportPortfolioSnapshot(true);
+    return { success: true, ...result };
+  });
+  handleValidated('investmentAccount:deleteDividend', (id: number) => {
+    const ok = dividendService.deleteDividend(id);
+    exportPortfolioSnapshot(true);
+    return { success: ok };
+  });
   ipcMain.handle('investmentAccount:allSummary', () => {
     const accounts = iaService.listInvestmentAccounts();
     return accounts.map(acc => ({
@@ -55,7 +86,6 @@ export function registerSettingsIpcHandlers(): void {
   ipcMain.handle('netWorth:record', () => nwService.recordNetWorth());
 
   // ── Fixed Deposits ──
-  const fdService = require('../database/services/fixed-deposit-service');
   ipcMain.handle('fixedDeposit:listByAccount', (_e, accountId: number) =>
     fdService.listByAccount(accountId)
   );
@@ -156,6 +186,7 @@ export function registerSettingsIpcHandlers(): void {
     let duplicates = 0;
     const errors: string[] = [];
     const createdFds: { id: number; amount: number; date: string }[] = [];
+    let dividendCount = 0;
     const settledFds: { id: number; principal: number; interest: number }[] = [];
 
     const insertTx = db.prepare(`
@@ -232,6 +263,18 @@ export function registerSettingsIpcHandlers(): void {
           const existing = getBalance.get(accountId, currency) as any;
           const newBalance = (existing?.balance || 0) + delta;
           upsertBalance.run(accountId, currency, newBalance);
+
+          // v1.10.21：识别为股息/分红的存入行——补「股息收入」（现金已由上面存取记录入账，不再重复加钱）
+          if (rec.dividend && type === 'deposit') {
+            try {
+              const div = dividendService.recordBankDividendInDb(db, {
+                amount, currency, date, description: notes,
+              });
+              if (div.ledgerId) dividendCount++;
+            } catch (err: any) {
+              errors.push('股息收入登记失败（' + notes + '）：' + err.message);
+            }
+          }
         } catch (err: any) {
           errors.push(`${rec.description || '未知记录'}：${err.message}`);
         }
@@ -248,7 +291,7 @@ export function registerSettingsIpcHandlers(): void {
     });
 
     transaction();
-    return { imported, skipped, duplicates, errors, createdFds, settledFds };
+    return { imported, skipped, duplicates, errors, createdFds, settledFds, dividendCount };
   });
 
   ipcMain.handle('bank:importExcel', async (_e, formatName?: string) => {
@@ -312,7 +355,6 @@ export function registerSettingsIpcHandlers(): void {
   });
 
   // ── AI 持仓快照导出（v1.10.14）──
-  const aiPortfolioService = require('../services/ai-portfolio-service');
   handleValidated('aiPortfolio:getFolder', () => aiPortfolioService.getPortfolioFolder());
   handleValidated('aiPortfolio:chooseFolder', async () => {
     const { dialog } = require('electron') as typeof import('electron');
@@ -346,7 +388,6 @@ export function registerSettingsIpcHandlers(): void {
   );
 
   // ── Data Refresh ──
-  const { runManualUpdate } = require('../services/scheduler');
   ipcMain.handle('data:refreshRates', async () => {
     const { fetchExchangeRates } = require('../services/exchange-rate-fetcher');
     return fetchExchangeRates();
@@ -358,7 +399,6 @@ export function registerSettingsIpcHandlers(): void {
   ipcMain.handle('data:refreshAll', async () => runManualUpdate());
 
   // ── Budgets ──
-  const budgetService = require('../database/services/budget-service');
   ipcMain.handle('budget:list', (_e, month?: string) => budgetService.listBudgets(month));
   ipcMain.handle('budget:get', (_e, id: number) => budgetService.getBudget(id));
   handleValidated('budget:create', (data: any) => budgetService.createBudget(data));
@@ -367,19 +407,18 @@ export function registerSettingsIpcHandlers(): void {
   ipcMain.handle('budget:status', (_e, month: string) => budgetService.getBudgetStatus(month));
 
   // ── Alerts ──
-  const alertService = require('../database/services/alert-service');
   ipcMain.handle('alert:listConfig', () => alertService.listAlertConfigs());
   ipcMain.handle('alert:updateConfig', (_e, id: number, data: any) => alertService.updateAlertConfig(id, data));
 
   // ── Social Obligations ──
-  const socialObligationService = require('../database/services/social-obligation-service');
-  ipcMain.handle('socialObligation:list', (_e, type?: string) => socialObligationService.listObligations(type));
+  ipcMain.handle('socialObligation:list', (_e, type?: string) =>
+    socialObligationService.listObligations(type as 'owe' | 'owed' | undefined)
+  );
   handleValidated('socialObligation:create', (data: any) => socialObligationService.createObligation(data));
   handleValidated('socialObligation:update', (id: number, data: any) => socialObligationService.updateObligation(id, data));
   handleValidated('socialObligation:delete', (id: number) => socialObligationService.deleteObligation(id));
 
   // ── App Settings ──
-  const settingsService = require('../database/services/settings-service');
   ipcMain.handle('settings:getAiConfig', () => settingsService.getAiConfigPublic());
   handleValidated('settings:saveAiConfig', (config: any) => {
     settingsService.saveAiConfig(config);
@@ -407,7 +446,6 @@ export function registerSettingsIpcHandlers(): void {
   });
 
   // ── AI Chat ──
-  const aiService = require('../services/ai-service');
   ipcMain.handle('ai:chat', async (_e, params: { message: string; history?: any[] }) => {
     try {
       const result = await aiService.chat(params.message, params.history || []);
@@ -468,7 +506,6 @@ export function registerSettingsIpcHandlers(): void {
   });
 
   // v1.10.6：AI 会话持久化与报告归档
-  const aiSession = require('../database/services/ai-session-service');
   handleValidated('ai:sessionCreate', (title: string) => aiSession.createSession(title));
   ipcMain.handle('ai:sessionList', () => aiSession.listSessions());
   handleValidated('ai:sessionDelete', (id: number) => aiSession.deleteSession(id));
@@ -765,7 +802,6 @@ ul{padding-left:22px}</style></head><body>${aiSession.mdToHtml(md)}</body></html
   });
 
   // ── Data Archive ──
-  const archiveService = require('../services/archive-service');
   ipcMain.handle('archive:getPendingMonths', () => archiveService.getPendingMonths());
   handleValidated('archive:execute', (months: string[]) => archiveService.executeArchive(months));
   ipcMain.handle('archive:getSettings', () => archiveService.getArchiveSettings());

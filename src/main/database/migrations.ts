@@ -927,4 +927,15 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 26,
+    sql: [
+      '-- ============================================',
+      '-- Migration v26: v1.10.21 记账溯源列（股息/利息等自动生成的记账可被精确找回与同步）',
+      '-- ============================================',
+      'ALTER TABLE ledgers ADD COLUMN source_type TEXT;',
+      'ALTER TABLE ledgers ADD COLUMN source_id INTEGER;',
+      'CREATE INDEX IF NOT EXISTS idx_ledgers_source ON ledgers(source_type, source_id);',
+    ].join('\n'),
+  },
 ];

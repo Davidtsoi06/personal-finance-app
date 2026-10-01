@@ -25,9 +25,11 @@ interface Props {
   onChanged: () => void;
   /** v1.10.13：修改成本价入口（与现价编辑并列，像现价一样便捷） */
   onCostPriceEdit?: (h: Holding) => void;
+  /** v1.10.21：持仓行登记分红入口 */
+  onRecordDividend?: (h: Holding) => void;
 }
 
-export function HoldingsTableCard({ holdings, onRowClick, onPriceEdit, onChanged, onCostPriceEdit }: Props) {
+export function HoldingsTableCard({ holdings, onRowClick, onPriceEdit, onChanged, onCostPriceEdit, onRecordDividend }: Props) {
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
   const [deleteHolding, setDeleteHolding] = useState<Holding | null>(null);
   const [invAccounts, setInvAccounts] = useState<Array<{id: number; name: string; broker: string | null}>>([]);

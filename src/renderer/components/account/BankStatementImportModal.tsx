@@ -18,6 +18,8 @@ export interface ParsedBankRecord {
   classification?: string;
   /** v1.9.0：行级动作 import / skip / create_fd / settle_fd */
   action?: string;
+  /** v1.10.21：摘要像股息/分红（存入）——导入时补记「股息收入」 */
+  dividend?: boolean;
 }
 
 export interface BankSuggestion {
@@ -215,6 +217,7 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
         imported: number; skipped: number; duplicates: number; errors: string[];
         createdFds: { id: number; amount: number; date: string }[];
         settledFds: { id: number; principal: number; interest: number }[];
+        dividendCount?: number;
       }>('bank:importParsed', payload, parseInt(targetAccountId) || accountId); // v1.10.1：导入到所选账户/卡号
 
       const parts: string[] = ['✅ 成功导入 ' + result.imported + ' 条存取记录'];
@@ -226,6 +229,7 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
       }
       if ((result.skipped || 0) > 0) parts.push('⏭ 按你的选择跳过 ' + result.skipped + ' 条');
       if ((result.duplicates || 0) > 0) parts.push('🔁 重复行自动跳过 ' + result.duplicates + ' 条');
+      if ((result.dividendCount || 0) > 0) parts.push('💰 识别股息 ' + result.dividendCount + ' 笔（已计入股息收入）');
       let msg = parts.join('；');
       if ((result.errors || []).length > 0) {
         msg += '（' + result.errors.length + ' 条失败：' + result.errors.slice(0, 3).join('；') + '）';
@@ -383,6 +387,11 @@ export function BankStatementImportModal({ open, accountId, onClose, onImported 
                           />
                           {sug?.note && (
                             <div style={{ color: 'var(--color-text-muted)', marginTop: 2 }}>💡 {sug.note}</div>
+                          )}
+                          {r.dividend && (
+                            <div style={{ color: 'var(--color-success)', marginTop: 2 }}>
+                              💰 疑似股息——导入时自动补一笔「股息收入」（不改账户余额，现金由本行存取记录入账）
+                            </div>
                           )}
                         </td>
                         <td style={{ padding: '4px 6px', textAlign: 'center', width: 84 }}>

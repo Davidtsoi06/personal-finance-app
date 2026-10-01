@@ -11,18 +11,21 @@ import {
   transformRows, getExportHeaders,
 } from '../services/report-export-service';
 import { computeRealizedPnl } from '../../shared/utils/investment';
+import { buildDividendIncome } from '../../shared/utils/dividend';
 import { roundMoney } from '../../shared/utils/money';
 import { handleValidated } from './validation';
 
 export function registerReportIpcHandlers(): void {
-  // ── 年度已实现盈亏（重放法：按持仓重放买卖，卖出时以当时加权平均成本为基数）──
+  // ── 年度已实现盈亏（重放法；v1.10.21 起按「代码+币种」跨账户合并，附各账户明细）──
   handleValidated('report:realizedPnl', (year: number) => {
     const db = getDatabase();
     const rows = db.prepare(
-      "SELECT t.id, t.asset_id as assetId, a.code, a.name, a.currency," +
+      "SELECT t.id, t.asset_id as assetId, a.code, a.name, t.currency as currency," +
+      " a.investment_account_id as accountId, ia.name as accountName," +
       " t.type, t.quantity, t.price, t.fee, t.total_amount as totalAmount, t.date" +
       " FROM transactions t" +
       " JOIN assets a ON t.asset_id = a.id" +
+      " LEFT JOIN investment_accounts ia ON a.investment_account_id = ia.id" +
       " WHERE strftime('%Y', t.date) = ?" +
       " AND t.type IN ('buy', 'sell')" +
       " ORDER BY t.date ASC, t.id ASC"
@@ -44,6 +47,22 @@ export function registerReportIpcHandlers(): void {
 
   // v1.10.0：投资收益明细——最近 days 天每天卖出收益（成本价/成交价/数量/盈亏/收益率）
   handleValidated('report:recentSellPnl', (days?: number) => getRecentSellPnl(days ?? 3));
+
+  // v1.10.21：股息收入（按年，跨账户合并；税前 = 实收 + 预扣税）
+  handleValidated('report:dividendIncome', (year: number) => {
+    const db = getDatabase();
+    const rows = db.prepare(
+      "SELECT t.id, t.asset_id as assetId, a.code, a.name, a.currency," +
+      " a.investment_account_id as accountId, ia.name as accountName," +
+      " t.fee, t.total_amount as netAmount, t.date, t.notes" +
+      " FROM transactions t" +
+      " JOIN assets a ON t.asset_id = a.id" +
+      " LEFT JOIN investment_accounts ia ON a.investment_account_id = ia.id" +
+      " WHERE strftime('%Y', t.date) = ? AND t.type = 'dividend'" +
+      " ORDER BY t.date ASC, t.id ASC"
+    ).all(String(year)) as any[];
+    return buildDividendIncome(rows);
+  });
 
   // ── Reports / Analytics ──
   ipcMain.handle('report:monthlyTrend', (_e, months: number = 12) => {

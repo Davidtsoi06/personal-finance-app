@@ -20,6 +20,7 @@ function withDateWarning(errors: string[]): string[] {
   return errors.length > 0 ? [...errors, msg] : [msg];
 }
 import { parseAmount } from '../../shared/utils/amount-parse';
+import { isDividendText } from '../../shared/utils/dividend';
 
 /** Safely convert a cell value (string/number from xlsx or CSV) to a trimmed string. */
 function safeTrim(v: unknown): string {
@@ -35,6 +36,8 @@ export interface ParsedBankRecord {
   description: string;
   currency: string;
   balance?: number;
+  /** v1.10.21：摘要像股息/分红（存入方向）——预览提示，可由用户在券商页登记为股息收入 */
+  dividend?: boolean;
 }
 
 /** Parse result */
@@ -309,7 +312,7 @@ function mapRowToBankRecord(cols: string[], colMap: Record<string, number>): Par
   }
 
   const absAmount = Math.abs(amount);
-  return { date, amount: absAmount, type, description, currency, balance: validBalance };
+  return { date, amount: absAmount, type, description, currency, balance: validBalance, dividend: isDividendText(description) && type === 'deposit' };
 }
 
 function keywordMatch(text: string, fmt: CustomBankFormat): boolean {
@@ -454,6 +457,7 @@ function tryGenericDetection(lines: string[]): BankParseResult {
       description,
       currency,
       balance: balance !== undefined && !isNaN(balance) ? balance : undefined,
+      dividend: isDividendText(description) && type === 'deposit',
     });
   }
 
@@ -525,6 +529,7 @@ function tryGenericDetectionOnRows(rows: string[][]): BankParseResult {
       description,
       currency,
       balance: balance !== undefined && !isNaN(balance) ? balance : undefined,
+      dividend: isDividendText(description) && type === 'deposit',
     });
   }
 

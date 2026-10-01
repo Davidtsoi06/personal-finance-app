@@ -7,16 +7,29 @@ import { Table, Column } from '../ui/Table';
 import { Amount } from '../ui/Amount';
 import { invoke } from '../../hooks/useIpc';
 
-interface RealizedPnlEntry {
-  assetId: number; code: string; name: string; currency: string;
+interface RealizedPnlAccountRow {
+  assetId: number; accountId: number | null; accountName: string;
   soldQuantity: number; costBasis: number; netProceeds: number;
   realizedPnl: number; sellCount: number;
+}
+
+interface RealizedPnlEntry {
+  /** v1.10.21 合并键：代码|币种（跨账户合并统计） */
+  key: string;
+  code: string; name: string; currency: string;
+  soldQuantity: number; costBasis: number; netProceeds: number;
+  realizedPnl: number; sellCount: number;
+  accountCount: number; accounts: RealizedPnlAccountRow[];
 }
 
 interface RealizedPnlResult {
   year: number; total: number; byAsset: RealizedPnlEntry[];
   sellCount: number; buyCount: number; sellAmount: number; buyAmount: number;
 }
+
+/** v1.10.21：股息收入（用于「已实现盈亏 + 股息 = 总收益」） */
+interface DividendSummary { gross: number; tax: number; net: number; count: number }
+interface DividendResult { gross: number; tax: number; net: number; count: number }
 
 export function RealizedPnlCard() {
   const currentYear = new Date().getFullYear();
@@ -25,10 +38,17 @@ export function RealizedPnlCard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [dividend, setDividend] = useState<DividendSummary | null>(null);
+  // v1.10.21：跨账户合并行可展开看各账户独立口径
+  const [expanded, setExpanded] = useState<string[]>([]);
+
   const load = useCallback(async (y: number) => {
     setLoading(true); setError('');
     try {
       setData(await invoke<RealizedPnlResult>('report:realizedPnl', y));
+      // 股息收入失败不影响主表显示
+      const d = await invoke<DividendResult>('report:dividendIncome', y).catch(() => null);
+      setDividend(d ? { gross: d.gross, tax: d.tax, net: d.net, count: d.count } : null);
     } catch (err: any) {
       setError(err.message || '加载失败');
     }
@@ -42,7 +62,21 @@ export function RealizedPnlCard() {
       key: 'name', title: '名称/代码',
       render: (r) => (
         <div>
-          <div style={{ fontWeight: 500 }}>{r.name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {r.accountCount > 1 && (
+              <button
+                onClick={() => setExpanded((list) => list.includes(r.key) ? list.filter((k) => k !== r.key) : [...list, r.key])}
+                title={expanded.includes(r.key) ? '收起各账户明细' : '展开各账户明细'}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-primary-500)', fontSize: 'var(--font-size-xs)', padding: 0 }}
+              >
+                {expanded.includes(r.key) ? '▾' : '▸'}
+              </button>
+            )}
+            <span style={{ fontWeight: 500 }}>{r.name}</span>
+            {r.accountCount > 1 && (
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>（{r.accountCount} 个账户合并）</span>
+            )}
+          </div>
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>{r.code}</div>
         </div>
       ),
@@ -97,9 +131,41 @@ export function RealizedPnlCard() {
                   {data.buyCount} 笔 / ¥{data.buyAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
+              <div className="stat-card">
+                <div className="stat-card-label">股息收入（实收）</div>
+                <div className="stat-card-value number" style={{ color: 'var(--color-success)' }}>
+                  {(dividend?.net || 0) > 0 ? '+' + dividend!.net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                  {dividend && dividend.count > 0 && (
+                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', fontWeight: 400 }}>
+                      {' '}（{dividend.count} 笔）
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-card-label">总收益（价差 + 股息）</div>
+                <div className="stat-card-value number" style={{ color: (data.total + (dividend?.net || 0)) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                  {((data.total + (dividend?.net || 0)) >= 0 ? '+' : '') + (data.total + (dividend?.net || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
             </div>
             {data.byAsset.length > 0 ? (
-              <Table scrollable columns={columns} data={data.byAsset} rowKey={(r) => r.assetId} />
+              <>
+                <Table
+                  scrollable
+                  columns={columns}
+                  rowKey={(r) => r.key}
+                  data={data.byAsset.flatMap((r) => expanded.includes(r.key)
+                    ? [r, ...r.accounts.map((a) => ({ ...a, key: r.key + '#' + a.assetId, code: '', name: '　↳ ' + a.accountName, currency: r.currency, accountCount: 0, accounts: [] } as unknown as RealizedPnlEntry))]
+                    : [r])}
+                />
+                {data.byAsset.some((r) => r.accountCount > 1) && (
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--spacing-xs)' }}>
+                    同一只股票在不同账户的买卖已合并统计（合并口径 = 跨账户加权平均成本，与券商各账户独立口径可能不同）；
+                    ▸ 可展开查看各账户独立口径。
+                  </div>
+                )}
+              </>
             ) : (
               <div className="card-placeholder">{year} 年暂无卖出记录（已实现盈亏为 0）</div>
             )}

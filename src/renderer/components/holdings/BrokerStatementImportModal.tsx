@@ -163,6 +163,10 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
       <div>
         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-md)' }}>
           粘贴 CSV 日结单，或直接上传文件（支持 CSV / Excel）。自动检测格式或手动选择券商。
+          <br />
+          <span style={{ color: 'var(--color-text-muted)' }}>
+            v1.10.21：日结单里的股息/派息/DIVIDEND 行会自动识别为「💰分红」，导入后计入股息收入（不改持仓成本）。
+          </span>
         </p>
         <div style={{ marginBottom: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
           <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, whiteSpace: 'nowrap' }}>券商格式：</label>
@@ -262,6 +266,7 @@ export function BrokerStatementImportModal({ open, accountId, onClose, onImporte
                         >
                           <option value="buy">买入</option>
                           <option value="sell">卖出</option>
+                          <option value="dividend">💰分红</option>
                         </select>
                       </td>
                       <td style={{ padding: '4px 4px' }}>

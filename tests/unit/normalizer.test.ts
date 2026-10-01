@@ -191,6 +191,20 @@ describe('normalizeTradeType 繁体（v1.10.19）', () => {
     expect(normalizeTradeType('买入')).toBe('buy');
     expect(normalizeTradeType('sell')).toBe('sell');
     expect(normalizeTradeType('buy')).toBe('buy');
-    expect(normalizeTradeType('股息')).toBe('other');
+    expect(normalizeTradeType('')).toBe('other');
+    expect(normalizeTradeType('未知业务')).toBe('other');
+  });
+
+  it('股息/分红识别（v1.10.21）', () => {
+    expect(normalizeTradeType('股息')).toBe('dividend');
+    expect(normalizeTradeType('派息')).toBe('dividend');
+    expect(normalizeTradeType('红利入账')).toBe('dividend');
+    expect(normalizeTradeType('分红')).toBe('dividend');
+    expect(normalizeTradeType('DIVIDEND')).toBe('dividend');
+    expect(normalizeTradeType('Cash Dividend')).toBe('dividend');
+    expect(normalizeTradeType('利息收入')).toBe('dividend');
+    // 买卖不被误判
+    expect(normalizeTradeType('买入 股息')).toBe('dividend'); // 股息优先（公司行动行）
+    expect(normalizeTradeType('证券卖出')).toBe('sell');
   });
 });

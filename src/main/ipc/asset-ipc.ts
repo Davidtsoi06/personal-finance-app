@@ -10,6 +10,8 @@ import { normalizeDate, normalizeCurrency, normalizeCode, normalizeString } from
 import { handleValidated } from './validation';
 import { insertCashFlowInDb, recomputeCashBalanceInDb, applyTradeCashToAccountInDb } from '../database/services/cash-flow-core';
 import { reconcileAssetCostBasis } from '../database/services/transaction-service';
+import { recordDividendInDb } from '../database/services/dividend-service';
+import { roundMoney } from '../../shared/utils/money';
 import { detectMarket } from '../../shared/utils/market';
 import { exportPortfolioSnapshot } from '../services/ai-portfolio-service';
 import { parseDateStrict } from '../services/data-normalizer';
@@ -316,16 +318,22 @@ export function registerAssetIpcHandlers(): void {
             ].join(' ')).run(asset.id, 'split', trade.quantity, 0, 0, 0, trade.currency, trade.date, '份额拆分/分拆');
             // v1.10.8/1.10.9：重放校准（split 不参与重放成本，数量保留期望值 → 均价摊薄）
             reconcileAssetCostBasis(asset.id, asset.quantity + trade.quantity);
+          } else if (trade.type === 'dividend') {
+            // v1.10.21：股息/分红——写 transactions + 现金（关联银行直达）+ 记账「股息收入」
+            const net = roundMoney(Number(trade.net_amount) || Number(trade.total_amount) || 0);
+            if (!(net > 0)) { errors.push(trade.code + ' ' + trade.name + ': 股息金额为 0，已跳过'); continue; }
+            recordDividendInDb(db, {
+              investmentAccountId,
+              assetId: asset ? asset.id : null,
+              code: trade.code, name: trade.name, currency: trade.currency,
+              date: trade.date, grossAmount: net, taxAmount: 0, writeLedger: true,
+              notes: '日结单导入',
+            });
           } else {
-            if (asset) {
-              db.prepare([
-                'INSERT INTO transactions (asset_id, type, quantity, price, fee, total_amount, currency, date, notes)',
-                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-              ].join(' ')).run(asset.id, 'other', trade.quantity, trade.price, trade.fee,
-                trade.quantity * trade.price, trade.currency, trade.date, '其他公司行动');
-            } else {
-              errors.push(trade.code + ' ' + trade.name + ': 未找到持仓，跳过'); continue;
-            }
+            // v1.10.21：未识别的公司行动行不再写 type='other'（数据库 CHECK 仅允许 buy/sell/dividend/split，
+            // 此前会抛约束错误）——改为跳过并明确提示
+            errors.push(trade.code + ' ' + trade.name + ': 未识别的公司行动（' + trade.type + '），已跳过');
+            continue;
           }
           imported++;
         } catch (err: any) {

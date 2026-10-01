@@ -13,6 +13,7 @@ import { PriceModal } from '../components/holdings/PriceModal';
 import { CostPriceModal } from '../components/holdings/CostPriceModal';
 import { BrokerStatementImportModal } from '../components/holdings/BrokerStatementImportModal';
 import { CashFlowCard } from '../components/holdings/CashFlowCard';
+import { DividendFormModal } from '../components/holdings/DividendFormModal';
 
 export function HoldingsDetail() {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +21,8 @@ export function HoldingsDetail() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [accountName, setAccountName] = useState('');
+  const [accountCurrency, setAccountCurrency] = useState('CNY');
+  const [accountBankName, setAccountBankName] = useState<string | null>(null);
   const [cnyTotals, setCnyTotals] = useState<{ marketValueCny: number; profitLossCny: number }>({ marketValueCny: 0, profitLossCny: 0 });
   const [loading, setLoading] = useState(true);
   const [showTrade, setShowTrade] = useState(false);
@@ -27,6 +30,8 @@ export function HoldingsDetail() {
   const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
   const [priceTarget, setPriceTarget] = useState<Holding | null>(null);
   const [costTarget, setCostTarget] = useState<Holding | null>(null); // v1.10.13：修改成本价
+  // v1.10.21：股息登记（持仓行 / 交易历史弹窗触发，预选该股票）
+  const [dividendTarget, setDividendTarget] = useState<Holding | null>(null);
 
   const accountId = parseInt(id || '0');
   // v1.8.0：交易历史分页加载
@@ -43,6 +48,14 @@ export function HoldingsDetail() {
         invoke<any>('investmentAccount:summary', accountId).catch(() => null),
       ]);
       setAccountName(acc?.name || '投资账户');
+      setAccountCurrency(acc?.currency || 'CNY');
+      if (acc?.funding_account_id) {
+        invoke<any>('account:get', acc.funding_account_id)
+          .then((b) => setAccountBankName(b?.name || null))
+          .catch(() => setAccountBankName(null));
+      } else {
+        setAccountBankName(null);
+      }
       setHoldings(hList || []);
       setTrades(tList || []);
       if (sum) {
@@ -98,6 +111,7 @@ export function HoldingsDetail() {
         onRowClick={setSelectedHolding}
         onPriceEdit={setPriceTarget}
         onCostPriceEdit={setCostTarget}
+        onRecordDividend={setDividendTarget}
         onChanged={load}
       />
 
@@ -107,6 +121,7 @@ export function HoldingsDetail() {
         trades={trades}
         onClose={() => setSelectedHolding(null)}
         onPriceEdit={setPriceTarget}
+        onRecordDividend={(h) => { setSelectedHolding(null); setDividendTarget(h); }}
       />
 
       {/* Trade History */}
@@ -118,6 +133,18 @@ export function HoldingsDetail() {
           </Button>
         </div>
       )}
+
+      {/* v1.10.21：股息登记（持仓行 / 交易历史弹窗进入，预选该股票） */}
+      <DividendFormModal
+        open={!!dividendTarget}
+        accountId={accountId}
+        currency={accountCurrency}
+        bankName={accountBankName}
+        holdings={(holdings || []).map((h) => ({ assetId: h.id, code: h.code, name: h.name, currency: h.currency, quantity: h.quantity }))}
+        presetAssetId={dividendTarget?.id ?? null}
+        onClose={() => setDividendTarget(null)}
+        onSaved={() => { setDividendTarget(null); load(); }}
+      />
 
       {/* Cash Flow (v1.5.6) */}
       <CashFlowCard accountId={accountId} onChanged={load} refreshKey={flowRefresh} />

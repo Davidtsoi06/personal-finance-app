@@ -5,6 +5,7 @@
  */
 import { getDatabase } from '../database';
 import { parseAmount, deriveTradeFee } from '../../shared/utils/amount-parse';
+import { roundMoney } from '../../shared/utils/money';
 import { normalizeDate, parseDateStrict, normalizeCurrency, normalizeCode, normalizeTradeType } from './data-normalizer';
 
 /** v1.10.20：日期无法识别的行数（解析入口重置，汇总进 errors） */
@@ -27,7 +28,7 @@ export interface ParsedTrade {
   date: string;
   code: string;
   name: string;
-  type: 'buy' | 'sell' | 'split' | 'other';
+  type: 'buy' | 'sell' | 'split' | 'dividend' | 'other';
   quantity: number;
   price: number;
   fee: number;
@@ -223,6 +224,28 @@ function parseStandardLine(cols: string[]): ParsedTrade | null {
   const quantity = parseAmount(qtyStr);
   const price = parseAmount(priceStr);
   const fee = parseAmount(feeStr) || 0;
+  const typeLower = safeTrim(typeStr).toLowerCase();
+  // v1.10.21：股息行——数量=股数、价格=每股派息（实收 = 股数×每股派息），允许缺列
+  const isDividendRow = normalizeTradeType(typeStr) === 'dividend';
+  if (isDividendRow) {
+    const qty = quantity ?? 0;
+    const perShare = price ?? 0;
+    const gross = roundMoney(qty * perShare);
+    if (!(gross > 0)) return null;
+    const sDate0 = parseDateStrict(safeTrim(date));
+    if (!sDate0) { markBadDate(); return null; }
+    return {
+      date: sDate0,
+      code: normalizeCode(safeTrim(code)),
+      name: safeTrim(name) || normalizeCode(safeTrim(code)),
+      type: 'dividend',
+      quantity: qty,
+      price: perShare,
+      fee: 0,
+      currency: (safeTrim(currency) || 'HKD').toUpperCase(),
+      net_amount: gross,
+    };
+  }
   if (quantity === null || price === null) return null;
 
   // v1.10.20：日期先识别再落库——无法识别的行不算有效交易（此前会落库空日期/今天）
@@ -234,6 +257,7 @@ function parseStandardLine(cols: string[]): ParsedTrade | null {
   const type = safeTrim(typeStr).toLowerCase();
 
   const base = { date: sDate, code: sCode, name: sName, type: 'buy' as const, quantity, price, fee, currency: sCurrency };
+  void typeLower;
 
   // v1.10.19：繁体（買/賣）与「沽出」识别——此前繁体日结单卖出会被误判 other 而漏显示
   if (type === 'buy' || type.includes('买') || type.includes('買')) {
@@ -286,10 +310,20 @@ function mapRowToTrade(cols: string[], colMap: Record<string, number>): ParsedTr
     'HKD'
   );
 
-  if (qty === null || price === null) return null;
   if (!date) return null;
 
   let type = normalizeTradeType(typeRaw);
+  // v1.10.21：股息行——无数量/价格要求，实收取「发生金额/成交金额」（税在预览里可补）
+  if (type === 'dividend') {
+    const net = rawNetAmount ?? rawAmount ?? 0;
+    if (!(net > 0)) return null;
+    return {
+      date, code, name, type: 'dividend',
+      quantity: qty ?? 0, price: price ?? 0, fee: 0, currency,
+      net_amount: roundMoney(net),
+    };
+  }
+  if (qty === null || price === null) return null;
   // Fallback: use net_amount sign when text-based type detection fails
   if (type === 'other' && rawNetAmount !== null) {
     if (rawNetAmount < 0) type = 'buy';
@@ -377,7 +411,6 @@ function tryGenericDetection(lines: string[]): ParseResult {
   if (!date) { if (rawDate) markBadDate(); continue; }
     const qty = parseAmount(cols[qtyIdx]);
     const price = parseAmount(cols[priceIdx]);
-    if (qty === null || price === null || !date) continue;
 
     const rawAmount = amountIdx !== -1 ? parseAmount(cols[amountIdx]) : null;
     const rawNetAmount = netAmountIdx !== -1 ? parseAmount(cols[netAmountIdx]) : null;
@@ -391,15 +424,33 @@ function tryGenericDetection(lines: string[]): ParseResult {
 
     const typeRaw = typeIdx !== -1 ? cols[typeIdx]?.trim() : '';
     let type = normalizeTradeType(typeRaw);
-    if (type === 'other' && rawNetAmount !== null) {
-      if (rawNetAmount < 0) type = 'buy';
-      else if (rawNetAmount > 0) type = 'sell';
-    }
 
     const currency = normalizeCurrency(
       currIdx !== -1 ? cols[currIdx]?.trim() : '',
       'HKD'
     );
+
+    // v1.10.21：股息行——无数量/价格要求，实收取「发生金额/成交金额」
+    if (type === 'dividend') {
+      const net = rawNetAmount ?? rawAmount ?? 0;
+      if (net > 0) {
+        trades.push({
+          date,
+          code: codeIdx !== -1 ? cols[codeIdx]?.trim() || '' : '',
+          name: nameIdx !== -1 ? cols[nameIdx]?.trim() || '' : '',
+          type: 'dividend', quantity: qty ?? 0, price: price ?? 0, fee: 0, currency,
+          net_amount: roundMoney(net),
+        });
+      }
+      continue;
+    }
+
+    if (type === 'other' && rawNetAmount !== null) {
+      if (rawNetAmount < 0) type = 'buy';
+      else if (rawNetAmount > 0) type = 'sell';
+    }
+    if (qty === null || price === null) continue;
+    if (fee === undefined) continue;
 
     const trade: ParsedTrade = {
       date,

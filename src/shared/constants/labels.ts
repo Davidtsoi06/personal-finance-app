@@ -44,6 +44,7 @@ export const TRADE_TYPE_LABELS: Record<string, string> = {
   buy: '买入',
   sell: '卖出',
   split: '分拆',
+  dividend: '分红',
   deposit: '存入',
   withdraw: '取出',
 };

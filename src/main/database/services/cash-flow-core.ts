@@ -133,7 +133,7 @@ export function removeFlowsForTransactionInDb(db: Database.Database, transaction
   return result.changes;
 }
 
-/** 同步一条交易的现金流：先删除旧流水，再按最终类型/金额插入（买卖才有现金影响） */
+/** 同步一条交易的现金流：先删除旧流水，再按最终类型/金额插入（买卖/分红才有现金影响） */
 export function syncFlowForTransactionInDb(
   db: Database.Database,
   tx: { id: number; asset_id: number; type: string; quantity: number; price: number; fee: number; total_amount: number; currency: string; date: string },
@@ -155,6 +155,13 @@ export function syncFlowForTransactionInDb(
       amount: tx.total_amount || tx.quantity * tx.price - tx.fee,
       assetId: asset.id, transactionId: tx.id, currency: tx.currency, date: tx.date,
       notes: '卖出 ' + asset.name,
+    });
+  } else if (tx.type === 'dividend') {
+    // v1.10.21：股息现金流入（金额 = transactions.total_amount = 税后实收）
+    applyTradeCashToAccountInDb(db, {
+      investmentAccountId: asset.investment_account_id, type: 'dividend',
+      amount: tx.total_amount, assetId: asset.id, transactionId: tx.id,
+      currency: tx.currency, date: tx.date, notes: '股息 ' + asset.name,
     });
   }
 }

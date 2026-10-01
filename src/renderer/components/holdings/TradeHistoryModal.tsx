@@ -15,9 +15,11 @@ interface Props {
   trades: TradeRecord[];
   onClose: () => void;
   onPriceEdit: (h: Holding) => void;
+  /** v1.10.21：该股票登记分红入口 */
+  onRecordDividend?: (h: Holding) => void;
 }
 
-export function TradeHistoryModal({ holding, trades, onClose, onPriceEdit }: Props) {
+export function TradeHistoryModal({ holding, trades, onClose, onPriceEdit, onRecordDividend }: Props) {
   const history = holding ? trades.filter((t) => t.asset_id === holding.id) : [];
 
   return (
@@ -38,6 +40,9 @@ export function TradeHistoryModal({ holding, trades, onClose, onPriceEdit }: Pro
             <div>成本价：<b>{holding.currency} {holding.cost_price.toFixed(3)}</b></div>
             <div>最新价：<b>{holding.currency} {holding.current_price.toFixed(3)}</b></div>
             <Button variant="secondary" size="sm" onClick={() => onPriceEdit(holding)}>✏️ 改价</Button>
+            {onRecordDividend && (
+              <Button variant="secondary" size="sm" onClick={() => onRecordDividend(holding)}>💰 登记分红</Button>
+            )}
           </div>
           <Table
             scrollable

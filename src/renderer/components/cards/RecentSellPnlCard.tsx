@@ -13,6 +13,8 @@ import { formatDate } from '../../../shared/utils/date-format';
 
 export interface RecentSellRow {
   id: number; name: string; code: string; currency: string;
+  /** v1.10.21：卖出所在券商账户（成本按「代码+币种」跨账户合并） */
+  accountName?: string;
   quantity: number; price: number; total_amount: number;
   cost_price: number | null; realized_pnl: number | null; rate_pct: number | null;
 }
@@ -45,6 +47,9 @@ const columns: Column<RecentSellRow>[] = [
       <span>{r.name}</span>
       <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)', marginLeft: 6 }}>{r.code}</span>
     </span>
+  )},
+  { key: 'accountName', title: '账户', render: (r) => (
+    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>{r.accountName || '—'}</span>
   )},
   { key: 'cost_price', title: '成本价', align: 'right', render: (r) => (
     r.cost_price != null ? <span>{r.cost_price.toFixed(3)}</span> : <span style={{ color: 'var(--color-text-muted)' }}>—</span>

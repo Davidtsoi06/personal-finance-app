@@ -8,6 +8,7 @@ import { NetWorthTrendChart } from '../components/charts/NetWorthTrendChart';
 import { ASSET_TYPE_LABELS } from '@shared/constants/labels';
 import { DailyTradesReport } from '../components/DailyTradesReport';
 import { RealizedPnlCard } from '../components/cards/RealizedPnlCard';
+import { DividendIncomeCard } from '../components/cards/DividendIncomeCard';
 import { RecentSellPnlCard } from '../components/cards/RecentSellPnlCard';
 import { usePriceRefresh } from '../hooks/usePriceRefresh';
 import { CHART_PALETTE, INCOME_EXPENSE_COLORS, CATEGORY_GRADIENT } from '@shared/constants/chart-colors';
@@ -340,8 +341,11 @@ export function Reports() {
         <DailyTradesReport />
       </div>
 
-      {/* Row 3.6: Annual realized P&L */}
+      {/* Row 3.6: Annual realized P&L（v1.10.21：跨账户合并 + 总收益含股息） */}
       <RealizedPnlCard />
+
+      {/* Row 3.7: v1.10.21 股息收入（分红） */}
+      <DividendIncomeCard />
 
       {/* Row 4: Excel Export */}
       <div style={{ marginTop: 'var(--spacing-lg)' }}>

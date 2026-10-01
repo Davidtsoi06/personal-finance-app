@@ -6,6 +6,7 @@ import { getDatabase } from '../database';
 import { ASSET_SORT_SQL } from '../database/services/asset-service';
 import { ASSET_TYPE_LABELS, MARKET_LABELS, TRADE_TYPE_LABELS } from '../../shared/constants/labels';
 import { roundMoney, roundPct } from '../../shared/utils/money';
+import { mergeKey } from '../../shared/utils/investment';
 import { addPosition, removePosition, type AssetState } from '../../shared/utils/investment';
 import { formatDate } from '../../shared/utils/date-format';
 
@@ -62,33 +63,39 @@ export function getDailyTrades(date: string): DailyTradesResult {
   const db = getDatabase();
   const rows = db.prepare(`
     SELECT t.id, t.date, t.type, t.quantity, t.price, t.fee, t.total_amount,
-      t.currency, t.notes, t.created_at, t.asset_id, a.name, a.code
+      t.currency, t.notes, t.created_at, t.asset_id, a.name, a.code,
+      a.investment_account_id as accountId, ia.name as accountName
     FROM transactions t
     JOIN assets a ON t.asset_id = a.id
+    LEFT JOIN investment_accounts ia ON a.investment_account_id = ia.id
     WHERE t.date = ?
     ORDER BY t.created_at ASC, t.id ASC
   `).all(date) as any[];
 
   // 当日(含)前全部买卖（按时间排序），供逐行推进重放
+  // v1.10.21：重放键改为「代码 + 币种」——同一只股票跨券商账户合并成本（报表口径统一）
   const allTrades = db.prepare(`
-    SELECT asset_id, type, quantity, total_amount, price, date, id FROM transactions
-    WHERE type IN ('buy', 'sell') AND date <= ?
-    ORDER BY date ASC, id ASC
-  `).all(date) as { asset_id: number; type: string; quantity: number; total_amount: number; price: number; date: string; id: number }[];
-  const tradesByAsset = new Map<number, typeof allTrades>();
+    SELECT t.asset_id, t.type, t.quantity, t.total_amount, t.price, t.date, t.id, t.currency, a.code
+    FROM transactions t JOIN assets a ON t.asset_id = a.id
+    WHERE t.type IN ('buy', 'sell') AND t.date <= ?
+    ORDER BY t.date ASC, t.id ASC
+  `).all(date) as { asset_id: number; type: string; quantity: number; total_amount: number; price: number; date: string; id: number; currency: string; code: string }[];
+  const tradesByAsset = new Map<string, typeof allTrades>();
   for (const t of allTrades) {
-    const arr = tradesByAsset.get(t.asset_id) || [];
+    const key = mergeKey(t.code, t.currency);
+    const arr = tradesByAsset.get(key) || [];
     arr.push(t);
-    tradesByAsset.set(t.asset_id, arr);
+    tradesByAsset.set(key, arr);
   }
-  const cursor = new Map<number, number>();
-  const position = new Map<number, AssetState>();
+  const cursor = new Map<string, number>();
+  const position = new Map<string, AssetState>();
 
   /** 推进到指定 (date, id)：inclusive=true 包含该笔自身（买入行取「买入后」状态） */
-  const advanceTo = (assetId: number, rowDate: string, rowId: number, inclusive: boolean): AssetState => {
-    const list = tradesByAsset.get(assetId) || [];
-    let idx = cursor.get(assetId) || 0;
-    let st = position.get(assetId) || { quantity: 0, totalCost: 0, costPrice: 0 };
+  const advanceTo = (assetId: number, rowDate: string, rowId: number, inclusive: boolean, code: string, currency: string): AssetState => {
+    const key = mergeKey(code, currency);
+    const list = tradesByAsset.get(key) || [];
+    let idx = cursor.get(key) || 0;
+    let st = position.get(key) || { quantity: 0, totalCost: 0, costPrice: 0 };
     while (idx < list.length) {
       const t = list[idx];
       const before = t.date < rowDate || (t.date === rowDate && (inclusive ? t.id <= rowId : t.id < rowId));
@@ -101,8 +108,8 @@ export function getDailyTrades(date: string): DailyTradesResult {
       }
       idx++;
     }
-    cursor.set(assetId, idx);
-    position.set(assetId, st);
+    cursor.set(key, idx);
+    position.set(key, st);
     return st;
   };
 
@@ -117,7 +124,7 @@ export function getDailyTrades(date: string): DailyTradesResult {
       r.realized_pnl = null;
       r.zero_cost = Number(r.total_amount) === 0 && Number(r.quantity) > 0;
       // 买入行成本价 = 该笔买入后的持仓加权成本（清仓后重新买入 → 新成本）
-      const st = advanceTo(r.asset_id, r.date, r.id, true);
+      const st = advanceTo(r.asset_id, r.date, r.id, true, r.code, r.currency);
       r.cost_price = st.quantity > 0 && st.costPrice > 0
         ? Math.round(st.costPrice * 10000) / 10000
         : (r.quantity > 0 ? Math.round((r.total_amount / r.quantity) * 10000) / 10000 : null);
@@ -126,7 +133,7 @@ export function getDailyTrades(date: string): DailyTradesResult {
       summary.sellAmount += r.total_amount;
       r.zero_cost = false;
       // 卖出成本基础 = 卖出前持仓的加权成本（不含本笔）
-      const st = advanceTo(r.asset_id, r.date, r.id, false);
+      const st = advanceTo(r.asset_id, r.date, r.id, false, r.code, r.currency);
       const basis: number | null = st.quantity > 0 && st.costPrice > 0
         ? Math.round(st.costPrice * 10000) / 10000
         : null;
@@ -157,6 +164,8 @@ export interface RecentSellRow {
   name: string;
   code: string;
   currency: string;
+  /** v1.10.21：卖出所在券商账户（成本按「代码+币种」跨账户合并） */
+  accountName?: string;
   quantity: number;
   price: number;
   total_amount: number;
@@ -203,6 +212,7 @@ export function getRecentSellPnl(days = 3): RecentSellDay[] {
       const rate = basis > 0 && r.realized_pnl != null ? roundPct((r.realized_pnl / basis) * 100) : null;
       sells.push({
         id: r.id, name: r.name, code: r.code, currency: r.currency,
+        accountName: r.accountName || '',
         quantity: r.quantity, price: r.price, total_amount: r.total_amount,
         cost_price: r.cost_price, realized_pnl: r.realized_pnl, rate_pct: rate,
       });

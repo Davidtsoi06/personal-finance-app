@@ -83,6 +83,9 @@ export function recomputeCostBasisFromTrades(trades: RealizedPnlTrade[]): CostBa
 export interface RealizedPnlTrade {
   id: number;
   assetId: number;
+  /** v1.10.21：所属券商账户（跨账户合并时用于展开各账户明细） */
+  accountId?: number | null;
+  accountName?: string | null;
   code: string;
   name: string;
   currency: string;
@@ -94,11 +97,10 @@ export interface RealizedPnlTrade {
   date: string;
 }
 
-export interface RealizedPnlEntry {
+export interface RealizedPnlAccountRow {
   assetId: number;
-  code: string;
-  name: string;
-  currency: string;
+  accountId: number | null;
+  accountName: string;
   soldQuantity: number;
   costBasis: number;
   netProceeds: number;
@@ -106,24 +108,48 @@ export interface RealizedPnlEntry {
   sellCount: number;
 }
 
+export interface RealizedPnlEntry {
+  /** v1.10.21 合并键：代码|币种 */
+  key: string;
+  code: string;
+  name: string;
+  currency: string;
+  /** 合并口径（跨账户）：同一只股票只有一个加权成本 */
+  soldQuantity: number;
+  costBasis: number;
+  netProceeds: number;
+  realizedPnl: number;
+  sellCount: number;
+  /** 涉及的券商账户数量与各账户「独立口径」明细（展开核对用） */
+  accountCount: number;
+  accounts: RealizedPnlAccountRow[];
+}
+
 /**
- * 已实现盈亏（重放法）：按时间顺序重放各持仓的买入/卖出，
- * 卖出时以「当时」的加权平均成本为基数：已实现盈亏 = 卖出净额 − 成本基数。
- * 买入成本基数含手续费（totalAmount）；split/dividend 不参与（与现有持仓调整语义一致）。
+ * v1.10.21：跨账户合并键——同一只股票在不同券商账户合并统计；
+ * 币种不同的同名代码仍分开（如港币 0005 与英镑 0005）。
  */
+export function mergeKey(code: string | null | undefined, currency: string | null | undefined): string {
+  return String(code || '').trim().toUpperCase() + '|' + String(currency || '').trim().toUpperCase();
+}
+
+/** 已实现盈亏（重放法）：按「代码 + 币种」跨账户合并重放，卖出以当时加权平均成本为基数。
+ *  同时给出各账户独立口径明细（券商视角），供报表展开核对。
+ *  买入成本基数含手续费（totalAmount）；split/dividend 不参与。 */
 export function computeRealizedPnl(trades: RealizedPnlTrade[]): { total: number; byAsset: RealizedPnlEntry[] } {
-  const byAsset = new Map<number, RealizedPnlTrade[]>();
+  const groups = new Map<string, RealizedPnlTrade[]>();
   for (const t of trades) {
     if (t.type !== 'buy' && t.type !== 'sell') continue;
-    const list = byAsset.get(t.assetId);
+    const key = mergeKey(t.code, t.currency);
+    const list = groups.get(key);
     if (list) list.push(t);
-    else byAsset.set(t.assetId, [t]);
+    else groups.set(key, [t]);
   }
 
   const entries: RealizedPnlEntry[] = [];
   let total = 0;
 
-  for (const [assetId, list] of byAsset) {
+  for (const [key, list] of groups) {
     // 同日期按 id 稳定排序（对应 DB 的 ORDER BY date, id）
     list.sort((a, b) => (a.date === b.date ? a.id - b.id : a.date < b.date ? -1 : 1));
 
@@ -134,9 +160,25 @@ export function computeRealizedPnl(trades: RealizedPnlTrade[]): { total: number;
     let netProceeds = 0;
     let sellCount = 0;
 
+    // 各账户独立重放（assetId 维度），仅用于展开明细
+    const perAsset = new Map<number, { state: AssetState; acc: RealizedPnlAccountRow }>();
+
     for (const t of list) {
+      let row = perAsset.get(t.assetId);
+      if (!row) {
+        row = {
+          state: { quantity: 0, totalCost: 0, costPrice: 0 },
+          acc: {
+            assetId: t.assetId, accountId: t.accountId ?? null, accountName: t.accountName || '未指定账户',
+            soldQuantity: 0, costBasis: 0, netProceeds: 0, realizedPnl: 0, sellCount: 0,
+          },
+        };
+        perAsset.set(t.assetId, row);
+      }
+
       if (t.type === 'buy') {
         state = addPosition(state, t.quantity, t.totalAmount);
+        row.state = addPosition(row.state, t.quantity, t.totalAmount);
       } else {
         const basis = state.costPrice > 0 ? state.costPrice * t.quantity : t.quantity * t.price;
         realized += t.totalAmount - basis;
@@ -145,21 +187,41 @@ export function computeRealizedPnl(trades: RealizedPnlTrade[]): { total: number;
         netProceeds += t.totalAmount;
         sellCount++;
         state = removePosition(state, t.quantity, basis);
+
+        const accBasis = row.state.costPrice > 0 ? row.state.costPrice * t.quantity : t.quantity * t.price;
+        row.acc.realizedPnl += t.totalAmount - accBasis;
+        row.acc.soldQuantity += t.quantity;
+        row.acc.costBasis += accBasis;
+        row.acc.netProceeds += t.totalAmount;
+        row.acc.sellCount++;
+        row.state = removePosition(row.state, t.quantity, accBasis);
       }
     }
 
     if (sellCount > 0) {
-      const first = list[0];
+      const last = list[list.length - 1];
+      const accounts = [...perAsset.values()]
+        .filter((r) => r.acc.sellCount > 0)
+        .map((r) => ({
+          ...r.acc,
+          soldQuantity: r.acc.soldQuantity,
+          costBasis: roundMoney(r.acc.costBasis),
+          netProceeds: roundMoney(r.acc.netProceeds),
+          realizedPnl: roundMoney(r.acc.realizedPnl),
+        }))
+        .sort((a, b) => b.realizedPnl - a.realizedPnl);
       entries.push({
-        assetId,
-        code: first.code,
-        name: first.name,
-        currency: first.currency,
+        key,
+        code: last.code,
+        name: last.name,
+        currency: last.currency,
         soldQuantity,
         costBasis: roundMoney(costBasis),
         netProceeds: roundMoney(netProceeds),
         realizedPnl: roundMoney(realized),
         sellCount,
+        accountCount: accounts.length,
+        accounts,
       });
       total += realized;
     }

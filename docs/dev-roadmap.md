@@ -638,6 +638,20 @@
 - [x] 测试：286/286 通过（新增 date-strict 9 用例 + date-normalize-v25 5 用例）；tsc 双配置无错；版本 1.10.20
 - [x] 文档同步：README（版本/近期更新/技术栈 286 项、迁移 v1~v25、IPC 196）、RELEASE_NOTES、data-model 补迁移 v25、tech-spec 迁移与频道数
 
+## 第 31ae 阶段：v1.10.21 报表跨账户合并 + 股票派息（股息）完整流程 ✅（已发布 v1.10.21）
+
+> 需求来源：① 报表分析里同一只股票在不同账户的买卖被分成两行统计，用户希望合并；② 股票派息没有完整记录流程（数据库早已预留 `dividend` 类型但无任何入口）。
+
+- [x] **跨账户合并统计**：`computeRealizedPnl` 由按 assetId 分组改为按「代码 + 币种」（`mergeKey`）合并重放，附各账户独立口径明细（`accounts[]` / `accountCount`）；`getDailyTrades` 重放键同步改为「代码+币种」并补账户信息；report:realizedPnl SQL 补 `investment_accounts` 关联
+- [x] **报表展示**：RealizedPnlCard 合并行 + ▸ 展开各账户明细 + 口径说明；「总收益 = 已实现价差 + 股息」；RecentSellPnlCard / DailyTradesReport 新增「账户」列
+- [x] **股息登记服务**：`dividend-service`（recordDividendInDb/recordDividend/updateDividend/deleteDividend/listDividendsByAccount/recordBankDividendInDb）——transactions(dividend) + 现金（券商流动金或直达关联银行）+ 记账「投资收入·股息收入」+ 占位持仓自动建/清理；分红不改数量与成本价
+- [x] **IPC（+5，共 201）**：investmentAccount:recordDividend / updateDividend / deleteDividend / listDividends（写操作走 zod 校验）+ report:dividendIncome；`ledgers.source_type/source_id`（迁移 v26）串起自动记账
+- [x] **登记入口**：现金流水卡「💰 登记分红」、持仓行「💰」、交易历史弹窗「💰 登记分红」+ DividendFormModal（每股派息×股数 / 税前总额 / 预扣税 / 到账方式提示 / 可选记账）
+- [x] **日结单识别**：normalizeTradeType 支持 dividend（股息/派息/红利/分红/DIVIDEND/利息收入…）；券商日结单 dividend 行导入即完整落库；银行日结单股息行预览提示并补记账；修复导入兜底分支写 `type='other'` 触发 CHECK 约束报错的老 bug
+- [x] **报表新增「💰 股息收入」卡**：按年 税前/预扣税/实收/笔数 + 按标的（跨账户合并、可展开）；数据归档分红口径保持一致
+- [x] 测试：311/311 通过（新增 dividend 11 + realized-pnl-merge 5 + dividend-flow 8 + normalizer 股息 1）；tsc 双配置无错；check:ipc 201 频道一致；版本 1.10.21
+- [x] 文档同步：README（版本/近期更新/技术栈 311·201·v26）、RELEASE_NOTES、data-model 补迁移 v26 与 ledgers 新列、tech-spec 迁移与频道数
+
 ## 第 32 阶段：v1.11.1 批 C 效率工具 + AI 账目体检 ⏸️（暂缓，用户决定留待以后开发）
 
 > 方案来源：对照 Monarch Money / YNAB / 富途雪球 / PowerToys 等行业交互实践 + 前端专项审计 15 条问题。

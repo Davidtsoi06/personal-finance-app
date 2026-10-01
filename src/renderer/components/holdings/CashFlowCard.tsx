@@ -10,6 +10,7 @@ import { Amount } from '../ui/Amount';
 import { Badge } from '../ui/Badge';
 import { invoke } from '../../hooks/useIpc';
 import { formatDate } from '../../../shared/utils/date-format';
+import { DividendFormModal, DividendHoldingOption } from './DividendFormModal';
 
 interface CashFlowRow {
   id: number;
@@ -52,16 +53,33 @@ export function CashFlowCard({ accountId, onChanged, refreshKey }: Props) {
   const [adjustNotes, setAdjustNotes] = useState('');
   const [adjustSaving, setAdjustSaving] = useState(false);
   const [adjustError, setAdjustError] = useState('');
+  // v1.10.21：股息登记
+  const [showDividend, setShowDividend] = useState(false);
+  const [dividendHoldings, setDividendHoldings] = useState<DividendHoldingOption[]>([]);
+  const [bankName, setBankName] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [acc, f] = await Promise.all([
+      const [acc, f, holdingRows] = await Promise.all([
         invoke<any>('investmentAccount:get', accountId).catch(() => null),
         invoke<CashFlowRow[]>('investmentAccount:cashFlows', accountId).catch(() => []),
+        // v1.10.21：分红登记的股票下拉（含 0 持仓占位，便于给已清仓股票补记股息）
+        invoke<any[]>('investmentAccount:holdings', accountId).catch(() => []),
       ]);
       setBalance(acc?.cash_balance ?? 0);
       setCurrency(acc?.currency || 'CNY');
       setFlows(f || []);
+      // 关联银行名（分红到账提示：直达银行余额）
+      let bank: string | null = null;
+      if (acc?.funding_account_id) {
+        const bankAcc = await invoke<any>('account:get', acc.funding_account_id).catch(() => null);
+        bank = bankAcc?.name || null;
+      }
+      setBankName(bank);
+      setDividendHoldings((holdingRows || []).map((h: any) => ({
+        assetId: h.id, code: h.code, name: h.name,
+        currency: h.currency || 'CNY', quantity: h.quantity || 0,
+      })));
     } catch { /* ignore */ }
   }, [accountId]);
 
@@ -129,9 +147,14 @@ export function CashFlowCard({ accountId, onChanged, refreshKey }: Props) {
               </span>
               {balance < 0 && <Badge label="余额为负：现金与交易记录可能不一致" color="danger" />}
             </div>
-            <Button variant="secondary" size="sm" onClick={() => { setAdjustInput(String(balance)); setAdjustNotes(''); setAdjustError(''); setShowAdjust(true); }}>
-              ⚖️ 余额校正
-            </Button>
+            <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+              <Button variant="primary" size="sm" onClick={() => setShowDividend(true)}>
+                💰 登记分红
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => { setAdjustInput(String(balance)); setAdjustNotes(''); setAdjustError(''); setShowAdjust(true); }}>
+                ⚖️ 余额校正
+              </Button>
+            </div>
           </div>
           <Table
             scrollable
@@ -143,6 +166,17 @@ export function CashFlowCard({ accountId, onChanged, refreshKey }: Props) {
           />
         </Card>
       </div>
+
+      {/* ── v1.10.21：股息登记 Modal ── */}
+      <DividendFormModal
+        open={showDividend}
+        accountId={accountId}
+        bankName={bankName}
+        currency={currency}
+        holdings={dividendHoldings}
+        onClose={() => setShowDividend(false)}
+        onSaved={() => { load(); onChanged(); }}
+      />
 
       {/* ── 余额校正 Modal ── */}
       <Modal open={showAdjust} title="⚖️ 余额校正" onClose={() => setShowAdjust(false)}>
